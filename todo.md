@@ -31,11 +31,11 @@
 - [ ] Begin parallel Rust port of critical compiler components
 
 ### Layer 4 — TPT Runtime / tptr (Rust)
-- [ ] GPU memory allocator (Rust)
-- [ ] Command queue / scheduler (Rust)
-- [ ] Kernel launch interface (Rust)
-- [ ] Python bindings via PyO3
-- [ ] Runtime error handling framework
+- [x] GPU memory allocator (Rust) - Slab, Buddy, Fallback
+- [x] Command queue / scheduler (Rust) - Priority-based with aging
+- [x] Kernel launch interface (Rust) - Config, ArgumentBuffer, Handle
+- [x] Python bindings via PyO3 - Device, Memory, Queue, Kernel
+- [x] Runtime error handling framework - TptrError with error codes
 
 ### Layer 5 — TPT Primitives / tptp (TPTIR + Rust)
 - [ ] Define TPTIR kernel interface / calling convention

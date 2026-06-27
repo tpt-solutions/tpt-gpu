@@ -1,0 +1,12 @@
+[package]
+name = "tptr-core"
+version = "0.1.0"
+edition = "2021"
+description = "TPT Runtime - Core library"
+license = "Apache-2.0"
+
+[dependencies]
+thiserror = "2"
+parking_lot = "0.12"
+log = "0.4"
+bytemuck = "1.21"
