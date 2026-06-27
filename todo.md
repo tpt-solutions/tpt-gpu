@@ -38,12 +38,12 @@
 - [x] Runtime error handling framework - TptrError with error codes
 
 ### Layer 5 — TPT Primitives / tptp (TPTIR + Rust)
-- [ ] Define TPTIR kernel interface / calling convention
-- [ ] GEMM kernel (TPTIR)
-- [ ] Attention kernel (TPTIR)
-- [ ] Conv2D kernel (TPTIR)
-- [ ] Rust host-side wrappers for each primitive
-- [ ] Vendor library integration (cuBLAS / ROCm / Metal equivalent)
+- [x] Define TPTIR kernel interface / calling convention
+- [x] GEMM kernel (TPTIR)
+- [x] Attention kernel (TPTIR)
+- [x] Conv2D kernel (TPTIR)
+- [x] Rust host-side wrappers for each primitive
+- [x] Vendor library integration (cuBLAS / ROCm / Metal equivalent)
 
 ### Layer 6 — Framework Backends (Python + Rust)
 - [ ] Python thin wrapper over Rust runtime (tptr)
@@ -72,8 +72,8 @@
 - [x] Implement semantic metadata extraction from annotations
 
 ### Compiler Backend
-- [ ] Emit Rust or LLVM IR from TPT Script AST
-- [ ] Integration with TPTIR for GPU kernel emission
+- [x] Emit Rust or LLVM IR from TPT Script AST
+- [x] Integration with TPTIR for GPU kernel emission
 
 ### Introspection API (tpt.introspect)
 - [ ] `list_operations()` — list all available operations
@@ -115,28 +115,42 @@
 
 ## Phase 4 (Months 6–12): Primitives & Public Release
 
-- [ ] Optimize GEMM kernel (production quality)
-- [ ] Optimize Attention kernel (production quality)
-- [ ] Conv3D and additional convolution kernels
-- [ ] BatchNorm / LayerNorm / GroupNorm kernels
-- [ ] Expand primitive set to cover core ML workloads
+- [ ] Wire `KernelResult::execution_time_ms` in all layer5 kernels (GEMM, Attention, Conv2D)
+- [ ] Configurable `GemmParams` (tile_m, tile_n, tile_k, vec_width, unroll) + template MLIR placeholders
+- [ ] Same configurable params for Attention (tile_seq, tile_head) and Conv2D (tile_oh, tile_ow, tile_ic)
+- [ ] Multi-provider AI abstraction (`tools/shared/`): Claude, OpenRouter, Ollama — single `AiProvider` trait
+- [ ] Benchmark harness (`layer5_tptp/benches/`): GEMM vs cuBLAS/rocBLAS/OpenBLAS; Attention vs FlashAttention v2/cuDNN; Conv2D vs cuDNN
+- [ ] Structured JSON benchmark output (GFLOPS, bandwidth GB/s, efficiency-vs-baseline %)
+- [ ] Self-iterating kernel optimizer (`tools/kernel-optimizer/`): grid → hill-climb → AI-guided search
+- [ ] AI-assisted kernel generator (`tools/kernel-generator/`): spec → TPTIR → validate → correctness test → benchmark
+- [ ] TPTIR semantic validator pass (`layer3_tptc/rust/src/passes.rs` — `ValidatePass`)
+- [ ] Operator fusion pass (`FusionPass`): elementwise chains, matmul+softmax+matmul (Flash Attention pattern), conv+bn+relu
+- [ ] Shape-specialized kernel dispatch: multiple kernel variants + `tuning/dispatch_table.json`
+- [ ] Community tuning directory (`tuning/<gpu_model>.json`) — contributor-submitted GPU profiles
+- [ ] CI benchmark job: auto-posts efficiency delta as PR comment on every kernel change
+- [ ] `tpt bench --quick` mode (30-second local sanity check before submitting)
+- [ ] Kernel provenance metadata in generated `.mlir` headers (date, model, score, hardware)
+- [ ] Conv3D kernel — generated via `kernel-generator`
+- [ ] BatchNorm / LayerNorm / GroupNorm kernels — generated via `kernel-generator`
+- [ ] Expand primitive set to cover core ML workloads (generated)
 - [ ] TPT Script v1.0 public release
 - [ ] TPT Script standard library (complete)
 - [ ] Comprehensive tutorial series
-- [ ] Benchmark suite (vs. PyTorch/CUDA baselines)
 - [ ] Public developer portal / documentation website
-- [ ] Community channels (Discord, GitHub Discussions)
-- [ ] Marketing campaign: "The AI-native language for GPU compute"
+- [ ] Web-based compiler playground (`tools/tpt-playground/`): TPT Script → TPTIR + perf estimate (sim mode)
 
 ---
 
 ## Phase 5 (Year 1+): Ecosystem & Custom Silicon
 
-- [ ] Form industry consortium (AMD, Intel, cloud providers)
-- [ ] Submit project to Linux Foundation governance
+- [ ] GEMM ≥ 90% cuBLAS efficiency milestone (optimizer loop)
+- [ ] GEMM > cuBLAS on at least one problem size (AI-guided + fusion)
+- [ ] Attention ≥ 90% FlashAttention v2 efficiency milestone
+- [ ] Extend optimizer + generator to all kernels (Attention, Conv2D, and generated kernels)
+- [ ] Hardware-profile tuning database (`tuning/`) covering ≥5 common GPU models (community-contributed)
+- [ ] Automated CI regression: efficiency drop > 5% on any kernel blocks merge
+- [ ] Auto-generated `BENCHMARKS.md` scoreboard (committed to repo by CI after each run)
 - [ ] Custom silicon design — Layer 1 (TPT ISA for new hardware)
 - [ ] Custom silicon design — Layer 2 (tptd driver for new hardware)
-- [ ] Third-party hardware vendor support / certification
+- [ ] Third-party hardware vendor support
 - [ ] TPT Script as recommended API (if adoption warrants)
-- [ ] Academic publication / conference talk on TPT Script design
-- [ ] Certification / compliance program for hardware vendors

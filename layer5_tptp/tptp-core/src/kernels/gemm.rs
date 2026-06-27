@@ -1,25 +1,50 @@
 //! GEMM Kernel Wrapper — General Matrix Multiply: C = alpha * A * B + beta * C
+use std::time::Instant;
 use crate::error::{TptpError, TptpResult};
 use crate::memory::{GpuBuffer, DType, Shape, BufferFlags};
 use crate::kernel::{KernelConfig, KernelResult, PrimitiveKernel};
 use crate::vendor::{VendorBackend, VendorLibrary};
 
+/// Tunable kernel parameters — defaults match the original 64x64x16 tiling.
+/// These map to `{{TILE_M}}`, `{{TILE_N}}`, `{{TILE_K}}`, etc. placeholders
+/// in `tptir_gemm.mlir` and are substituted before compilation.
+#[derive(Debug, Clone)]
+pub struct GemmParams {
+    pub tile_m: u32,
+    pub tile_n: u32,
+    pub tile_k: u32,
+    pub vec_width: u32,
+    pub unroll: u32,
+}
+
+impl Default for GemmParams {
+    fn default() -> Self {
+        GemmParams { tile_m: 64, tile_n: 64, tile_k: 16, vec_width: 4, unroll: 2 }
+    }
+}
+
 /// GEMM kernel handle
 pub struct GemmKernel {
     config: KernelConfig,
     vendor: VendorBackend,
+    pub params: GemmParams,
 }
 
 impl GemmKernel {
     pub fn new() -> Self {
         let vendor = VendorBackend::detect();
         let config = KernelConfig::new([128, 1, 1], [256, 1, 1]);
-        GemmKernel { config, vendor }
+        GemmKernel { config, vendor, params: GemmParams::default() }
     }
 
     pub fn with_vendor(vendor: VendorBackend) -> Self {
         let config = KernelConfig::new([128, 1, 1], [256, 1, 1]);
-        GemmKernel { config, vendor }
+        GemmKernel { config, vendor, params: GemmParams::default() }
+    }
+
+    pub fn with_params(mut self, params: GemmParams) -> Self {
+        self.params = params;
+        self
     }
 
     pub fn with_config(mut self, config: KernelConfig) -> Self {
@@ -49,16 +74,19 @@ impl GemmKernel {
             output_owned = GpuBuffer::new(Shape::dim2(m, n), DType::F32, BufferFlags::STORAGE)?;
             &mut output_owned
         };
+        let t0 = Instant::now();
         if self.vendor.supports_gemm() {
             self.vendor.gemm(a, b, output, alpha, beta, m, n, k)?;
         } else {
             self.tptir_fallback_gemm(a, b, output, alpha, beta, m, n, k)?;
         }
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        log::debug!("GEMM {}x{}x{} via {}: {:.3}ms", m, n, k, self.vendor.name(), elapsed_ms);
         Ok(GpuBuffer::new(Shape::dim2(m, n), DType::F32, BufferFlags::STORAGE)?)
     }
 
     fn tptir_fallback_gemm(&self, _a: &GpuBuffer<f32>, _b: &GpuBuffer<f32>, _output: &mut GpuBuffer<f32>, _alpha: f32, _beta: f32, _m: usize, _n: usize, _k: usize) -> TptpResult<()> {
-        log::debug!("TPTIR GEMM fallback: M={}, N={}, K={}", _m, _n, _k);
+        log::debug!("TPTIR GEMM fallback: M={}, N={}, K={}, tile={}x{}x{}", _m, _n, _k, self.params.tile_m, self.params.tile_n, self.params.tile_k);
         Ok(())
     }
 }
@@ -73,14 +101,18 @@ impl PrimitiveKernel for GemmKernel {
     fn execute(&self, inputs: &[&GpuBuffer<f32>], output: &mut GpuBuffer<f32>, _config: &KernelConfig) -> TptpResult<KernelResult> {
         let a = inputs[0]; let b = inputs[1];
         let m = a.dim(0).unwrap_or(0); let n = b.dim(1).unwrap_or(0);
+        let t0 = Instant::now();
         if self.vendor.supports_gemm() { self.vendor.gemm(a, b, output, 1.0, 0.0, m, n, a.dim(1).unwrap_or(0))?; }
-        Ok(KernelResult { outputs: vec![], execution_time_ms: None, backend_used: self.vendor.name().to_string() })
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        Ok(KernelResult { outputs: vec![], execution_time_ms: Some(elapsed_ms), backend_used: self.vendor.name().to_string() })
     }
     fn execute_with_vendor(&self, inputs: &[&GpuBuffer<f32>], output: &mut GpuBuffer<f32>, vendor: &VendorBackend, _config: &KernelConfig) -> TptpResult<KernelResult> {
         let a = inputs[0]; let b = inputs[1];
         let m = a.dim(0).unwrap_or(0); let n = b.dim(1).unwrap_or(0); let k = a.dim(1).unwrap_or(0);
+        let t0 = Instant::now();
         vendor.gemm(a, b, output, 1.0, 0.0, m, n, k)?;
-        Ok(KernelResult { outputs: vec![], execution_time_ms: None, backend_used: vendor.name().to_string() })
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        Ok(KernelResult { outputs: vec![], execution_time_ms: Some(elapsed_ms), backend_used: vendor.name().to_string() })
     }
 }
 
@@ -102,6 +134,18 @@ mod tests {
         let a = GpuBuffer::<f32>::new(Shape::dim2(3, 4), DType::F32, BufferFlags::STORAGE).unwrap();
         let b = GpuBuffer::<f32>::new(Shape::dim2(4, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         let kernel = GemmKernel::new();
+        let result = kernel.execute(&a, &b, None, 1.0, 0.0);
+        assert!(result.is_ok());
+    }
+    #[test] fn test_gemm_params_default() {
+        let params = GemmParams::default();
+        assert_eq!(params.tile_m, 64);
+        assert_eq!(params.tile_k, 16);
+    }
+    #[test] fn test_gemm_with_params() {
+        let a = GpuBuffer::<f32>::new(Shape::dim2(4, 4), DType::F32, BufferFlags::STORAGE).unwrap();
+        let b = GpuBuffer::<f32>::new(Shape::dim2(4, 4), DType::F32, BufferFlags::STORAGE).unwrap();
+        let kernel = GemmKernel::new().with_params(GemmParams { tile_m: 128, tile_n: 128, tile_k: 32, vec_width: 8, unroll: 4 });
         let result = kernel.execute(&a, &b, None, 1.0, 0.0);
         assert!(result.is_ok());
     }
