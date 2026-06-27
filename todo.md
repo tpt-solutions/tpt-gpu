@@ -104,12 +104,12 @@
 - [ ] Hugging Face integration (model loading / inference)
 - [ ] TPT Script beta release (advanced external users)
 - [ ] Distributed training examples (FSDP strategy, 8-GPU)
-- [ ] Edge deployment use case examples
-- [ ] LSP implementation (Language Server Protocol for IDE support)
-- [ ] TPT Script formatter / linter
-- [ ] VSCode extension (syntax highlighting, LSP client)
+- [x] Edge deployment use case examples
+- [x] LSP implementation (Language Server Protocol for IDE support)
+- [x] TPT Script formatter / linter
+- [x] VSCode extension (syntax highlighting, LSP client)
 - [ ] Gather beta user feedback and iterate
-- [ ] Write language documentation / user guide
+- [x] Write language documentation / user guide
 
 ---
 
