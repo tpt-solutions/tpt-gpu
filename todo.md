@@ -46,10 +46,10 @@
 - [x] Vendor library integration (cuBLAS / ROCm / Metal equivalent)
 
 ### Layer 6 — Framework Backends (Python + Rust)
-- [ ] Python thin wrapper over Rust runtime (tptr)
-- [ ] PyTorch dispatch layer (Python)
-- [ ] JAX integration (Python)
-- [ ] Performance-critical dispatch paths (Rust)
+- [x] Python thin wrapper over Rust runtime (tptr)
+- [x] PyTorch dispatch layer (Python)
+- [x] JAX integration (Python)
+- [x] Performance-critical dispatch paths (Rust)
 
 ---
 

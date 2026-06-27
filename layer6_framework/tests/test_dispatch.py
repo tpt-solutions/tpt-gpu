@@ -113,3 +113,50 @@ class TestDefaultRegistry:
         for op in standard:
             assert reg.has(op), f"Standard op '{op}' not registered"
 
+
+class TestDispatchRegistryAdvanced:
+    """Advanced tests for DispatchRegistry."""
+
+    def test_register_custom_with_factory(self):
+        reg = DispatchRegistry()
+        call_count = [0]
+
+        def my_impl(*args, **kwargs):
+            call_count[0] += 1
+            return "result"
+
+        reg.register_custom("custom_op", factory=lambda: my_impl, op_type=OpType.CUSTOM)
+        result = reg.dispatch("custom_op")
+        assert result == "result"
+        assert call_count[0] == 1
+
+    def test_list_by_type(self):
+        reg = DispatchRegistry()
+        reg.register("add", OpType.ELEMENTWISE_BINARY)
+        reg.register("relu", OpType.ACTIVATION)
+        reg.register("mul", OpType.ELEMENTWISE_BINARY)
+        binary_ops = reg.list_by_type(OpType.ELEMENTWISE_BINARY)
+        assert "add" in binary_ops
+        assert "mul" in binary_ops
+        assert "relu" not in binary_ops
+
+    def test_remove_op(self):
+        reg = DispatchRegistry()
+        reg.register("test_op", OpType.CUSTOM)
+        assert reg.has("test_op")
+        assert reg.remove("test_op")
+        assert not reg.has("test_op")
+
+    def test_clear_registry(self):
+        reg = DispatchRegistry()
+        reg.register("a", OpType.CUSTOM)
+        reg.register("b", OpType.CUSTOM)
+        reg.clear()
+        assert len(reg) == 0
+
+    def test_contains(self):
+        reg = DispatchRegistry()
+        reg.register("test", OpType.CUSTOM)
+        assert "test" in reg
+        assert "missing" not in reg
+

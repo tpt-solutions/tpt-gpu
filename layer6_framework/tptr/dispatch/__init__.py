@@ -41,6 +41,13 @@ class OpEntry:
     backend: str = "tptr"
 
 
+def _default_factory(name: str) -> Callable:
+    """Create a default factory that returns a no-op function."""
+    def factory():
+        return lambda *args, **kwargs: None
+    return factory
+
+
 class DispatchRegistry:
     """Registry for tensor operations mapping high-level ops to TPT kernels."""
 
@@ -82,6 +89,22 @@ class DispatchRegistry:
     def remove(self, name: str) -> bool:
         if name in self._ops:
             del self._ops[name]
+            return True
+        return False
+
+    def clear(self) -> None:
+        self._ops.clear()
+
+    def __len__(self) -> int:
+        return len(self._ops)
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._ops
+
+    def list_by_type(self, op_type: OpType) -> List[str]:
+        return [name for name, entry in self._ops.items() if entry.metadata.op_type == op_type]
+
+
 # Module-level default registry
 _default_registry = DispatchRegistry()
 
@@ -126,18 +149,6 @@ _default_registry.register("matmul", OpType.MATMUL, input_count=2, output_count=
                           kernel_name="tptr_matmul", description="Matrix multiplication")
 _default_registry.register("layer_norm", OpType.LAYER_NORM, input_count=1, output_count=1,
                           kernel_name="tptr_layer_norm", description="Layer normalization")
-
-            return True
-        return False
-
-    def clear(self) -> None:
-        self._ops.clear()
-
-    def __len__(self) -> int:
-        return len(self._ops)
-
-    def __contains__(self, name: str) -> bool:
-        return name in self._ops
 
 
 def _default_factory(name: str) -> Callable:

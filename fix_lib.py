@@ -1,4 +1,6 @@
-//! # TPT Runtime / tptr-core
+import pathlib
+path = pathlib.Path(r'c:\Programming\tpt-gpu\layer4_tptr\tptr-core\src\lib.rs')
+content = """//! # TPT Runtime / tptr-core
 //!
 //! Core library for the TPT GPU compute runtime. Provides GPU memory management,
 //! command queue / scheduler, kernel launch interface, and device abstraction.
@@ -23,3 +25,7 @@ pub use command::{CommandQueue, CommandScheduler, Command, QueuePriority, QueueH
 
 /// Re-export kernel types at the crate root.
 pub use kernel::{Kernel, KernelConfig, KernelHandle, Dim3, KernelLaunchMode};
+"""
+path.write_text(content)
+print("Fixed lib.rs")
+

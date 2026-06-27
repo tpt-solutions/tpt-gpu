@@ -52,6 +52,17 @@ class TptrDevice:
         self._streams.append(stream)
         return stream
 
+    def create_kernel(self, name: str) -> "TptrKernel":
+        kernel = TptrKernel(name, self)
+        self._kernels[name] = kernel
+        return kernel
+
+    def synchronize(self) -> None: self._device.synchronize()
+    def __enter__(self) -> "TptrDevice": return self
+    def __exit__(self, *args) -> None: self.synchronize()
+    def __repr__(self) -> str: return f"TptrDevice(index={self.index}, name='{self.name}')"
+
+
 class TptrMemory:
     """High-level memory allocation wrapper."""
     def __init__(self, alloc: _NativeMemoryAllocation):
@@ -97,6 +108,17 @@ class TptrKernel:
 class TptrKernelConfig:
     """High-level kernel configuration wrapper."""
     def __init__(self, grid: Tuple[int, int, int] = (1, 1, 1),
+                 block: Tuple[int, int, int] = (1, 1, 1), shared_mem: int = 0):
+        self._config = _NativeKernelConfig(grid, block, shared_mem)
+    @property
+    def grid_size(self) -> Tuple[int, int, int]: return self._config.grid_size
+    @property
+    def block_size(self) -> Tuple[int, int, int]: return self._config.block_size
+    @property
+    def shared_mem_bytes(self) -> int: return self._config.shared_mem_bytes
+    def __repr__(self) -> str: return f"TptrKernelConfig(grid={self.grid_size}, block={self.block_size})"
+
+
 class TptrContext:
     """Context manager for device + stream lifecycle."""
     def __init__(self, device_index: int = 0, stream_priority: str = "normal"):
@@ -138,24 +160,4 @@ def device_context(index: int = 0):
         yield dev
     finally:
         dev.synchronize()
-
-                 block: Tuple[int, int, int] = (1, 1, 1), shared_mem: int = 0):
-        self._config = _NativeKernelConfig(grid, block, shared_mem)
-    @property
-    def grid_size(self) -> Tuple[int, int, int]: return self._config.grid_size
-    @property
-    def block_size(self) -> Tuple[int, int, int]: return self._config.block_size
-    @property
-    def shared_mem_bytes(self) -> int: return self._config.shared_mem_bytes
-    def __repr__(self) -> str: return f"TptrKernelConfig(grid={self.grid_size}, block={self.block_size})"
-
-    def create_kernel(self, name: str) -> "TptrKernel":
-        kernel = TptrKernel(name, self)
-        self._kernels[name] = kernel
-        return kernel
-
-    def synchronize(self) -> None: self._device.synchronize()
-    def __enter__(self) -> "TptrDevice": return self
-    def __exit__(self, *args) -> None: self.synchronize()
-    def __repr__(self) -> str: return f"TptrDevice(index={self.index}, name='{self.name}')"
 

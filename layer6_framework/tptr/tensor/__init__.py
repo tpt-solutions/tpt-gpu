@@ -92,6 +92,17 @@ class TptrTensor:
             return _binary_op("sub", self, other)
         return _binary_op("sub", self, other)
 
+    def __repr__(self) -> str:
+        return f"TptrTensor(shape={self._shape}, dtype={self._dtype.name})"
+
+    def __del__(self) -> None:
+        try:
+            if hasattr(self, '_native_device') and hasattr(self, '_native_alloc'):
+                if not self._native_alloc.is_freed():
+                    self._native_device.free(self._native_alloc)
+        except Exception:
+            pass
+
 def _binary_op(op: str, a: TptrTensor, b: Union[TptrTensor, float, int]) -> TptrTensor:
     """Execute a binary operation, returning a new tensor."""
     if isinstance(b, TptrTensor):

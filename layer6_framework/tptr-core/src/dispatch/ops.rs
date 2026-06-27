@@ -1,7 +1,7 @@
 //! Dispatch Table - Operation dispatch for framework tensor operations.
-use crate::error::{TptrResult, TptrError, ErrorCode};
-use crate::memory::MemoryAllocation;
-use crate::kernel::KernelConfig;
+use tptr_core::error::{TptrResult, TptrError, ErrorCode};
+use tptr_core::memory::MemoryAllocation;
+use tptr_core::kernel::KernelConfig;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 

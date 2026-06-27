@@ -1,6 +1,6 @@
 //! Command Batching - Amortize submission overhead for small operations.
-use crate::command::{Command, QueueHandle, QueuePriority, CommandQueue};
-use crate::error::TptrResult;
+use tptr_core::command::{Command, QueueHandle, QueuePriority, CommandQueue};
+use tptr_core::error::TptrResult;
 
 /// A batch of commands to be submitted atomically.
 #[derive(Debug)]
@@ -70,7 +70,7 @@ impl BatchSubmitter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::command::CommandQueue;
+    use tptr_core::command::CommandQueue;
     #[test]
     fn test_batch_new() {
         let qh = QueueHandle(1);

@@ -5,6 +5,7 @@ They run via cargo test on the tptr-core crate.
 """
 import subprocess
 import os
+import shutil
 import pytest
 
 

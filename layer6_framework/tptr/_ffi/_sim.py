@@ -82,6 +82,20 @@ class Device:
 
     def create_kernel(self, name: str) -> "Kernel":
         kernel = Kernel(name)
+        self._kernels[name] = kernel
+        return kernel
+
+    def info(self) -> Dict[str, Any]:
+        return {"name": self._info.name, "total_memory": str(self._info.total_memory),
+                "backend": self._info.backend, "warp_size": str(self._info.warp_size)}
+
+    def synchronize(self) -> None:
+        pass
+
+    def __repr__(self) -> str:
+        return f"Device(index={self._index}, name='{self._info.name}')"
+
+
 @dataclass
 class MemoryAllocation:
     """Simulated GPU memory allocation handle."""
@@ -156,17 +170,4 @@ class KernelHandle:
     def is_complete(self) -> bool: return self._complete
     def wait(self) -> None: self._complete = True
     def __repr__(self) -> str: return f"KernelHandle(id={self._id}, complete={self._complete})"
-
-        self._kernels[name] = kernel
-        return kernel
-
-    def info(self) -> Dict[str, Any]:
-        return {"name": self._info.name, "total_memory": str(self._info.total_memory),
-                "backend": self._info.backend, "warp_size": str(self._info.warp_size)}
-
-    def synchronize(self) -> None:
-        pass
-
-    def __repr__(self) -> str:
-        return f"Device(index={self._index}, name='{self._info.name}')"
 

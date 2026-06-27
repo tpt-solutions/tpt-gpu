@@ -1,0 +1,14 @@
+[package]
+name = "tptr-dispatch"
+version = "0.1.0"
+edition = "2021"
+description = "TPT Framework Backends - Performance-critical dispatch paths"
+license = "Apache-2.0"
+
+[dependencies]
+tptr-core = { path = "../../layer4_tptr/tptr-core" }
+
+[lib]
+name = "tptr_dispatch"
+path = "src/lib.rs"
+
