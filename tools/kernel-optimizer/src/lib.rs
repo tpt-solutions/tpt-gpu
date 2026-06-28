@@ -23,6 +23,38 @@ pub use real_evaluator::{
     generate_attention_milestone_report, generate_attention_milestone_json,
 };
 
+pub mod attention_eval;
+pub use attention_eval::{
+    RealAttentionEvaluator, AttentionProblemConfig, AttentionOptResult,
+    standard_attention_problems, optimize_attention_problem, optimize_all_attention_problems,
+    generate_attention_milestone_report, generate_attention_milestone_json,
+};
+
+pub mod conv2d_eval;
+pub use conv2d_eval::{
+    RealConv2dEvaluator, Conv2dProblemConfig, Conv2dOptResult,
+    standard_conv2d_problems, optimize_conv2d_problem, optimize_all_conv2d_problems,
+    generate_conv2d_milestone_report, generate_conv2d_milestone_json,
+};
+
+pub mod normalization_eval;
+pub use normalization_eval::{
+    RealNormalizationEvaluator, NormalizationProblemConfig, NormalizationOptResult,
+    standard_normalization_problems, optimize_normalization_problem, optimize_all_normalization_problems,
+    generate_normalization_milestone_report, generate_normalization_milestone_json,
+};
+
+pub mod vector_add_eval;
+pub use vector_add_eval::{
+    RealVectorAddEvaluator, VectorAddProblemConfig, VectorAddOptResult,
+    standard_vector_add_problems, optimize_vector_add_problem, optimize_all_vector_add_problems,
+    generate_vector_add_milestone_report, generate_vector_add_milestone_json,
+};
+
+pub mod kernel_category;
+pub use kernel_category::KernelCategory;
+
+
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -220,27 +252,92 @@ impl SimulatedEvaluator {
 
 impl KernelEvaluator for SimulatedEvaluator {
     fn evaluate(&self, params: &TuningParams) -> f64 {
-        let tile_m = params.get("tile_m").unwrap_or(32) as f64;
-        let tile_n = params.get("tile_n").unwrap_or(32) as f64;
-        let tile_k = params.get("tile_k").unwrap_or(16) as f64;
-        let vec_width = params.get("vec_width").unwrap_or(4) as f64;
-        let unroll = params.get("unroll").unwrap_or(4) as f64;
-
-        let tile_score = (1.0 - ((tile_m - 64.0).abs() + (tile_n - 64.0).abs()) / 256.0).max(0.2);
-        let k_score = (1.0 - (tile_k - 32.0).abs() / 64.0).max(0.2);
-        let vec_score = (vec_width / 4.0).min(1.0);
-        let unroll_score = (unroll / 4.0).min(1.0);
-
-        let base = 120.0 * tile_score * k_score * vec_score * unroll_score;
-
-        // Deterministic noise keyed on the params so repeated calls are stable.
+        let category = crate::kernel_category::KernelCategory::from_name(&self.kernel_name);
+        let base = match category {
+            Some(crate::kernel_category::KernelCategory::Gemm) => Self::score_gemm(params),
+            Some(crate::kernel_category::KernelCategory::Attention) => Self::score_attention(params),
+            Some(crate::kernel_category::KernelCategory::Conv2d) => Self::score_conv2d(params),
+            Some(crate::kernel_category::KernelCategory::VectorAdd) => Self::score_vector_add(params),
+            Some(crate::kernel_category::KernelCategory::Normalization) => Self::score_normalization(params),
+            None => Self::score_gemm(params),
+        };
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let mut h = DefaultHasher::new();
         params.display().hash(&mut h);
         let noise = ((h.finish() % 200) as f64 / 200.0 - 0.5) * 0.04 * base;
-
         (base + noise).max(1.0)
+    }
+}
+
+impl SimulatedEvaluator {
+    pub fn score_gemm(params: &TuningParams) -> f64 {
+        let tile_m = params.get("tile_m").unwrap_or(32) as f64;
+        let tile_n = params.get("tile_n").unwrap_or(32) as f64;
+        let tile_k = params.get("tile_k").unwrap_or(16) as f64;
+        let vec_width = params.get("vec_width").unwrap_or(4) as f64;
+        let unroll = params.get("unroll").unwrap_or(4) as f64;
+        let tile_score = (1.0 - ((tile_m - 64.0).abs() + (tile_n - 64.0).abs()) / 256.0).max(0.2);
+        let k_score = (1.0 - (tile_k - 32.0).abs() / 64.0).max(0.2);
+        let vec_score = (vec_width / 4.0).min(1.0);
+        let unroll_score = (unroll / 4.0).min(1.0);
+        120.0 * tile_score * k_score * vec_score * unroll_score
+    }
+
+    pub fn score_attention(params: &TuningParams) -> f64 {
+        let block_q = params.get("block_q").unwrap_or(32) as f64;
+        let block_kv = params.get("block_kv").unwrap_or(32) as f64;
+        let num_heads = params.get("num_heads").unwrap_or(4) as f64;
+        let head_dim = params.get("head_dim").unwrap_or(64) as f64;
+        let unroll = params.get("unroll").unwrap_or(2) as f64;
+        let bq_score = (1.0 - (block_q - 64.0).abs() / 128.0).max(0.2);
+        let bkv_score = (1.0 - (block_kv - 64.0).abs() / 128.0).max(0.2);
+        let heads_score = (num_heads / 8.0).min(1.0).max(0.25);
+        let dim_score = (1.0 - (head_dim - 64.0).abs() / 128.0).max(0.3);
+        let unroll_score = (unroll / 4.0).min(1.0).max(0.5);
+        200.0 * bq_score * bkv_score * heads_score * dim_score * unroll_score
+    }
+
+    pub fn score_conv2d(params: &TuningParams) -> f64 {
+        let tile_oc = params.get("tile_oc").unwrap_or(32) as f64;
+        let tile_ic = params.get("tile_ic").unwrap_or(16) as f64;
+        let tile_oh = params.get("tile_oh").unwrap_or(8) as f64;
+        let tile_ow = params.get("tile_ow").unwrap_or(8) as f64;
+        let kernel_w = params.get("kernel_w").unwrap_or(3) as f64;
+        let kernel_h = params.get("kernel_h").unwrap_or(3) as f64;
+        let stride = params.get("stride").unwrap_or(1) as f64;
+        let unroll = params.get("unroll").unwrap_or(2) as f64;
+        let oc_score = (1.0 - (tile_oc - 64.0).abs() / 128.0).max(0.2);
+        let ic_score = (1.0 - (tile_ic - 32.0).abs() / 64.0).max(0.2);
+        let oh_score = (1.0 - (tile_oh - 16.0).abs() / 32.0).max(0.2);
+        let ow_score = (1.0 - (tile_ow - 16.0).abs() / 32.0).max(0.2);
+        let kw_score = (1.0 - (kernel_w - 3.0).abs() / 8.0).max(0.3);
+        let kh_score = (1.0 - (kernel_h - 3.0).abs() / 8.0).max(0.3);
+        let stride_score = if stride <= 1.0 { 1.0 } else { 0.7 };
+        let unroll_score = (unroll / 4.0).min(1.0).max(0.5);
+        150.0 * oc_score * ic_score * oh_score * ow_score * kw_score * kh_score * stride_score * unroll_score
+    }
+
+    pub fn score_vector_add(params: &TuningParams) -> f64 {
+        let block_size = params.get("block_size").unwrap_or(128) as f64;
+        let vec_width = params.get("vec_width").unwrap_or(2) as f64;
+        let grid_size = params.get("grid_size").unwrap_or(16) as f64;
+        let bs_score = (1.0 - (block_size - 256.0).abs() / 512.0).max(0.2);
+        let vw_score = (vec_width / 4.0).min(1.0).max(0.25);
+        let gs_score = (grid_size / 32.0).min(1.0).max(0.25);
+        16.0 * bs_score * vw_score * gs_score
+    }
+
+    pub fn score_normalization(params: &TuningParams) -> f64 {
+        let block_size = params.get("block_size").unwrap_or(128) as f64;
+        let vec_width = params.get("vec_width").unwrap_or(2) as f64;
+        let unroll = params.get("unroll").unwrap_or(2) as f64;
+        let warp_reduce = params.get("warp_reduce").unwrap_or(1) as f64;
+        let bs_score = (1.0 - (block_size - 256.0).abs() / 512.0).max(0.2);
+        let vw_score = (vec_width / 4.0).min(1.0).max(0.25);
+        let ur_score = (unroll / 4.0).min(1.0).max(0.5);
+        let wr_score = if warp_reduce >= 1.0 { 1.0 } else { 0.6 };
+        32.0 * bs_score * vw_score * ur_score * wr_score
     }
 }
 

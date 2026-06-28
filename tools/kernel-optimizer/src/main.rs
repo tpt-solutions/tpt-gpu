@@ -112,7 +112,8 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn handle_grid(kernel: String, elem: String, top: usize) -> anyhow::Result<()> {
-    let space = ParamSpace::gemm_default();
+    let space = ParamSpace::for_kernel(&kernel)
+        .map_err(|e| anyhow::anyhow!(e))?;
     println!("Grid search: {} (elem={}) -- {} configs", kernel, elem, space.total_configs());
     let eval = SimulatedEvaluator::new(&kernel);
     let results = grid_search(&space, &eval);
@@ -127,7 +128,8 @@ fn handle_climb(
     kernel: String, tile_m: u32, tile_n: u32, tile_k: u32,
     vec_width: u32, unroll: u32, max_iters: usize,
 ) -> anyhow::Result<()> {
-    let space = ParamSpace::gemm_default();
+    let space = ParamSpace::for_kernel(&kernel)
+        .map_err(|e| anyhow::anyhow!(e))?;
     let start = TuningParams(HashMap::from([
         ("tile_m".into(), tile_m), ("tile_n".into(), tile_n),
         ("tile_k".into(), tile_k), ("vec_width".into(), vec_width),
@@ -142,10 +144,14 @@ fn handle_climb(
 }
 
 fn handle_ai(kernel: String, iterations: usize) -> anyhow::Result<()> {
-    let space = ParamSpace::gemm_default();
+    let space = ParamSpace::for_kernel(&kernel)
+        .map_err(|e| anyhow::anyhow!(e))?;
     let provider = tpt_shared::provider_from_env();
     println!("AI-guided search: {} -- provider: {} -- {} iterations",
         kernel, provider.name(), iterations);
+    let start = space.all_params().into_iter().next().unwrap_or_default();
+    let eval = SimulatedEvaluator::new(&kernel);
+    let result = ai_guided_search(&space, &start, &eval, provider.as_ref(), &kernel, iterations);
     let start = TuningParams(HashMap::from([
         ("tile_m".into(), 32u32), ("tile_n".into(), 32),
         ("tile_k".into(), 16), ("vec_width".into(), 4),
@@ -162,7 +168,8 @@ fn handle_optimize(
     kernel: String, elem: String, ai: bool, ai_iters: usize,
     output: Option<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
-    let space = ParamSpace::gemm_default();
+    let space = ParamSpace::for_kernel(&kernel)
+        .map_err(|e| anyhow::anyhow!(e))?;
     let eval = SimulatedEvaluator::new(&kernel);
     println!("[1/{}] Grid search ({} configs)...", if ai { 3 } else { 2 }, space.total_configs());
     let grid_results = grid_search(&space, &eval);
