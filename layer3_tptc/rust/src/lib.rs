@@ -34,3 +34,12 @@ mod tests {
     #[test] fn test_ir_types() { let t = ir::Type::primitive("i32"); assert_eq!(t.to_string(), "i32"); }
     #[test] fn test_block() { let b = ir::Block::new("entry"); assert_eq!(b.label, "entry"); }
 }
+
+pub mod ffi;
+pub mod ir;
+pub mod passes;
+pub mod validate;
+pub mod fusion;
+pub mod dispatch;
+pub mod tuning;
+pub mod bench;

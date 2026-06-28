@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "entries": {
+    "vector_add_f32_1024": {
+      "key": "vector_add_f32_1024",
+      "selected_variant": "vector_add_f32",
+      "execution_time_ms": 0.5,
+      "gpu_model": "RTX_3090"
+    },
+    "matmul_f32_1024x1024": {
+      "key": "matmul_f32_1024x1024",
+      "selected_variant": "matmul_f32",
+      "execution_time_ms": 2.3,
+      "gpu_model": "RTX_3090"
+    },
+    "softmax_f32_1024": {
+      "key": "softmax_f32_1024",
+      "selected_variant": "softmax_f32",
+      "execution_time_ms": 0.8,
+      "gpu_model": "RTX_3090"
+    },
+    "flash_attention_f32_1024x1024": {
+      "key": "flash_attention_f32_1024x1024",
+      "selected_variant": "flash_attention_f32",
+      "execution_time_ms": 5.2,
+      "gpu_model": "RTX_3090"
+    },
+    "conv_bn_relu_f32_32x32": {
+      "key": "conv_bn_relu_f32_32x32",
+      "selected_variant": "conv_bn_relu_f32",
+      "execution_time_ms": 1.5,
+      "gpu_model": "RTX_3090"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+[package]
+name = "tptf-dispatch"
+version = "0.1.0"
+edition = "2021"
+description = "Performance-critical dispatch paths for TPT framework backends"
+license = "Apache-2.0"
+
+[lib]
+name = "_dispatch"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+numpy = "0.22"
+tptr-core = { path = "../../layer4_tptr/tptr-core", optional = true }
+
+[features]
+# Build with hardware runtime support
+hardware = ["tptr-core"]
+# Simulation mode (default): pure Rust fallback, no tptr dependency
+default = []
+
+[dev-dependencies]

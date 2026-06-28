@@ -1,10 +1,6 @@
 [workspace]
 resolver = "2"
-<<<<<<< Updated upstream
-members = ["tptb-core", "tptb-lsp", "tptb-format"]
-=======
-members = ["tptb-core", "tptb-cli"]
->>>>>>> Stashed changes
+members = ["tptb-core", "tptb-cli", "tptb-lsp", "tptb-format"]
 
 [workspace.package]
 version = "0.1.0"

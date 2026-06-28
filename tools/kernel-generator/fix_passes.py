@@ -1,4 +1,9 @@
-use crate::ir::Region;
+"""Fix passes.rs by removing duplicate content."""
+import pathlib
+
+p = pathlib.Path(r"D:\Programming\1PRODUCTION\Open Source\tpt-gpu\layer3_tptc\rust\src\passes.rs")
+
+content = """use crate::ir::Region;
 use crate::validate::ValidatePass;
 use crate::fusion::FusionPass;
 
@@ -48,3 +53,7 @@ pub fn default_pipeline() -> PassPipeline {
     p.add(Box::new(FusionPass));
     p
 }
+"""
+
+p.write_text(content, encoding="utf-8")
+print(f"wrote {p.stat().st_size} bytes")

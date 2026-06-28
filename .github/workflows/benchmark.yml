@@ -1,0 +1,75 @@
+name: Kernel Benchmark
+
+on:
+  pull_request:
+    paths:
+      - 'layer3_tptc/rust/**'
+      - 'tools/kernel-generator/**'
+      - 'tuning/**'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build tptc-rs
+        run: cargo build --release
+        working-directory: .
+
+      - name: Run quick benchmark on base
+        run: |
+          git checkout ${{ github.event.pull_request.base.sha }}
+          cargo run --release -- bench --quick > baseline_results.txt 2>&1 || true
+        working-directory: .
+
+      - name: Run quick benchmark on head
+        run: |
+          git checkout ${{ github.sha }}
+          cargo run --release -- bench --quick > current_results.txt 2>&1 || true
+        working-directory: .
+
+      - name: Compare results and post comment
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            let baseline = '';
+            let current = '';
+            try { baseline = fs.readFileSync('baseline_results.txt', 'utf8'); } catch(e) {}
+            try { current = fs.readFileSync('current_results.txt', 'utf8'); } catch(e) {}
+
+            const body = `## Kernel Benchmark Results
+
+            **Baseline:**
+            \`\`\`
+            ${baseline || 'No baseline results'}
+            \`\`\`
+
+            **Current:**
+            \`\`\`
+            ${current || 'No current results'}
+            \`\`\`
+
+            *This benchmark was run automatically on every kernel change. Please review the performance impact before merging.*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
