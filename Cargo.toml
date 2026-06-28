@@ -1,4 +1,4 @@
-﻿[workspace]
+[workspace]
 members = [
     "layer3_tptc/rust",
     "tools/kernel-generator",
@@ -7,11 +7,12 @@ members = [
     "tools/kernel-optimizer",
     "layer5_tptp/tptp-core",
     "layer5_tptp/benches",
+    "tools/tpt-bench",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 license = "Apache-2.0 WITH LLVM-exception"
 description = "TPT GPU kernel generator and compiler infrastructure"

@@ -3,12 +3,17 @@ resolver = "2"
 members = ["tptb-core", "tptb-cli", "tptb-lsp", "tptb-format"]
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["TPT GPU Contributors"]
 description = "TPT Brain — TPT Script compiler frontend (lexer, parser, semantic analysis)"
 license = "Apache-2.0"
 repository = "https://github.com/tpt-gpu/tpt-gpu"
+documentation = "https://docs.rs/tptb-core"
+homepage = "https://github.com/tpt-gpu/tpt-gpu"
+keywords = ["gpu", "compiler", "ml", "ai", "tptscript"]
+categories = ["compilers", "development-tools"]
+rust-version = "1.75"
 
 [workspace.dependencies]
 thiserror = "2"

@@ -5,6 +5,7 @@
 //! and manages output buffer allocation.
 
 pub mod gemm;
+pub mod fused_gemm;
 pub mod attention;
 pub mod conv2d;
 pub mod conv3d;
@@ -18,6 +19,7 @@ pub mod embedding;
 pub mod pooling;
 
 pub use gemm::GemmKernel;
+pub use fused_gemm::{FusedGemmKernel, FusedActivation, FusedGemmParams};
 pub use attention::AttentionKernel;
 pub use conv2d::Conv2DKernel;
 pub use conv3d::Conv3DKernel;

@@ -832,21 +832,21 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 
 [[package]]
 name = "tptb-cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "tptb-core",
 ]
 
 [[package]]
 name = "tptb-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "tptb-format"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -856,7 +856,7 @@ dependencies = [
 
 [[package]]
 name = "tptb-lsp"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "dashmap",
  "serde",

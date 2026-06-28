@@ -1,0 +1,34 @@
+name: Validate GPU Profiles
+
+on:
+  pull_request:
+    paths:
+      - 'tuning/*.json'
+
+jobs:
+  validate:
+    name: Schema-validate tuning profiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ajv-cli
+        run: npm install -g ajv-cli ajv-formats
+
+      - name: Validate all profiles against schema
+        run: |
+          SCHEMA="tuning/schema.json"
+          FAILED=0
+          for f in tuning/*.json; do
+            [ "$f" = "$SCHEMA" ] && continue
+            echo "Validating $f ..."
+            if ! ajv validate -s "$SCHEMA" -d "$f" --strict=false; then
+              echo "::error file=$f::Schema validation failed"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
+
+      - name: Summary
+        if: success()
+        run: echo "All GPU profiles validated successfully."

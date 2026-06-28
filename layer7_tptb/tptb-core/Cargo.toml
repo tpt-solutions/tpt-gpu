@@ -6,6 +6,12 @@ authors.workspace = true
 description = "TPT Script compiler frontend — lexer, AST, and parser"
 license.workspace = true
 repository.workspace = true
+documentation = "https://docs.rs/tptb-core"
+homepage = "https://github.com/tpt-gpu/tpt-gpu"
+readme = "README.md"
+keywords = ["gpu", "compiler", "ml", "ai", "tptscript", "tptir"]
+categories = ["compilers", "development-tools", "science"]
+rust-version = "1.75"
 
 [dependencies]
 thiserror = { workspace = true }

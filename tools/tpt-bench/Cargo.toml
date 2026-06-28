@@ -1,0 +1,18 @@
+[package]
+name = "tpt-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "User-runnable dynamic benchmark suite for TPT GPU kernels"
+
+[[bin]]
+name = "tpt-bench"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+toml = "0.8"

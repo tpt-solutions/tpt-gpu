@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "tptp-benches"
 version.workspace = true
 edition.workspace = true
@@ -43,3 +43,7 @@ path = "src/examples/profile_attention.rs"
 [[example]]
 name = "profile_conv2d"
 path = "src/examples/profile_conv2d.rs"
+
+[[example]]
+name = "fused_gemm_benchmark"
+path = "src/examples/fused_gemm_benchmark.rs"

@@ -16,7 +16,8 @@ pub mod tptir;
 pub use error::{TptpError, TptpResult};
 pub use kernel::{PrimitiveKernel, KernelConfig, KernelDispatch, KernelBuilder, KernelResult};
 pub use memory::{GpuBuffer, BufferFlags, DType};
-pub use kernels::{GemmKernel, AttentionKernel, Conv2DKernel, Conv3DKernel,
+pub use kernels::{GemmKernel, FusedGemmKernel, FusedActivation, FusedGemmParams,
+                  AttentionKernel, Conv2DKernel, Conv3DKernel,
                   LayerNormKernel, BatchNormKernel, GroupNormKernel,
                   RmsNormKernel, SoftmaxKernel, ElementwiseKernel, ActivationKind,
                   EmbeddingKernel, MaxPool2DKernel, AvgPool2DKernel};
