@@ -16,4 +16,7 @@ pub mod problem_configs;
 pub use harness::{BenchConfig, BenchHarness, BenchResult, KernelBench};
 pub use report::{BenchReport, BaselineComparison};
 pub use stats::{compute_statistics, StatisticalSummary};
-pub use problem_configs::{get_gemm_config, get_attention_config, get_conv2d_config};
+pub use problem_configs::{
+    get_gemm_config, get_attention_config, get_conv2d_config, get_all_baselines,
+    GemmProblem, AttentionProblem, Conv2DProblem,
+};

@@ -121,7 +121,7 @@
 - [x] Configurable `GemmParams` (tile_m, tile_n, tile_k, vec_width, unroll) + template MLIR placeholders
 - [x] Same configurable params for Attention (tile_seq, tile_head) and Conv2D (tile_oh, tile_ow, tile_ic)
 - [x] Multi-provider AI abstraction (`tools/shared/`): Claude, OpenRouter, Ollama — single `AiProvider` trait
-- [ ] Benchmark harness (`layer5_tptp/benches/`): GEMM vs cuBLAS/rocBLAS/OpenBLAS; Attention vs FlashAttention v2/cuDNN; Conv2D vs cuDNN
+- [x] Benchmark harness (`layer5_tptp/benches/`): GEMM vs cuBLAS/rocBLAS/OpenBLAS; Attention vs FlashAttention v2/cuDNN; Conv2D vs cuDNN
 - [x] Structured JSON benchmark output (GFLOPS, bandwidth GB/s, efficiency-vs-baseline %)
 - [x] Self-iterating kernel optimizer (`tools/kernel-optimizer/`): grid → hill-climb → AI-guided search
 - [x] AI-assisted kernel generator (`tools/kernel-generator/`): spec → TPTIR → validate → correctness test → benchmark

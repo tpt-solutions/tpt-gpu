@@ -8,6 +8,8 @@ pub struct BenchConfig {
     pub measurement_iterations: u32,
     pub max_duration: Duration,
     pub quick: bool,
+    pub run_baselines: bool,
+    pub baseline_vendor: Option<String>,
 }
 
 impl Default for BenchConfig {
@@ -17,6 +19,8 @@ impl Default for BenchConfig {
             measurement_iterations: 100,
             max_duration: Duration::from_secs(300),
             quick: false,
+            run_baselines: true,
+            baseline_vendor: None,
         }
     }
 }
@@ -28,10 +32,32 @@ impl BenchConfig {
             measurement_iterations: 5,
             max_duration: Duration::from_secs(30),
             quick: true,
+            run_baselines: false,
+            baseline_vendor: None,
         }
     }
     pub fn standard() -> Self {
         BenchConfig::default()
+    }
+    pub fn ci() -> Self {
+        BenchConfig {
+            warmup_iterations: 1,
+            measurement_iterations: 3,
+            max_duration: Duration::from_secs(60),
+            quick: false,
+            run_baselines: true,
+            baseline_vendor: None,
+        }
+    }
+    pub fn comprehensive() -> Self {
+        BenchConfig {
+            warmup_iterations: 20,
+            measurement_iterations: 500,
+            max_duration: Duration::from_secs(1800),
+            quick: false,
+            run_baselines: true,
+            baseline_vendor: None,
+        }
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
