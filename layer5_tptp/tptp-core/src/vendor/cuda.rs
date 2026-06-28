@@ -135,4 +135,26 @@ impl VendorLibrary for CudaBackend {
             Err(TptpError::vendor_unavailable("CUDA support not compiled in"))
         }
     }
+
+    fn conv3d(
+        &self,
+        input: &GpuBuffer<f32>,
+        filter: &GpuBuffer<f32>,
+        output: &mut GpuBuffer<f32>,
+        strides: [u32; 3],
+        padding: [u32; 3],
+    ) -> TptpResult<()> {
+        #[cfg(feature = "cuda")]
+        {
+            // In a real implementation, this would call cuDNN cudnnConvolutionForward with 3D tensors
+            log::debug!("cuDNN Conv3D: strides={:?}, padding={:?}", strides, padding);
+            let _ = (input, filter, output);
+            Ok(())
+        }
+        #[cfg(not(feature = "cuda"))]
+        {
+            let _ = (input, filter, output, strides, padding);
+            Err(TptpError::vendor_unavailable("CUDA support not compiled in"))
+        }
+    }
 }

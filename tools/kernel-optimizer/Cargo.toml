@@ -1,12 +1,16 @@
 [package]
-name = "tpt"
+name = "tpt-optimizer"
 version.workspace = true
 edition.workspace = true
-description = "TPT GPU kernel generator CLI"
 license.workspace = true
+description = "Self-iterating TPT GPU kernel parameter optimizer"
+
+[lib]
+name = "tpt_optimizer"
+path = "src/lib.rs"
 
 [[bin]]
-name = "tpt"
+name = "tpt-optimizer"
 path = "src/main.rs"
 
 [dependencies]

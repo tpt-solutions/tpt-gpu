@@ -1,11 +1,11 @@
-name: Kernel Benchmark
+﻿name: Kernel Benchmark
 
 on:
   pull_request:
     paths:
-      - 'layer3_tptc/rust/**'
-      - 'tools/kernel-generator/**'
-      - 'tuning/**'
+      - ''layer3_tptc/rust/**''
+      - ''tools/kernel-generator/**''
+      - ''tuning/**''
 
 jobs:
   benchmark:
@@ -25,7 +25,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles(''**/Cargo.lock'') }}
 
       - name: Build tptc-rs
         run: cargo build --release
@@ -34,38 +34,57 @@ jobs:
       - name: Run quick benchmark on base
         run: |
           git checkout ${{ github.event.pull_request.base.sha }}
-          cargo run --release -- bench --quick > baseline_results.txt 2>&1 || true
+          cargo run --release -- bench --quick --output-json baseline_report.json || true
         working-directory: .
 
       - name: Run quick benchmark on head
         run: |
           git checkout ${{ github.sha }}
-          cargo run --release -- bench --quick > current_results.txt 2>&1 || true
+          cargo run --release -- bench --quick --output-json current_report.json || true
         working-directory: .
 
       - name: Compare results and post comment
         uses: actions/github-script@v6
         with:
           script: |
-            const fs = require('fs');
-            let baseline = '';
-            let current = '';
-            try { baseline = fs.readFileSync('baseline_results.txt', 'utf8'); } catch(e) {}
-            try { current = fs.readFileSync('current_results.txt', 'utf8'); } catch(e) {}
+            const fs = require(''fs'');
+            let baseline = {};
+            let current = {};
+            try { baseline = JSON.parse(fs.readFileSync(''baseline_report.json'', ''utf8'')); } catch(e) {}
+            try { current = JSON.parse(fs.readFileSync(''current_report.json'', ''utf8'')); } catch(e) {}
 
-            const body = `## Kernel Benchmark Results
+            let body = ''## Kernel Benchmark Results\n\n'';
 
-            **Baseline:**
-            \`\`\`
-            ${baseline || 'No baseline results'}
-            \`\`\`
+            if (current.kernels) {
+              body += ''**Current Report:**\n\n'';
+              body += ''| Kernel | GFLOPS | Bandwidth (GB/s) | Efficiency (%) | Status |\n'';
+              body += ''|--------|--------|-----------------|---------------|--------|\n'';
+              for (const k of current.kernels) {
+                const status = k.is_regression ? ''**REGRESSION**'' : ''OK'';
+                body += `| ${k.kernel} | ${k.gflops.toFixed(2)} | ${k.bandwidth_gbps.toFixed(2)} | ${k.efficiency_pct.toFixed(1)} | ${status} |\n`;
+              }
+              body += ''\n'';
+              if (current.summary) {
+                body += `**Summary:** ${current.summary.total_kernels} kernels, ${current.summary.regression_count} regressions, best ${current.summary.best_gflops.toFixed(2)} GFLOPS, avg ${current.summary.avg_efficiency_pct.toFixed(1)}% efficiency\n\n`;
+              }
+            } else {
+              body += ''No current benchmark results available.\n\n'';
+            }
 
-            **Current:**
-            \`\`\`
-            ${current || 'No current results'}
-            \`\`\`
+            if (baseline.kernels && current.kernels) {
+              body += ''**Efficiency Deltas (vs baseline):**\n\n'';
+              for (let i = 0; i < baseline.kernels.length && i < current.kernels.length; i++) {
+                const b = baseline.kernels[i];
+                const c = current.kernels[i];
+                const delta = ((c.execution_time_ms - b.execution_time_ms) / b.execution_time_ms * 100).toFixed(2);
+                const sign = delta >= 0 ? ''+'' : '''';
+                const flag = delta > 5 ? '' **REGRESSION**'': '''';
+                body += `- \`${c.kernel}\`: ${sign}${delta}% (${b.execution_time_ms.toFixed(3)}ms \u2192 ${c.execution_time_ms.toFixed(3)}ms)${flag}\n`;
+              }
+              body += ''\n'';
+            }
 
-            *This benchmark was run automatically on every kernel change. Please review the performance impact before merging.*`;
+            body += ''*This benchmark was run automatically on every kernel change. Please review the performance impact before merging.*'';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,

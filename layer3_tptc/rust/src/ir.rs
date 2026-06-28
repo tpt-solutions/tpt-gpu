@@ -26,6 +26,43 @@ impl fmt::Display for Type{
 }}}
 #[derive(Debug,Clone)]
 pub enum OpKind{Addi,Subi,Muli,Addf,Subf,Mulf,And,Or,Xor,CmpEq,CmpLt,Load,Store,Branch,Return,Constant(String),Custom(String)}
+
+impl fmt::Display for OpKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            OpKind::Addi => write!(f, "addi"),
+            OpKind::Subi => write!(f, "subi"),
+            OpKind::Muli => write!(f, "muli"),
+            OpKind::Addf => write!(f, "addf"),
+            OpKind::Subf => write!(f, "subf"),
+            OpKind::Mulf => write!(f, "mulf"),
+            OpKind::And => write!(f, "andi"),
+            OpKind::Or => write!(f, "ori"),
+            OpKind::Xor => write!(f, "xori"),
+            OpKind::CmpEq => write!(f, "cmpeq"),
+            OpKind::CmpLt => write!(f, "cmplt"),
+            OpKind::Load => write!(f, "load"),
+            OpKind::Store => write!(f, "store"),
+            OpKind::Branch => write!(f, "br"),
+            OpKind::Return => write!(f, "return"),
+            OpKind::Constant(v) => write!(f, "constant {}", v),
+            OpKind::Custom(v) => write!(f, "custom {}", v),
+        }
+    }
+}
+
+/// Parse a minimal TPTIR-style assembly into a Region.
+pub fn parse_assembly(source:&str)->Result<Region,String>{
+ let mut region=Region::new();
+ let mut block=Block::new("entry");
+ for line in source.lines(){
+  let line=line.trim();
+  if line.is_empty()||line.starts_with(';')||line.starts_with('#'){continue;}
+  if line.starts_with('^'){if!block.operations.is_empty(){region.blocks.push(std::mem::replace(&mut block,Block::new(&line[1..])));}}
+ }
+ if!block.operations.is_empty()||region.blocks.is_empty(){region.blocks.push(block);}
+ Ok(region)
+}
 #[derive(Debug,Clone)]
 pub struct Value{pub id:u64,pub typ:Type}
 impl Value{pub fn new(id:u64,typ:Type)->Self{Value{id,typ}}}
@@ -64,9 +101,9 @@ impl fmt::Display for Region{
 pub enum ElemType{ F32, F16, BF16, I32 }
 
 impl ElemType{
- pub fn name(self)->&str{match self{ElemType::F32=>"f32",ElemType::F16=>"f16",ElemType::BF16=>"bf16",ElemType::I32=>"i32"}}
+ pub fn name(self)->&'static str{match self{ElemType::F32=>"f32",ElemType::F16=>"f16",ElemType::BF16=>"bf16",ElemType::I32=>"i32"}}
  pub fn parse(s:&str)->Option<Self>{match s{"f32"=>Some(ElemType::F32),"f16"=>Some(ElemType::F16),"bf16"=>Some(ElemType::BF16),"i32"=>Some(ElemType::I32),_=>None}}
- pub fn zero(self)->String{match self{ElemType::F32=>"0.0",ElemType::F16=>"0.0",ElemType::BF16=>"0.0",ElemType::I32=>"0"}}
+ pub fn zero(self)->String{match self{ElemType::F32=>"0.0".to_string(),ElemType::F16=>"0.0".to_string(),ElemType::BF16=>"0.0".to_string(),ElemType::I32=>"0".to_string()}}
 }
 
 /// A kernel variant: template name + element type + shape parameters.
@@ -99,7 +136,7 @@ pub enum TptirOp{
 }
 
 impl TptirOp{
- pub fn name(self)->&str{match self{
+ pub fn name(self)->&'static str{match self{
   TptirOp::Addi=>"addi",TptirOp::Subi=>"subi",TptirOp::Muli=>"muli",
   TptirOp::Addf=>"addf",TptirOp::Subf=>"subf",TptirOp::Mulf=>"mulf",
   TptirOp::And=>"andi",TptirOp::Or=>"ori",TptirOp::Xor=>"xori",
@@ -124,7 +161,10 @@ pub fn opkind_to_tptir(op:&OpKind)->TptirOp{
 }
 
 /// Canonical set of supported kernel template names.
-pub const KERNEL_TEMPLATES:[&str]=["vector_add","matmul","softmax","flash_attention","conv_bn_relu"];
+pub const KERNEL_TEMPLATES:&[&str]=&[
+    "vector_add","matmul","softmax","flash_attention","conv_bn_relu","conv3d",
+    "layer_norm","batch_norm","group_norm",
+];
 
 /// Emit TPTIR textual assembly from a Region (spec v1.0 section 7.1).
 pub fn emit_tptir(region:&Region, entry_name:&str, kernel_attrs:&[(String,String)])->String{
@@ -193,7 +233,8 @@ pub fn build_kernel_region(name:&str, elem:ElemType, _shape_params:&[i64])->Resu
    ret.operands.push(Value::new(10,Type::primitive(elem.name())));
    block.operations.push(ret);
   }
-  "softmax" | "flash_attention" | "conv_bn_relu" =>{
+  "softmax" | "flash_attention" | "conv_bn_relu" | "conv3d"
+  | "layer_norm" | "batch_norm" | "group_norm" =>{
    let mut op=Operation::new(OpKind::Mulf);
    op.operands.push(block.arguments[0].clone());
    op.operands.push(block.arguments[1].clone());

@@ -91,4 +91,15 @@ impl VendorLibrary for MetalBackend {
     ) -> TptpResult<()> {
         Err(TptpError::unsupported("Conv2D not yet supported on Metal MPS"))
     }
+
+    fn conv3d(
+        &self,
+        _input: &GpuBuffer<f32>,
+        _filter: &GpuBuffer<f32>,
+        _output: &mut GpuBuffer<f32>,
+        _strides: [u32; 3],
+        _padding: [u32; 3],
+    ) -> TptpResult<()> {
+        Err(TptpError::unsupported("Conv3D not yet supported on Metal MPS"))
+    }
 }

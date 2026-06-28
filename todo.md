@@ -48,8 +48,8 @@
 ### Layer 6 — Framework Backends (Python + Rust)
 - [x] Python thin wrapper over Rust runtime (tptr)
 - [x] PyTorch dispatch layer (Python)
-- [ ] JAX integration (Python)
-- [ ] Performance-critical dispatch paths (Rust)
+- [x] JAX integration (Python)
+- [x] Performance-critical dispatch paths (Rust)
 
 ---
 
@@ -102,10 +102,10 @@
 ## Phase 3 (Months 4–6): Framework Integration & TPT Script Beta
 
 - [x] Complete PyTorch backend integration
-- [ ] Complete JAX backend integration
+- [x] Complete JAX backend integration
 - [x] Hugging Face integration (model loading / inference)
-- [ ] TPT Script beta release (advanced external users)
-- [ ] Distributed training examples (FSDP strategy, 8-GPU)
+- [x] TPT Script beta release (advanced external users)
+- [x] Distributed training examples (FSDP strategy, 8-GPU)
 - [x] Edge deployment use case examples
 - [x] LSP implementation (Language Server Protocol for IDE support)
 - [x] TPT Script formatter / linter
@@ -120,20 +120,20 @@
 - [x] Wire `KernelResult::execution_time_ms` in all layer5 kernels (GEMM, Attention, Conv2D)
 - [x] Configurable `GemmParams` (tile_m, tile_n, tile_k, vec_width, unroll) + template MLIR placeholders
 - [x] Same configurable params for Attention (tile_seq, tile_head) and Conv2D (tile_oh, tile_ow, tile_ic)
-- [ ] Multi-provider AI abstraction (`tools/shared/`): Claude, OpenRouter, Ollama — single `AiProvider` trait
+- [x] Multi-provider AI abstraction (`tools/shared/`): Claude, OpenRouter, Ollama — single `AiProvider` trait
 - [ ] Benchmark harness (`layer5_tptp/benches/`): GEMM vs cuBLAS/rocBLAS/OpenBLAS; Attention vs FlashAttention v2/cuDNN; Conv2D vs cuDNN
-- [ ] Structured JSON benchmark output (GFLOPS, bandwidth GB/s, efficiency-vs-baseline %)
-- [ ] Self-iterating kernel optimizer (`tools/kernel-optimizer/`): grid → hill-climb → AI-guided search
-- [ ] AI-assisted kernel generator (`tools/kernel-generator/`): spec → TPTIR → validate → correctness test → benchmark
-- [ ] TPTIR semantic validator pass (`layer3_tptc/rust/src/passes.rs` — `ValidatePass`)
-- [ ] Operator fusion pass (`FusionPass`): elementwise chains, matmul+softmax+matmul (Flash Attention pattern), conv+bn+relu
-- [ ] Shape-specialized kernel dispatch: multiple kernel variants + `tuning/dispatch_table.json`
-- [ ] Community tuning directory (`tuning/<gpu_model>.json`) — contributor-submitted GPU profiles
-- [ ] CI benchmark job: auto-posts efficiency delta as PR comment on every kernel change
-- [ ] `tpt bench --quick` mode (30-second local sanity check before submitting)
-- [ ] Kernel provenance metadata in generated `.mlir` headers (date, model, score, hardware)
-- [ ] Conv3D kernel — generated via `kernel-generator`
-- [ ] BatchNorm / LayerNorm / GroupNorm kernels — generated via `kernel-generator`
+- [x] Structured JSON benchmark output (GFLOPS, bandwidth GB/s, efficiency-vs-baseline %)
+- [x] Self-iterating kernel optimizer (`tools/kernel-optimizer/`): grid → hill-climb → AI-guided search
+- [x] AI-assisted kernel generator (`tools/kernel-generator/`): spec → TPTIR → validate → correctness test → benchmark
+- [x] TPTIR semantic validator pass (`layer3_tptc/rust/src/passes.rs` — `ValidatePass`)
+- [x] Operator fusion pass (`FusionPass`): elementwise chains, matmul+softmax+matmul (Flash Attention pattern), conv+bn+relu
+- [x] Shape-specialized kernel dispatch: multiple kernel variants + `tuning/dispatch_table.json`
+- [x] Community tuning directory (`tuning/<gpu_model>.json`) — contributor-submitted GPU profiles
+- [x] CI benchmark job: auto-posts efficiency delta as PR comment on every kernel change
+- [x] `tpt bench --quick` mode (30-second local sanity check before submitting)
+- [x] Kernel provenance metadata in generated `.mlir` headers (date, model, score, hardware)
+- [x] Conv3D kernel — generated via `kernel-generator`
+- [x] BatchNorm / LayerNorm / GroupNorm kernels — generated via `kernel-generator`
 - [ ] Expand primitive set to cover core ML workloads (generated)
 - [ ] TPT Script v1.0 public release
 - [ ] TPT Script standard library (complete)

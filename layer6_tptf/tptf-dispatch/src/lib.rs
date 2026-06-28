@@ -1,17 +1,17 @@
 // tptf-dispatch — PyO3 extension module
 //
 // Exposes performance-critical dispatch paths to Python as `tptf._dispatch`.
-// Each operation is a thin Rust wrapper that:
-//   1. Validates array layout / dtype.
-//   2. Routes to the tptr runtime (hardware feature) or a pure-Rust fallback.
-//   3. Returns a NumPy array to Python.
 
+use numpy::{
+    ndarray::{Array2, Array4},
+    IntoPyArray, PyArray2, PyArray4, PyReadonlyArray2, PyReadonlyArray4,
+    PyUntypedArrayMethods,
+};
 use pyo3::prelude::*;
-use numpy::{IntoPyArray, PyArray2, PyArray4, PyReadonlyArray2, PyReadonlyArray4};
 
-mod gemm;
 mod attention;
 mod conv2d;
+mod gemm;
 mod router;
 
 pub use router::{DispatchTable, OpRouter};
@@ -31,12 +31,9 @@ fn _dispatch(m: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 // ---------------------------------------------------------------------------
-// GEMM
+// GEMM — (M, K) × (K, N) → (M, N)
 // ---------------------------------------------------------------------------
 
-/// alpha * A @ B + beta * C
-///
-/// A: (M, K) f32, B: (K, N) f32 → (M, N) f32
 #[pyfunction]
 #[pyo3(signature = (a, b, alpha=1.0, beta=0.0, c=None))]
 fn py_gemm<'py>(
@@ -47,9 +44,8 @@ fn py_gemm<'py>(
     beta: f32,
     c: Option<PyReadonlyArray2<'py, f32>>,
 ) -> PyResult<Bound<'py, PyArray2<f32>>> {
-    let a_s = a.as_slice()?;
-    let b_s = b.as_slice()?;
-    let (m, k) = (a.shape()[0], a.shape()[1]);
+    let m = a.shape()[0];
+    let k = a.shape()[1];
     let n = b.shape()[1];
 
     if b.shape()[0] != k {
@@ -59,25 +55,23 @@ fn py_gemm<'py>(
         )));
     }
 
+    let a_s = a.as_slice()?;
+    let b_s = b.as_slice()?;
     let c_buf: Vec<f32> = match &c {
-        Some(c_arr) => {
-            let cs = c_arr.as_slice()?;
-            cs.to_vec()
-        }
+        Some(c_arr) => c_arr.as_slice()?.to_vec(),
         None => vec![0.0f32; m * n],
     };
 
-    let result = gemm::dispatch(a_s, b_s, &c_buf, m, k, n, alpha, beta);
-    Ok(result.into_pyarray_bound(py))
+    let flat = gemm::dispatch(a_s, b_s, &c_buf, m, k, n, alpha, beta);
+    let arr = Array2::from_shape_vec((m, n), flat)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py))
 }
 
 // ---------------------------------------------------------------------------
-// Attention
+// Attention — (B, H, Sq, Dk) × ... → (B, H, Sq, Dv)
 // ---------------------------------------------------------------------------
 
-/// Scaled dot-product attention: softmax(Q @ K^T / sqrt(d_k)) @ V
-///
-/// Q, K, V: (batch, heads, seq, d) f32 → (batch, heads, seq, d_v) f32
 #[pyfunction]
 #[pyo3(signature = (q, k, v, scale=None))]
 fn py_attention<'py>(
@@ -105,23 +99,24 @@ fn py_attention<'py>(
     }
 
     let s = scale.unwrap_or_else(|| (q_shape[3] as f32).powf(-0.5));
-    let q_s = q.as_slice()?;
-    let k_s = k.as_slice()?;
-    let v_s = v.as_slice()?;
+    let (batch, heads, seq_q, d_k) = (q_shape[0], q_shape[1], q_shape[2], q_shape[3]);
+    let d_v = v_shape[3];
 
-    let result = attention::dispatch(
-        q_s, k_s, v_s,
-        q_shape[0], q_shape[1], q_shape[2], q_shape[3], v_shape[3],
-        s,
+    let flat = attention::dispatch(
+        q.as_slice()?,
+        k.as_slice()?,
+        v.as_slice()?,
+        batch, heads, seq_q, d_k, d_v, s,
     );
-    Ok(result.into_pyarray_bound(py))
+    let arr = Array4::from_shape_vec((batch, heads, seq_q, d_v), flat)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py))
 }
 
 // ---------------------------------------------------------------------------
-// Conv2d
+// Conv2d — (N,C,H,W) × (C_out,C_in,kH,kW) → (N,C_out,H_out,W_out)
 // ---------------------------------------------------------------------------
 
-/// 2-D convolution: x (N,C_in,H,W) × weight (C_out,C_in,kH,kW) → (N,C_out,H_out,W_out)
 #[pyfunction]
 #[pyo3(signature = (x, weight, stride=1, padding=0, dilation=1, groups=1))]
 fn py_conv2d<'py>(
@@ -135,7 +130,6 @@ fn py_conv2d<'py>(
 ) -> PyResult<Bound<'py, PyArray4<f32>>> {
     let xs = x.shape().to_vec();
     let ws = weight.shape().to_vec();
-
     let (n, c_in, h, w) = (xs[0], xs[1], xs[2], xs[3]);
     let (c_out, c_in_per_g, kh, kw) = (ws[0], ws[1], ws[2], ws[3]);
 
@@ -145,24 +139,23 @@ fn py_conv2d<'py>(
         )));
     }
 
-    let x_s = x.as_slice()?;
-    let w_s = weight.as_slice()?;
+    let h_out = (h + 2 * padding - dilation * (kh - 1) - 1) / stride + 1;
+    let w_out = (w + 2 * padding - dilation * (kw - 1) - 1) / stride + 1;
 
-    let result = conv2d::dispatch(
-        x_s, w_s, n, c_in, h, w, c_out, kh, kw,
-        stride, padding, dilation, groups,
+    let flat = conv2d::dispatch(
+        x.as_slice()?,
+        weight.as_slice()?,
+        n, c_in, h, w, c_out, kh, kw, stride, padding, dilation, groups,
     );
-    Ok(result.into_pyarray_bound(py))
+    let arr = Array4::from_shape_vec((n, c_out, h_out, w_out), flat)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py))
 }
 
 // ---------------------------------------------------------------------------
-// Generic dispatch by operation name
+// Generic name-based dispatch
 // ---------------------------------------------------------------------------
 
-/// Route an operation by name with a JSON-encoded argument blob.
-///
-/// This is the hot path used by the JAX/PyTorch dispatch layers when they
-/// want to express operations symbolically rather than calling typed functions.
 #[pyfunction]
 fn py_dispatch(_py: Python<'_>, op: &str, args_json: &str) -> PyResult<String> {
     let router = OpRouter::default();
@@ -172,7 +165,7 @@ fn py_dispatch(_py: Python<'_>, op: &str, args_json: &str) -> PyResult<String> {
 }
 
 // ---------------------------------------------------------------------------
-// DispatchTable — Python-accessible op registry
+// DispatchTable
 // ---------------------------------------------------------------------------
 
 #[pyclass]

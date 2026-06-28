@@ -62,12 +62,36 @@ def TPTIR_SoftmaxOp : Op<TPTIR_Kernel_Dialect, "softmax", [Pure]> {
   let results = (outs TensorType:$output);
 }
 
-// LayerNorm: layer normalization
+// LayerNorm: y = gamma * (x - mean(x)) / sqrt(var(x) + eps) + beta, normalized over last axis
 def TPTIR_LayerNormOp : Op<TPTIR_Kernel_Dialect, "layer_norm", [Pure]> {
   let summary = "Layer Normalization";
   let arguments = (ins TensorType:$input, TensorType:$gamma, TensorType:$beta,
-                   Float32Type:$epsilon, IndexType:$normalized_axis);
+                   Float32Type:$epsilon, IndexType:$batch, IndexType:$norm_size);
   let results = (outs TensorType:$output);
+  let hasVerifier = 1;
+}
+
+// BatchNorm: normalize over N*S for each channel; updates running stats during training
+def TPTIR_BatchNormOp : Op<TPTIR_Kernel_Dialect, "batch_norm", [Pure]> {
+  let summary = "Batch Normalization";
+  let arguments = (ins TensorType:$input, TensorType:$gamma, TensorType:$beta,
+                   TensorType:$running_mean, TensorType:$running_var,
+                   Float32Type:$epsilon, Float32Type:$momentum,
+                   IndexType:$batch, IndexType:$channels, IndexType:$spatial,
+                   I1Attr:$is_training);
+  let results = (outs TensorType:$output);
+  let hasVerifier = 1;
+}
+
+// GroupNorm: channels split into G groups; normalize over C/G * S per (N, G) pair
+def TPTIR_GroupNormOp : Op<TPTIR_Kernel_Dialect, "group_norm", [Pure]> {
+  let summary = "Group Normalization";
+  let arguments = (ins TensorType:$input, TensorType:$gamma, TensorType:$beta,
+                   Float32Type:$epsilon,
+                   IndexType:$batch, IndexType:$channels, IndexType:$spatial,
+                   I32Attr:$num_groups);
+  let results = (outs TensorType:$output);
+  let hasVerifier = 1;
 }
 
 #endif // TPTIR_KERNELS_TD

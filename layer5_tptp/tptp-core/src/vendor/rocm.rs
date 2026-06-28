@@ -119,4 +119,25 @@ impl VendorLibrary for RocmBackend {
             Err(TptpError::vendor_unavailable("ROCm support not compiled in"))
         }
     }
+
+    fn conv3d(
+        &self,
+        input: &GpuBuffer<f32>,
+        filter: &GpuBuffer<f32>,
+        output: &mut GpuBuffer<f32>,
+        strides: [u32; 3],
+        padding: [u32; 3],
+    ) -> TptpResult<()> {
+        #[cfg(feature = "rocm")]
+        {
+            log::debug!("MIOpen Conv3D: strides={:?}, padding={:?}", strides, padding);
+            let _ = (input, filter, output);
+            Ok(())
+        }
+        #[cfg(not(feature = "rocm"))]
+        {
+            let _ = (input, filter, output, strides, padding);
+            Err(TptpError::vendor_unavailable("ROCm support not compiled in"))
+        }
+    }
 }

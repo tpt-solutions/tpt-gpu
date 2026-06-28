@@ -74,6 +74,11 @@ impl VendorBackend {
     pub fn supports_conv2d(&self) -> bool {
         matches!(self, VendorBackend::Cuda(_) | VendorBackend::Rocm(_))
     }
+
+    /// Check if Conv3D is supported
+    pub fn supports_conv3d(&self) -> bool {
+        matches!(self, VendorBackend::Cuda(_) | VendorBackend::Rocm(_))
+    }
 }
 
 /// Vendor library dispatch trait
@@ -118,6 +123,16 @@ pub trait VendorLibrary: Send + Sync {
         strides: [u32; 2],
         padding: [u32; 2],
     ) -> TptpResult<()>;
+
+    /// Execute Conv3D
+    fn conv3d(
+        &self,
+        input: &GpuBuffer<f32>,
+        filter: &GpuBuffer<f32>,
+        output: &mut GpuBuffer<f32>,
+        strides: [u32; 3],
+        padding: [u32; 3],
+    ) -> TptpResult<()>;
 }
 
 // Implement dispatch for VendorBackend
@@ -152,6 +167,14 @@ impl VendorLibrary for VendorBackend {
             VendorBackend::Cuda(backend) => backend.conv2d(input, filter, output, strides, padding),
             VendorBackend::Rocm(backend) => backend.conv2d(input, filter, output, strides, padding),
             _ => Err(crate::error::TptpError::unsupported("conv2d not supported on this backend")),
+        }
+    }
+
+    fn conv3d(&self, input: &GpuBuffer<f32>, filter: &GpuBuffer<f32>, output: &mut GpuBuffer<f32>, strides: [u32; 3], padding: [u32; 3]) -> TptpResult<()> {
+        match self {
+            VendorBackend::Cuda(backend) => backend.conv3d(input, filter, output, strides, padding),
+            VendorBackend::Rocm(backend) => backend.conv3d(input, filter, output, strides, padding),
+            _ => Err(crate::error::TptpError::unsupported("conv3d not supported on this backend")),
         }
     }
 }

@@ -1,7 +1,9 @@
 [workspace]
 members = [
     "layer3_tptc/rust",
+    "tools/shared",
     "tools/kernel-generator",
+    "tools/kernel-optimizer",
     "layer6_tptf/tptf-dispatch",
 ]
 resolver = "2"
