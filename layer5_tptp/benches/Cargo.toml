@@ -1,9 +1,9 @@
-[package]
+﻿[package]
 name = "tptp-benches"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-description = "Benchmark harness for TPT Primitives — GEMM vs cuBLAS, Attention vs FlashAttention, Conv2D vs cuDNN"
+description = "Benchmark harness for TPT Primitives - GEMM vs cuBLAS, Attention vs FlashAttention, Conv2D vs cuDNN"
 license.workspace = true
 repository.workspace = true
 publish = false
@@ -16,7 +16,30 @@ log = { workspace = true }
 env_logger = "0.11"
 clap = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
+
+[features]
+default = []
+cuda = ["tptp-core/cuda"]
+rocm = ["tptp-core/rocm"]
+all-baselines = ["cuda", "rocm"]
 
 [[example]]
 name = "run_benchmarks"
 path = "src/examples/run_benchmarks.rs"
+
+[[example]]
+name = "run_comprehensive"
+path = "src/examples/run_comprehensive.rs"
+
+[[example]]
+name = "profile_gemm"
+path = "src/examples/profile_gemm.rs"
+
+[[example]]
+name = "profile_attention"
+path = "src/examples/profile_attention.rs"
+
+[[example]]
+name = "profile_conv2d"
+path = "src/examples/profile_conv2d.rs"

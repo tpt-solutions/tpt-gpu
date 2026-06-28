@@ -1,5 +1,4 @@
-[package]
-<<<<<<< Updated upstream
+﻿[package]
 name = "tpt-shared"
 version.workspace = true
 edition.workspace = true
@@ -9,27 +8,12 @@ description = "Shared AI provider abstraction for TPT GPU tools"
 [lib]
 name = "tpt_shared"
 path = "src/lib.rs"
-=======
-name = "tpt-ai"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-description = "Multi-provider AI abstraction for TPT GPU — Claude, OpenRouter, Ollama via a single AiProvider trait"
-license.workspace = true
-repository.workspace = true
->>>>>>> Stashed changes
 
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-<<<<<<< Updated upstream
-anyhow = { workspace = true }
-reqwest = { version = "0.12", features = ["blocking", "json"] }
-=======
 thiserror = { workspace = true }
-ureq = { version = "2", features = ["json"] }
 log = { workspace = true }
 
 [dev-dependencies]
 env_logger = "0.11"
->>>>>>> Stashed changes

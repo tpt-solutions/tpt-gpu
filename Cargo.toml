@@ -1,33 +1,32 @@
-[workspace]
+﻿[workspace]
 members = [
-<<<<<<< Updated upstream
     "layer3_tptc/rust",
-    "tools/shared",
     "tools/kernel-generator",
-    "tools/kernel-optimizer",
+    "tools/shared",
     "layer6_tptf/tptf-dispatch",
-=======
-    'layer3_tptc/rust',
-    'tools/kernel-generator',
-    'tools/shared',
-    'layer6_tptf/tptf-dispatch',
->>>>>>> Stashed changes
+    "tools/kernel-optimizer",
+    "layer5_tptp/tptp-core",
+    "layer5_tptp/benches",
 ]
-resolver = '2'
+resolver = "2"
 
 [workspace.package]
-version = '0.1.0'
-edition = '2021'
-license = 'Apache-2.0 WITH LLVM-exception'
-description = 'TPT GPU kernel generator and compiler infrastructure'
-authors = ['TPT GPU Contributors']
-repository = 'https://github.com/tpt-gpu/tpt-gpu'
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0 WITH LLVM-exception"
+description = "TPT GPU kernel generator and compiler infrastructure"
+authors = ["TPT GPU Contributors"]
+repository = "https://github.com/tpt-gpu/tpt-gpu"
 
 [workspace.dependencies]
-serde = { version = '1', features = ['derive'] }
-serde_json = '1'
-clap = { version = '4', features = ['derive'] }
-anyhow = '1'
-libc = '0.2'
-log = '0.4'
-thiserror = '2'
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+libc = "0.2"
+log = "0.4"
+thiserror = "2"
+bytemuck = "1.14"
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
+parking_lot = "0.12"
