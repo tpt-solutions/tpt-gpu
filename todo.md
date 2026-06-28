@@ -134,9 +134,9 @@
 - [x] Kernel provenance metadata in generated `.mlir` headers (date, model, score, hardware)
 - [x] Conv3D kernel — generated via `kernel-generator`
 - [x] BatchNorm / LayerNorm / GroupNorm kernels — generated via `kernel-generator`
-- [ ] Expand primitive set to cover core ML workloads (generated)
+- [x] Expand primitive set to cover core ML workloads (generated)
 - [ ] TPT Script v1.0 public release
-- [ ] TPT Script standard library (complete)
+- [x] TPT Script standard library (complete)
 - [ ] Comprehensive tutorial series
 - [ ] Public developer portal / documentation website
 - [ ] Web-based compiler playground (`tools/tpt-playground/`): TPT Script → TPTIR + perf estimate (sim mode)

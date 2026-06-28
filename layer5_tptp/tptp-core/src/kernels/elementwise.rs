@@ -180,9 +180,10 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_input_errors() {
-        let buf = GpuBuffer::<f32>::new(Shape::new(&[0]), DType::F32, BufferFlags::STORAGE).unwrap();
-        assert!(relu(&buf).is_err());
+    fn test_empty_buffer_rejected_at_construction() {
+        // GpuBuffer itself rejects a zero-element shape, so the kernel
+        // empty-input guard is a defence-in-depth path; confirm construction fails.
+        assert!(GpuBuffer::<f32>::new(Shape::new(&[0]), DType::F32, BufferFlags::STORAGE).is_err());
     }
 
     #[test]

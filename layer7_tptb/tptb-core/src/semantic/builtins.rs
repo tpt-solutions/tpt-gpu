@@ -291,6 +291,172 @@ pub fn infer_builtin(name: &str, args: &[TptType], named: &[(&str, TptType)]) ->
         "benchmark" => TptType::F64,
         "grad"   => args.first().cloned().unwrap_or(TptType::Unknown),
 
+        // ---- Tensor creation from existing tensor ----
+        "zeros_like" | "ones_like" | "full_like" | "rand_like" | "randn_like" => {
+            args.first().cloned().unwrap_or(TptType::Unknown)
+        }
+
+        // ---- Scalar broadcast ops (tensor op scalar → same tensor) ----
+        "add_scalar" | "sub_scalar" | "mul_scalar" | "div_scalar"
+        | "pow_scalar" | "rsub_scalar" | "rdiv_scalar" => {
+            args.first().cloned().unwrap_or(TptType::Unknown)
+        }
+
+        // ---- Broadcast binary ops ----
+        "broadcast_add" | "broadcast_sub" | "broadcast_mul" | "broadcast_div" => {
+            args.first().cloned().unwrap_or(TptType::Unknown)
+        }
+
+        // ---- Specialized matmul ----
+        "matmul_2d" => {
+            match (args.get(0), args.get(1)) {
+                (
+                    Some(TptType::Tensor { dtype, shape: s1 }),
+                    Some(TptType::Tensor { shape: s2, .. }),
+                ) if s1.len() >= 2 && s2.len() >= 2 => {
+                    let m = s1[s1.len() - 2].clone();
+                    let n = s2[s2.len() - 1].clone();
+                    TptType::Tensor { dtype: dtype.clone(), shape: vec![m, n] }
+                }
+                _ => TptType::Unknown,
+            }
+        }
+
+        // ---- Transpose variants ----
+        "transpose_last2" | "t" => {
+            if let Some(TptType::Tensor { dtype, shape }) = args.first() {
+                let mut new_shape = shape.clone();
+                let n = new_shape.len();
+                if n >= 2 {
+                    new_shape.swap(n - 2, n - 1);
+                }
+                TptType::Tensor { dtype: dtype.clone(), shape: new_shape }
+            } else {
+                TptType::Unknown
+            }
+        }
+
+        // ---- Additional activations ----
+        "mish" | "hardswish" | "hardsigmoid" | "hardtanh"
+        | "softsign" | "softplus" | "log_sigmoid"
+        | "gelu_tanh" | "gelu_new" | "selu" | "celu"
+        | "prelu" | "rrelu" | "threshold" => {
+            if let Some(t) = args.first() {
+                if let TptType::Tensor { dtype, shape } = t {
+                    return TptType::Tensor { dtype: dtype.clone(), shape: shape.clone() };
+                }
+            }
+            TptType::Unknown
+        }
+
+        // ---- SwiGLU: gate activation used in LLaMA/PaLM FFN ----
+        "swiglu" => args.first().cloned().unwrap_or(TptType::Unknown),
+
+        // ---- Dropout (shape-preserving) ----
+        "dropout" => args.first().cloned().unwrap_or(TptType::Unknown),
+
+        // ---- Gradient utilities ----
+        "clip_grad_norm" | "clip_grad_value" => {
+            args.first().cloned().unwrap_or(TptType::Unknown)
+        }
+
+        // ---- Initializers ----
+        "kaiming_uniform" | "kaiming_normal"
+        | "xavier_uniform" | "xavier_normal"
+        | "trunc_normal" | "orthogonal" => {
+            TptType::Tensor { dtype: Box::new(dtype_arg()), shape: vec![DimVal::Dynamic] }
+        }
+
+        // ---- Causal / attention masks ----
+        "causal_mask" | "attention_mask" => {
+            TptType::Tensor { dtype: Box::new(dtype_arg()), shape: vec![DimVal::Dynamic, DimVal::Dynamic] }
+        }
+
+        // ---- Loss: NLL loss ----
+        "nll_loss" | "smooth_l1" | "huber" | "hinge" | "margin_ranking" => {
+            if let Some(TptType::Tensor { dtype, .. }) = args.first() {
+                TptType::Tensor { dtype: dtype.clone(), shape: vec![] }
+            } else {
+                TptType::Tensor { dtype: Box::new(TptType::F32), shape: vec![] }
+            }
+        }
+
+        // ---- One-hot encoding ----
+        "one_hot" => {
+            TptType::Tensor { dtype: Box::new(TptType::F32), shape: vec![DimVal::Dynamic, DimVal::Dynamic] }
+        }
+
+        // ---- Interpolation / upsampling ----
+        "interpolate" | "upsample" | "pixel_shuffle" => {
+            if let Some(TptType::Tensor { dtype, .. }) = args.first() {
+                TptType::Tensor { dtype: dtype.clone(), shape: vec![DimVal::Dynamic] }
+            } else {
+                TptType::Unknown
+            }
+        }
+
+        // ---- Cumulative ops ----
+        "cumsum" | "cumprod" => args.first().cloned().unwrap_or(TptType::Unknown),
+
+        // ---- Sorting ----
+        "sort" => args.first().cloned().unwrap_or(TptType::Unknown),
+        "argsort" => {
+            TptType::Tensor { dtype: Box::new(TptType::I64), shape: vec![DimVal::Dynamic] }
+        }
+        "topk" => {
+            if let Some(TptType::Tensor { dtype, .. }) = args.first() {
+                let values = TptType::Tensor { dtype: dtype.clone(), shape: vec![DimVal::Dynamic] };
+                let indices = TptType::Tensor { dtype: Box::new(TptType::I64), shape: vec![DimVal::Dynamic] };
+                TptType::Tuple(vec![values, indices])
+            } else {
+                TptType::Unknown
+            }
+        }
+
+        // ---- Gather / scatter ops ----
+        "gather" | "scatter_add" | "index_select" => {
+            args.first().cloned().unwrap_or(TptType::Unknown)
+        }
+
+        // ---- Statistical ops ----
+        "var" | "std" | "median" | "mode" => {
+            if let Some(TptType::Tensor { dtype, .. }) = args.first() {
+                TptType::Tensor { dtype: dtype.clone(), shape: vec![DimVal::Dynamic] }
+            } else {
+                TptType::Unknown
+            }
+        }
+
+        // ---- Elementwise ternary / clamp alias ----
+        "clamp" | "clip_by_value" => args.first().cloned().unwrap_or(TptType::Unknown),
+
+        // ---- Batch extraction helpers ----
+        "batch_x" | "batch_y" => {
+            TptType::Tensor { dtype: Box::new(TptType::F32), shape: vec![DimVal::Dynamic] }
+        }
+
+        // ---- Model/checkpoint utilities ----
+        "pack_model" | "load_checkpoint" => TptType::Model,
+        "save_checkpoint" => TptType::Unit,
+
+        // ---- String/path utilities ----
+        "path_join" | "format" | "to_string" => TptType::Unknown,
+
+        // ---- Misc tensor ops ----
+        "flip" | "roll" | "tril" | "triu" | "diag" | "diagonal" => {
+            args.first().cloned().unwrap_or(TptType::Unknown)
+        }
+        "repeat" | "repeat_interleave" => {
+            args.first().cloned().unwrap_or(TptType::Unknown)
+        }
+        "unfold" | "fold" => {
+            if let Some(TptType::Tensor { dtype, .. }) = args.first() {
+                TptType::Tensor { dtype: dtype.clone(), shape: vec![DimVal::Dynamic] }
+            } else {
+                TptType::Unknown
+            }
+        }
+
         // ---- Autodiff methods (called on a tensor value) ----
         "backward" | "step" | "no_grad" => TptType::Unit,
         "forward"  => TptType::Unknown, // output depends on model

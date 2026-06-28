@@ -94,4 +94,54 @@ def TPTIR_GroupNormOp : Op<TPTIR_Kernel_Dialect, "group_norm", [Pure]> {
   let hasVerifier = 1;
 }
 
+// RMSNorm: y = x / rms(x) * gamma; rms(x) = sqrt(mean(x^2) + eps) — no mean subtraction
+def TPTIR_RMSNormOp : Op<TPTIR_Kernel_Dialect, "rms_norm", [Pure]> {
+  let summary = "RMS Normalization (LLaMA-style)";
+  let arguments = (ins TensorType:$input, TensorType:$gamma,
+                   Float32Type:$epsilon,
+                   IndexType:$batch, IndexType:$norm_size);
+  let results = (outs TensorType:$output);
+  let hasVerifier = 1;
+}
+
+// Elementwise activations: ReLU, GELU (tanh approx), SiLU/Swish, Sigmoid
+def TPTIR_ElementwiseOp : Op<TPTIR_Kernel_Dialect, "elementwise", [Pure]> {
+  let summary = "Elementwise Activation (relu/gelu/silu/sigmoid)";
+  let arguments = (ins TensorType:$input, IndexType:$n,
+                   StrAttr:$kind);        // "relu" | "gelu" | "silu" | "sigmoid"
+  let results = (outs TensorType:$output);
+}
+
+// Embedding: output[b,s,:] = weight[indices[b,s],:]
+def TPTIR_EmbeddingOp : Op<TPTIR_Kernel_Dialect, "embedding", [Pure]> {
+  let summary = "Embedding Table Lookup";
+  let arguments = (ins TensorType:$weight, TensorType:$indices,
+                   IndexType:$batch, IndexType:$seq_len, IndexType:$embed_dim,
+                   I32Attr:$padding_idx);  // -1 means disabled
+  let results = (outs TensorType:$output);
+  let hasVerifier = 1;
+}
+
+// MaxPool2D: sliding window maximum over [N, C, H, W]
+def TPTIR_MaxPool2DOp : Op<TPTIR_Kernel_Dialect, "max_pool2d", [Pure]> {
+  let summary = "2D Max Pooling";
+  let arguments = (ins TensorType:$input,
+                   I32Attr:$kernel_h, I32Attr:$kernel_w,
+                   I32Attr:$stride_h, I32Attr:$stride_w,
+                   I32Attr:$padding_h, I32Attr:$padding_w);
+  let results = (outs TensorType:$output);
+  let hasVerifier = 1;
+}
+
+// AvgPool2D: sliding window average over [N, C, H, W]
+def TPTIR_AvgPool2DOp : Op<TPTIR_Kernel_Dialect, "avg_pool2d", [Pure]> {
+  let summary = "2D Average Pooling";
+  let arguments = (ins TensorType:$input,
+                   I32Attr:$kernel_h, I32Attr:$kernel_w,
+                   I32Attr:$stride_h, I32Attr:$stride_w,
+                   I32Attr:$padding_h, I32Attr:$padding_w);
+  let results = (outs TensorType:$output);
+  let hasVerifier = 1;
+}
+
 #endif // TPTIR_KERNELS_TD

@@ -2,7 +2,8 @@
 //!
 //! GPU compute primitives for the TPT GPU platform.
 //! Provides high-level Rust wrappers for GEMM, Attention, Conv2D, Conv3D,
-//! LayerNorm, BatchNorm, and GroupNorm kernels with TPTIR compilation and vendor dispatch.
+//! LayerNorm, BatchNorm, GroupNorm, RMSNorm, Softmax, elementwise activations,
+//! Embedding lookup, and 2D Pooling kernels with TPTIR compilation and vendor dispatch.
 
 pub mod error;
 pub mod kernel;
@@ -16,7 +17,9 @@ pub use error::{TptpError, TptpResult};
 pub use kernel::{PrimitiveKernel, KernelConfig, KernelDispatch, KernelBuilder, KernelResult};
 pub use memory::{GpuBuffer, BufferFlags, DType};
 pub use kernels::{GemmKernel, AttentionKernel, Conv2DKernel, Conv3DKernel,
-                  LayerNormKernel, BatchNormKernel, GroupNormKernel};
+                  LayerNormKernel, BatchNormKernel, GroupNormKernel,
+                  RmsNormKernel, SoftmaxKernel, ElementwiseKernel, ActivationKind,
+                  EmbeddingKernel, MaxPool2DKernel, AvgPool2DKernel};
 pub use kernels::gemm::GemmParams;
 pub use kernels::attention::AttentionParams;
 pub use kernels::conv2d::Conv2DParams;
@@ -24,6 +27,11 @@ pub use kernels::conv3d::Conv3DParams;
 pub use kernels::layernorm::LayerNormParams;
 pub use kernels::batchnorm::BatchNormParams;
 pub use kernels::groupnorm::GroupNormParams;
+pub use kernels::rmsnorm::RmsNormParams;
+pub use kernels::softmax::SoftmaxParams;
+pub use kernels::elementwise::ElementwiseParams;
+pub use kernels::embedding::EmbeddingParams;
+pub use kernels::pooling::PoolingParams;
 pub use vendor::{VendorBackend, VendorLibrary};
 pub use tptir::{TptirCompiler, CompilationOptions, CompilationTarget};
 
@@ -32,7 +40,9 @@ pub mod prelude {
     pub use crate::{TptpError, TptpResult, GpuBuffer, DType, BufferFlags};
     pub use crate::kernel::{PrimitiveKernel, KernelConfig, KernelBuilder, KernelResult};
     pub use crate::kernels::{GemmKernel, AttentionKernel, Conv2DKernel, Conv3DKernel,
-                              LayerNormKernel, BatchNormKernel, GroupNormKernel};
+                              LayerNormKernel, BatchNormKernel, GroupNormKernel,
+                              RmsNormKernel, SoftmaxKernel, ElementwiseKernel, ActivationKind,
+                              EmbeddingKernel, MaxPool2DKernel, AvgPool2DKernel};
     pub use crate::vendor::VendorBackend;
 }
 
