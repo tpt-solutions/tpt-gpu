@@ -29,6 +29,25 @@
 
 For cloning the repo, building the `tpt` CLI, and writing/compiling your first `.tpts` file, see the root [`README.md`](../README.md#quick-start) Quick Start — this guide picks up from there and focuses on the language itself. Prefer a live, no-install environment? Try the [browser playground](../tools/tpt-playground/).
 
+### Running the Browser Playground
+
+The playground is a WASM build of the layer7 compiler with a live editor, example kernels, and TPTIR/Rust/perf/error output tabs — no server round-trip required. To launch it locally:
+
+```bash
+cd tools/tpt-playground
+
+# Linux/macOS
+./build.sh
+# Windows
+./build.ps1
+
+# Serve the built directory (must be HTTP, not file://)
+python3 -m http.server 8080
+# open http://localhost:8080
+```
+
+See [`tools/tpt-playground/README.md`](../tools/tpt-playground/README.md) for details.
+
 ### Additional Tooling
 
 Beyond the `tpt` CLI, layer7 also builds an LSP server, formatter, and linter:
