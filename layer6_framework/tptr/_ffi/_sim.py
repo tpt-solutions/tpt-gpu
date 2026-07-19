@@ -169,9 +169,4 @@ class KernelHandle:
     def id(self) -> int: return self._id
     def is_complete(self) -> bool: return self._complete
     def wait(self) -> None: self._complete = True
-<<<<<<< Updated upstream
     def __repr__(self) -> str: return f"KernelHandle(id={self._id}, complete={self._complete})"
-
-=======
-    def __repr__(self) -> str: return f"KernelHandle(id={self._id}, complete={self._complete})"
->>>>>>> Stashed changes

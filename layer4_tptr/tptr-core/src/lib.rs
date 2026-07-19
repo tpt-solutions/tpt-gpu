@@ -16,7 +16,7 @@ pub mod inference;
 pub use error::{TptrError, TptrResult, ErrorCode, ErrorContext};
 
 /// Re-export the device types at the crate root.
-pub use device::{Device, DeviceInfo, DeviceHandle};
+pub use device::{Device, DeviceInfo, DeviceHandle, DeviceProperties};
 
 /// Re-export memory types at the crate root.
 pub use memory::{MemoryAllocation, MemoryRegion, MemType, MemAccess};

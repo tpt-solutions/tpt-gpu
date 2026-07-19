@@ -1,6 +1,11 @@
 //! Memory types for GPU device memory regions, access permissions, and allocation handles.
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+
+/// Backing storage for an allocation in the simulated (host-backed) backend.
+/// When present, `memcpy_htod`/`memcpy_dtoh` copy real bytes into/out of this buffer.
+pub type BackingBuffer = Arc<Mutex<Vec<u8>>>;
 
 /// GPU memory regions as defined in the TPT ISA specification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -35,11 +40,17 @@ pub struct MemoryAllocation { inner: Arc<MemoryAllocationInner> }
 struct MemoryAllocationInner {
     handle: u64, size: u64, region: MemoryRegion, mem_type: MemType,
     access: MemAccess, device_ptr: u64, alignment: Alignment, freed: AtomicBool,
+    backing: Option<BackingBuffer>,
 }
 
 impl MemoryAllocation {
     pub(crate) fn new(handle: u64, size: u64, region: MemoryRegion, mem_type: MemType, access: MemAccess, device_ptr: u64, alignment: Alignment) -> Self {
-        Self { inner: Arc::new(MemoryAllocationInner { handle, size, region, mem_type, access, device_ptr, alignment, freed: AtomicBool::new(false) }) }
+        Self { inner: Arc::new(MemoryAllocationInner { handle, size, region, mem_type, access, device_ptr, alignment, freed: AtomicBool::new(false), backing: None }) }
+    }
+    /// Create an allocation backed by a real host-side byte buffer (simulated backend).
+    pub(crate) fn new_backed(handle: u64, size: u64, region: MemoryRegion, mem_type: MemType, access: MemAccess, device_ptr: u64, alignment: Alignment) -> Self {
+        let backing = BackingBuffer::new(Mutex::new(vec![0u8; size as usize]));
+        Self { inner: Arc::new(MemoryAllocationInner { handle, size, region, mem_type, access, device_ptr, alignment, freed: AtomicBool::new(false), backing: Some(backing) }) }
     }
     pub fn handle(&self) -> u64 { self.inner.handle }
     pub fn size(&self) -> u64 { self.inner.size }
@@ -48,6 +59,7 @@ impl MemoryAllocation {
     pub fn access(&self) -> MemAccess { self.inner.access }
     pub fn device_ptr(&self) -> u64 { self.inner.device_ptr }
     pub fn alignment(&self) -> Alignment { self.inner.alignment }
+    pub(crate) fn backing(&self) -> Option<&BackingBuffer> { self.inner.backing.as_ref() }
     pub(crate) fn mark_freed(&self) { self.inner.freed.store(true, Ordering::SeqCst); }
     pub fn is_freed(&self) -> bool { self.inner.freed.load(Ordering::SeqCst) }
 }

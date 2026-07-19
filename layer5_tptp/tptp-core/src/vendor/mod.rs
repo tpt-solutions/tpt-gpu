@@ -6,6 +6,7 @@
 pub mod cuda;
 pub mod rocm;
 pub mod metal;
+pub mod dynlink;
 
 use crate::error::TptpResult;
 use crate::memory::GpuBuffer;

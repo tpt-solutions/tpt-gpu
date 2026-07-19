@@ -84,3 +84,21 @@ jobs:
           target/release/tpt-gpu-lsp.exe
           target/release/tpt-gpu-fmt
           target/release/tpt-gpu-fmt.exe
+
+  vendor-builds:
+    name: Vendor backend builds (cuda / rocm)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+    - name: Build with CUDA feature
+      # Confirms the real CUDA backend compiles against vendor headers.
+      # The default `cargo test` path remains hardware-less (simulated).
+      run: cargo build -p tpt-gpu-runtime --features cuda
+    - name: Build with ROCm feature
+      run: cargo build -p tpt-gpu-runtime --features rocm
+    - name: Test CUDA feature (skips gracefully when no GPU present)
+      run: cargo test -p tpt-gpu-runtime --features cuda
+    - name: Test ROCm feature (skips gracefully when no GPU present)
+      run: cargo test -p tpt-gpu-runtime --features rocm

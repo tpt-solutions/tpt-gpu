@@ -16,7 +16,7 @@ TPT Runtime — core allocator, scheduler, and kernel launch library for the TPT
 
 ```toml
 [dependencies]
-tpt-gpu-runtime = "0.1"
+tpt-gpu-runtime = "1.0"
 ```
 
 ## License

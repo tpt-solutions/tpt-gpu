@@ -2,7 +2,7 @@
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyRuntimeError, PyValueError, PyMemoryError};
 use std::sync::Mutex;
-use tpt_gpu_runtime::{TptrError, ErrorCode, Device as CoreDevice, DeviceProperties, MemoryAllocation, MemoryRegion, MemType, MemAccess, Command, QueuePriority, Kernel, KernelConfig, KernelHandle, Dim3};
+use tpt_gpu_runtime::{TptrError, ErrorCode, Device as CoreDevice, DeviceProperties, MemoryAllocation, MemoryRegion, MemType, MemAccess, QueuePriority, Kernel, KernelConfig, KernelHandle};
 
 #[pymodule]
 fn tptr(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -13,6 +13,7 @@ fn tptr(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyKernelConfig>()?;
     m.add_class::<PyKernelHandle>()?;
     m.add_class::<PyTptrError>()?;
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
 
@@ -33,7 +34,7 @@ pub struct PyDevice { inner: Mutex<CoreDevice> }
 
 #[pymethods]
 impl PyDevice {
-    #[staticmethod]
+    #[new]
     fn new(index: u32) -> PyResult<Self> {
         let props = DeviceProperties::simulated(&format!("TPT Device {}", index), 16 << 30);
         Ok(Self { inner: Mutex::new(CoreDevice::new_simulated(index as u64, props)) })
@@ -61,8 +62,11 @@ impl PyDevice {
         Ok(PyQueue { handle })
     }
     fn create_kernel(&self, name: &str) -> PyKernel { PyKernel { inner: self.inner.lock().unwrap().create_kernel(name) } }
+    fn load_module(&self, tptir_text: &str) -> PyResult<PyKernel> {
+        self.inner.lock().unwrap().load_module(tptir_text).map(|k| PyKernel { inner: k }).map_err(map_err)
+    }
     fn info(&self) -> std::collections::HashMap<String, String> {
-        let p = self.inner.lock().unwrap().properties();
+        let p = self.inner.lock().unwrap().properties().clone();
         let mut m = std::collections::HashMap::new();
         m.insert("name".into(), p.name.clone());
         m.insert("total_memory".into(), p.total_memory.to_string());
@@ -88,10 +92,17 @@ impl PyMemoryAllocation {
 #[pyclass(name = "CommandQueue")]
 pub struct PyQueue { handle: tpt_gpu_runtime::command::QueueHandle }
 #[pymethods] impl PyQueue { #[getter] fn handle(&self) -> u64 { self.handle.0 } }
-
 #[pyclass(name = "Kernel")]
 pub struct PyKernel { inner: Kernel }
-#[pymethods] impl PyKernel { #[getter] fn name(&self) -> &str { self.inner.name() } }
+#[pymethods]
+impl PyKernel {
+    #[getter] fn name(&self) -> &str { self.inner.name() }
+    fn launch(&self, device: &PyDevice, config: &PyKernelConfig, args: Option<Vec<Vec<u8>>>) -> PyKernelHandle {
+        let args = args.unwrap_or_default();
+        let handle = device.inner.lock().unwrap().launch_kernel(&self.inner, &config.inner, &args);
+        PyKernelHandle { inner: handle }
+    }
+}
 
 #[pyclass(name = "KernelConfig")]
 #[derive(Clone)]
@@ -99,6 +110,7 @@ pub struct PyKernelConfig { inner: KernelConfig }
 #[pymethods]
 impl PyKernelConfig {
     #[new]
+    #[pyo3(signature = (grid, block, shared_mem = None))]
     fn new(grid: (u32, u32, u32), block: (u32, u32, u32), shared_mem: Option<u32>) -> Self {
         let mut c = KernelConfig::new(grid, block);
         if let Some(sm) = shared_mem { c = c.with_shared_mem(sm); }

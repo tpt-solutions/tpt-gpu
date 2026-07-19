@@ -20,6 +20,7 @@ thiserror = { workspace = true }
 log = { workspace = true }
 bytemuck = { workspace = true }
 libc = { workspace = true }
+libloading = "0.8"
 
 [dev-dependencies]
 env_logger = "0.11"

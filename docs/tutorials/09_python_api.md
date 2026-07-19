@@ -56,12 +56,6 @@ device = tptr.Device(0)
 info = device.info()
 print(f"Device: {info['name']}")
 print(f"Memory: {info['total_memory'] / (1024**3):.1f} GB")
-
-# Device context manager
-with tptr.device_context(0) as dev:
-    mem = dev.allocate(4096)
-    # Use device...
-# Device released automatically
 ```
 
 ---
@@ -79,8 +73,9 @@ print(f"Handle: {mem.handle}")
 print(f"Size: {mem.size}")
 print(f"Device Ptr: 0x{mem.device_ptr:x}")
 
-# Allocate with flags
-mem = device.allocate(4096, flags=tptr.MEM_FLAG_READ_ONLY)
+# Allocate with a memory type ("device" | "host_pinned" | "managed")
+# and access ("read_write" | "read" | "write")
+mem = device.allocate(4096, "device", "read_write")
 
 # Memory freed automatically when mem goes out of scope
 ```
@@ -108,37 +103,79 @@ a = device.allocate(1024 * 1024 * 4)  # 4 MB
 b = device.allocate(1024 * 1024 * 4)
 c = device.allocate(1024 * 1024 * 4)
 
-# Launch kernel
-handle = kernel.launch(config, [a, b, c])
+# Launch kernel. The device is passed so the kernel runs on the
+# simulated/real backend. `args` is an optional list of raw byte buffers
+# (typically little-endian `u64` device pointers for buffer operands).
+handle = kernel.launch(device, config, [a, b, c])
 
 # Wait for completion
 handle.wait()
+
+# Synchronize the whole device
+device.synchronize()
 ```
 
 ---
 
-## Stream Operations
+## Command Queues (Streams)
 
 ```python
 import tptr
 
 device = tptr.Device(0)
 
-# Create stream
-stream = device.create_stream("normal")
+# Create a command queue (stream) on the device. Priority is one of
+# "high" | "normal" | "low".
+queue = device.create_queue("normal")
+print(f"Queue handle: {queue.handle}")
 
-# Submit commands to stream
-stream.memcpy_h2d(dest, src, size)
-stream.launch_kernel(kernel, config, args)
-stream.memcpy_d2h(dest, src, size)
+# Submit work through the device, then synchronize to drain the queue.
+device.synchronize()
+```
 
-# Synchronize stream
-stream.synchronize()
+---
 
-# Stream with context manager
-with device.create_stream("high") as stream:
-    stream.launch_kernel(kernel, config, args)
-# Stream synchronized on exit
+## Loading a TPTIR Module
+
+You can compile and run a hand-written TPTIR module directly through the
+runtime. This is the external-integration entry point: pass TPTIR assembly
+(e.g. emitted by `tpt-archon`) and receive a runnable `Kernel`.
+
+```python
+import tptr
+import struct
+
+device = tptr.Device(0)
+
+module = """
+module {
+  func.func @reduce_max(%in: memref<*xf32>, %out: memref<*xf32>) attributes {tptir.kernel} {
+    ^entry:
+      %v = tptir.load(%in)
+      %m = tptir.max(%v)
+      tptir.store(%m, %out)
+      tptir.return
+  }
+}
+"""
+
+kernel = device.load_module(module)
+
+# Allocate input/output buffers and upload data.
+data = [1.0, -3.0, 7.5, 2.0, 0.0, 4.0, -1.0, 9.25]
+d_in = device.allocate(len(data) * 4)
+d_out = device.allocate(4)
+device.memcpy_htod(d_in, struct.pack(f"{len(data)}f", *data), len(data) * 4, 0)
+
+# Args are little-endian u64 device pointers.
+config = tptr.KernelConfig(grid=(1, 1, 1), block=(1, 1, 1))
+kernel.launch(device, config, [
+    struct.pack("<Q", d_in.device_ptr),
+    struct.pack("<Q", d_out.device_ptr),
+]).wait()
+
+out = device.memcpy_dtoh(d_out, 4, 0)
+print(f"max = {struct.unpack('<f', out)[0]:.2f}")  # 9.25
 ```
 
 ---
@@ -180,17 +217,23 @@ def vector_add():
     d_c = device.allocate(c.nbytes)
     
     # Copy to GPU
-    d_a.copy_from(a.ctypes.data, a.nbytes)
-    d_b.copy_from(b.ctypes.data, b.nbytes)
-    
+    device.memcpy_htod(d_a, a.tobytes(), a.nbytes, 0)
+    device.memcpy_htod(d_b, b.tobytes(), b.nbytes, 0)
+
     # Launch kernel
     kernel = device.create_kernel("vector_add")
     config = tptr.KernelConfig(grid=(n // 256, 1, 1), block=(256, 1, 1))
-    kernel.launch(config, [d_a, d_b, d_c, n]).wait()
-    
+    # Args are raw little-endian u64 device pointers for each buffer operand.
+    kernel.launch(device, config, [
+        d_a.device_ptr.to_bytes(8, "little"),
+        d_b.device_ptr.to_bytes(8, "little"),
+        d_c.device_ptr.to_bytes(8, "little"),
+    ]).wait()
+
     # Copy result back
-    d_c.copy_to(c.ctypes.data, c.nbytes)
-    
+    out = device.memcpy_dtoh(d_c, c.nbytes, 0)
+    c = np.frombuffer(out, dtype=np.float32)
+
     return c
 
 result = vector_add()

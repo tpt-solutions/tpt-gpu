@@ -1,6 +1,6 @@
 [package]
 name = "tpt-gpu-runtime"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 description = "TPT Runtime - Core library"
 license = "MIT OR Apache-2.0 WITH LLVM-exception"
@@ -14,3 +14,10 @@ categories = ["hardware-support", "science::ml"]
 [dependencies]
 bytemuck = "1.21"
 tpt-gpu-primitives = { path = "../../layer5_tptp/tptp-core", version = "1.0.0" }
+tpt-gpu-compiler = { path = "../../layer3_tptc/rust" }
+
+[features]
+default = []
+# Enable real CUDA device backend (requires an NVIDIA GPU + CUDA driver/runtime).
+# Off by default so hardware-less `cargo test` uses the simulated path.
+cuda = ["tpt-gpu-primitives/cuda"]

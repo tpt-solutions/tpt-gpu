@@ -12,24 +12,23 @@ import importlib.util
 
 # Try to import the native Rust extension (not the local tptr package)
 _native_ext = None
-<<<<<<< Updated upstream
 
-# First, try to find the native extension in the target directory
-# The native extension is built by tpt-gpu-runtime-py in layer4_tptr
+# Strategy 1: load the compiled extension directly out of the Cargo target
+# directory. The native extension is built by tpt-gpu-runtime-py in
+# layer4_tptr (`cargo build -p tpt-gpu-runtime-py`).
 def _find_native_extension():
     """Find and load the native tptr extension module."""
-    # Possible locations for the native extension
     possible_paths = [
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "layer4_tptr", "target", "release"),
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "layer4_tptr", "target", "debug"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "target", "release"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "target", "debug"),
     ]
-    
-    # Look for the native extension file
+
     for base_path in possible_paths:
         if not os.path.exists(base_path):
             continue
-        
-        # Look for tptr.pyd (Windows) or tptr.so (Linux/Mac)
+
         for filename in ["tptr.pyd", "tptr.so", "tptr.cpython-312-x86_64-linux-gnu.so"]:
             ext_path = os.path.join(base_path, filename)
             if os.path.exists(ext_path):
@@ -41,31 +40,15 @@ def _find_native_extension():
                         return module
                 except Exception:
                     pass
-    
+
     return None
 
 _native_ext = _find_native_extension()
 
-if _native_ext is not None:
-    # Re-export all native types from the native extension
-=======
-try:
-    # First check if there's a compiled extension in the build output
-    _ext_path = os.path.join(os.path.dirname(__file__), "..", "..", "target", "release")
-    if os.path.exists(_ext_path):
-        _orig_path = sys.path.copy()
-        try:
-            sys.path.insert(0, _ext_path)
-            import tptr as _native_ext  # type: ignore
-        finally:
-            sys.path[:] = _orig_path
-except ImportError:
-    pass
-
-# If no native extension found, check if we can import a top-level tptr
+# Strategy 2: fall back to an installed top-level `tptr` package (e.g. a
+# `pip install`-ed wheel), taking care not to re-import ourselves.
 if _native_ext is None:
     try:
-        import importlib.util
         _spec = importlib.util.find_spec("tptr")
         if _spec is not None and _spec.origin and "_ffi" not in _spec.origin:
             import tptr as _native_ext  # type: ignore
@@ -73,8 +56,7 @@ if _native_ext is None:
         pass
 
 if _native_ext is not None and hasattr(_native_ext, "Device"):
-    # Re-export all native types
->>>>>>> Stashed changes
+    # Re-export all native types from the native extension
     Device = _native_ext.Device
     MemoryAllocation = _native_ext.MemoryAllocation
     CommandQueue = _native_ext.CommandQueue
@@ -82,6 +64,7 @@ if _native_ext is not None and hasattr(_native_ext, "Device"):
     KernelConfig = _native_ext.KernelConfig
     KernelHandle = _native_ext.KernelHandle
     TptrError = _native_ext.TptrError
+    Queue = CommandQueue
 else:
     # Simulation fallback for development/testing without native extension
     # Use a simple warning without stacklevel to avoid issues
@@ -99,3 +82,5 @@ else:
         KernelHandle,
         TptrError,
     )
+    Queue = CommandQueue
+    Queue = CommandQueue

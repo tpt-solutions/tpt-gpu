@@ -48,6 +48,13 @@ _DTYPE_MAP: Dict[str, str] = {
     "float64": "float64",
     "float16": "float16",
     "int32": "int32",
+    "int64": "int64",
+    "int8": "int8",
+    "uint8": "uint8",
+    "bool": "bool",
+}
+
+
 def dispatch_op(op: str, args: tuple, kwargs: dict) -> Any:
     """
     Dispatch a PyTorch operation to TPT runtime.
@@ -55,8 +62,6 @@ def dispatch_op(op: str, args: tuple, kwargs: dict) -> Any:
     tpt_op = _OP_MAP.get(op)
     if tpt_op is None:
         raise NotImplementedError(f"TPT does not support PyTorch op: {op}")
-<<<<<<< Updated upstream
-
     # Execute the TPT operation
     return _execute_tpt_op(tpt_op, op, args, kwargs)
 
@@ -105,80 +110,6 @@ def _execute_tpt_op(tpt_op: str, full_op: str, args: tuple, kwargs: dict) -> Any
         return _tptr_to_torch(result, _infer_output_shape(tpt_op, tpt_args))
     
     return None
-=======
-    return _execute_tpt_op(tpt_op, op, args, kwargs)
-
-
-def _execute_tpt_op(tpt_op: str, op: str, args: tuple, kwargs: dict) -> Any:
-    """
-    Execute a TPT operation.
-    In simulation mode, falls back to PyTorch native operations.
-    """
-    try:
-        import torch
-        if tpt_op == "add":
-            return _sim_add(args)
-        elif tpt_op == "mul":
-            return _sim_mul(args)
-        elif tpt_op == "sub":
-            return _sim_sub(args)
-        elif tpt_op == "div":
-            return _sim_div(args)
-        elif tpt_op == "neg":
-            return -args[0]
-        elif tpt_op == "relu":
-            return torch.relu(args[0])
-        elif tpt_op == "gelu":
-            return torch.nn.functional.gelu(args[0])
-        elif tpt_op == "silu":
-            return torch.nn.functional.silu(args[0])
-        elif tpt_op == "softmax":
-            dim = kwargs.get("dim", -1) if "dim" in kwargs else -1
-            return torch.softmax(args[0], dim=dim)
-        elif tpt_op == "sum":
-            return torch.sum(args[0])
-        elif tpt_op == "mean":
-            return torch.mean(args[0].float())
-        elif tpt_op == "matmul":
-            if op == "aten.bmm.default":
-                return torch.bmm(args[0], args[1])
-            return torch.mm(args[0], args[1])
-        elif tpt_op == "layer_norm":
-            return torch.nn.functional.layer_norm(
-                args[0], [args[0].shape[-1]]
-            )
-        return None
-    except ImportError:
-        return None
-
-
-def _sim_add(args):
-    import torch
-    if len(args) >= 2:
-        return args[0] + args[1]
-    return args[0]
-
-
-def _sim_mul(args):
-    import torch
-    if len(args) >= 2:
-        return args[0] * args[1]
-    return args[0]
-
-
-def _sim_sub(args):
-    import torch
-    if len(args) >= 2:
-        return args[0] - args[1]
-    return args[0]
-
-
-def _sim_div(args):
-    import torch
-    if len(args) >= 2:
-        return args[0] / args[1]
-    return args[0]
->>>>>>> Stashed changes
 
 
 def _torch_to_tptr(tensor: Any) -> Any:
@@ -282,6 +213,8 @@ def _launch_tpt_kernel(tpt_op: str, args: list) -> Any:
 
 def _launch_tpt_kernel_inplace(tpt_op: str, args: list) -> Any:
     """Launch a TPT kernel for in-place operation."""
+    from tptr.tensor import TptrTensor
+
     if args and isinstance(args[0], TptrTensor):
         return args[0]
     return None
@@ -311,20 +244,9 @@ def is_supported(op: str) -> bool:
 
 def get_tpt_op_name(op: str) -> Optional[str]:
     """Get the TPT kernel name for a PyTorch op."""
-<<<<<<< Updated upstream
     return _OP_MAP.get(op)
 
 
 def register_custom_op(op_name: str, tpt_op: str) -> None:
     """Register a custom PyTorch op mapping."""
     _OP_MAP[op_name] = tpt_op
-
-    "int64": "int64",
-    "int8": "int8",
-    "uint8": "uint8",
-    "bool": "bool",
-}
-
-=======
-    return _OP_MAP.get(op)
->>>>>>> Stashed changes

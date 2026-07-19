@@ -75,14 +75,36 @@ impl KernelHandle {
     pub(crate) fn set_failed(&self) { self.state.store(3, Ordering::Release); }
 }
 
+/// Compiled form of a TPTIR module produced by `Device::load_module`.
+///
+/// Holds the original source plus the compiler backend output so that
+/// `launch_kernel` can dispatch against real, runnable code instead of an
+/// empty `entry_point` string.
 #[derive(Debug, Clone)]
-pub struct Kernel { name: String, entry_point: String, shared_mem_bytes: u32 }
+pub struct CompiledModule {
+    pub source: String,
+    pub compiled: String,
+    pub target: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Kernel {
+    name: String,
+    entry_point: String,
+    shared_mem_bytes: u32,
+    module: Option<CompiledModule>,
+}
 
 impl Kernel {
-    pub fn new(name: impl Into<String>) -> Self { Self { name: name.into(), entry_point: String::new(), shared_mem_bytes: 0 } }
+    pub fn new(name: impl Into<String>) -> Self { Self { name: name.into(), entry_point: String::new(), shared_mem_bytes: 0, module: None } }
     pub fn name(&self) -> &str { &self.name }
     pub fn entry_point(&self) -> &str { &self.entry_point }
     pub fn shared_mem_bytes(&self) -> u32 { self.shared_mem_bytes }
+    /// Returns the compiled TPTIR module if this kernel was produced by
+    /// `Device::load_module`, otherwise `None` (a bare named kernel).
+    pub fn module(&self) -> Option<&CompiledModule> { self.module.as_ref() }
+    /// Attach a compiled module; used by `Device::load_module`.
+    pub(crate) fn with_module(mut self, module: CompiledModule) -> Self { self.module = Some(module); self }
 }
 
 #[cfg(test)]

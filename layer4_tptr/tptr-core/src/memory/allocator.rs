@@ -18,6 +18,10 @@ pub enum AllocationStrategy { Slab, Buddy, Fallback }
 pub trait GpuAllocator: Send + Sync {
     fn allocate(&mut self, size: u64, region: MemoryRegion, mem_type: MemType, access: MemAccess) -> TptrResult<MemoryAllocation>;
     fn free(&mut self, allocation: &MemoryAllocation) -> TptrResult<()>;
+    /// Release the bookkeeping for an allocation by its handle alone, without
+    /// re-matching the device pointer (used when the real device pointer has
+    /// been substituted for the allocator's fake address).
+    fn free_handle(&mut self, handle: u64) -> TptrResult<()>;
     fn stats(&self) -> AllocatorStats;
     fn reset(&mut self) -> TptrResult<()>;
 }
@@ -57,6 +61,7 @@ impl GpuAllocator for SlabAllocator {
         self.stats.bytes_freed += allocation.size(); self.stats.current_usage = self.stats.current_usage.saturating_sub(allocation.size());
         self.stats.total_frees += 1; Ok(())
     }
+    fn free_handle(&mut self, _handle: u64) -> TptrResult<()> { Ok(()) }
     fn stats(&self) -> AllocatorStats { self.stats.clone() }
     fn reset(&mut self) -> TptrResult<()> {
         let bs = self.slabs[0].block_size; let num = self.slab_size / bs;
@@ -113,6 +118,7 @@ impl GpuAllocator for BuddyAllocator {
         self.stats.current_usage = self.stats.current_usage.saturating_sub(allocation.size());
         self.stats.total_frees += 1; Ok(())
     }
+    fn free_handle(&mut self, _handle: u64) -> TptrResult<()> { Ok(()) }
     fn stats(&self) -> AllocatorStats { self.stats.clone() }
     fn reset(&mut self) -> TptrResult<()> {
         let mo = self.free_lists.len() - 1; for list in &mut self.free_lists { list.clear(); }
@@ -146,6 +152,7 @@ impl GpuAllocator for FallbackAllocator {
         self.stats.current_usage = self.stats.current_usage.saturating_sub(allocation.size());
         self.stats.total_frees += 1; Ok(())
     }
+    fn free_handle(&mut self, _handle: u64) -> TptrResult<()> { Ok(()) }
     fn stats(&self) -> AllocatorStats { self.stats.clone() }
     fn reset(&mut self) -> TptrResult<()> { self.next_free = self.base_addr; self.stats = AllocatorStats::default(); Ok(()) }
 }

@@ -39,7 +39,6 @@ class OpEntry:
 
 
 def _default_factory(name: str) -> Callable:
-<<<<<<< Updated upstream
     """Create a default factory that returns a no-op function."""
     def factory():
         return lambda *args, **kwargs: None
@@ -48,14 +47,6 @@ def _default_factory(name: str) -> Callable:
 
 class DispatchRegistry:
     """Registry for tensor operations mapping high-level ops to TPT kernels."""
-=======
-    def factory():
-        return lambda *args, **kwargs: None
-    return factory
->>>>>>> Stashed changes
-
-
-class DispatchRegistry:
     def __init__(self):
         self._ops: Dict[str, OpEntry] = {}
 
@@ -85,9 +76,6 @@ class DispatchRegistry:
     def list_ops(self):
         return list(self._ops.keys())
 
-    def list_by_type(self, op_type):
-        return [name for name, entry in self._ops.items() if entry.metadata.op_type == op_type]
-
     def has(self, name):
         return name in self._ops
 
@@ -97,7 +85,6 @@ class DispatchRegistry:
             return True
         return False
 
-<<<<<<< Updated upstream
     def clear(self) -> None:
         self._ops.clear()
 
@@ -112,18 +99,6 @@ class DispatchRegistry:
 
 
 # Module-level default registry
-=======
-    def clear(self):
-        self._ops.clear()
-
-    def __len__(self):
-        return len(self._ops)
-
-    def __contains__(self, name):
-        return name in self._ops
-
-
->>>>>>> Stashed changes
 _default_registry = DispatchRegistry()
 
 
@@ -165,15 +140,4 @@ _default_registry.register("mean", OpType.REDUCTION, input_count=1, output_count
 _default_registry.register("matmul", OpType.MATMUL, input_count=2, output_count=1,
                           kernel_name="tptr_matmul", description="Matrix multiplication")
 _default_registry.register("layer_norm", OpType.LAYER_NORM, input_count=1, output_count=1,
-<<<<<<< Updated upstream
                           kernel_name="tptr_layer_norm", description="Layer normalization")
-
-
-def _default_factory(name: str) -> Callable:
-    def factory():
-        return lambda *args, **kwargs: None
-    return factory
-
-=======
-                          kernel_name="tptr_layer_norm", description="Layer normalization")
->>>>>>> Stashed changes

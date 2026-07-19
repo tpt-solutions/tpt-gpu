@@ -3,7 +3,7 @@ resolver = "2"
 members = ["tptp-core", "benches"]
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["TPT GPU Contributors"]
 description = "TPT Primitives - TPTIR kernels + Rust wrappers for GPU compute"

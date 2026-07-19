@@ -159,9 +159,4 @@ def device_context(index: int = 0):
     try:
         yield dev
     finally:
-<<<<<<< Updated upstream
         dev.synchronize()
-
-=======
-        dev.synchronize()
->>>>>>> Stashed changes
