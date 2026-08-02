@@ -1,0 +1,15 @@
+[package]
+name = "tpt-gpu-runtime-py"
+version = "1.0.0"
+edition = "2021"
+description = "TPT Runtime - Python bindings via PyO3"
+license = "MIT OR Apache-2.0 WITH LLVM-exception"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+name = "tptr"
+
+[dependencies]
+tpt-gpu-runtime = { path = "../tpt-gpu-runtime" }
+pyo3 = { version = "0.24", features = ["extension-module"] }

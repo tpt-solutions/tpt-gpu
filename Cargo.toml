@@ -1,18 +1,28 @@
 [workspace]
-members = [
-    "crates/tptir-spec",
-    "layer3_tptc/rust",
-    "tools/kernel-generator",
-    "tools/shared",
-    "layer6_tptf/tptf-dispatch",
-    "tools/kernel-optimizer",
-    "layer5_tptp/tptp-core",
-    "layer5_tptp/benches",
-    "tools/tpt-bench",
-    "tools/model-registry",
-    "tools/model-optimizer",
-]
 resolver = "2"
+members = [
+    "crates/tpt-gpu-bench",
+    "crates/tpt-gpu-compiler",
+    "crates/tpt-gpu-dispatch",
+    "crates/tpt-gpu-driver-daemon",
+    "crates/tpt-gpu-ir-spec",
+    "crates/tpt-gpu-kernel-optimizer",
+    "crates/tpt-gpu-kernelgen",
+    "crates/tpt-gpu-model-optimizer",
+    "crates/tpt-gpu-model-registry",
+    "crates/tpt-gpu-playground",
+    "crates/tpt-gpu-primitives",
+    "crates/tpt-gpu-primitives-benches",
+    "crates/tpt-gpu-runtime",
+    "crates/tpt-gpu-runtime-c",
+    "crates/tpt-gpu-runtime-py",
+    "crates/tpt-gpu-script-cli",
+    "crates/tpt-gpu-script-core",
+    "crates/tpt-gpu-script-format",
+    "crates/tpt-gpu-script-lsp",
+    "crates/tpt-gpu-shared",
+    "crates/tpt-gpu-vendor-cert",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -30,8 +40,12 @@ anyhow = "1"
 libc = "0.2"
 log = "0.4"
 thiserror = "2"
-bytemuck = "1.14"
+bytemuck = "1.21"
 chrono = { version = "0.4", features = ["serde"] }
 rand = "0.8"
 parking_lot = "0.12"
 memmap2 = "0.9"
+tokio = { version = "1", features = ["full"] }
+tower-lsp = "0.20"
+tower = { version = "0.4", features = ["full"] }
+dashmap = "5"

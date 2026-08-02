@@ -1,0 +1,37 @@
+[package]
+name = "tpt-gpu-primitives"
+version = "1.0.0"
+edition.workspace = true
+authors = ["TPT GPU Contributors"]
+description = "TPT Primitives - TPTIR kernel wrappers and vendor library integration"
+license.workspace = true
+repository.workspace = true
+documentation = "https://docs.rs/tpt-gpu-primitives"
+readme = "README.md"
+keywords = ["gpu", "compute", "kernels", "simt", "hpc"]
+categories = ["hardware-support", "science::ml"]
+
+[lib]
+name = "tpt_gpu_primitives"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+thiserror = { workspace = true }
+log = { workspace = true }
+bytemuck = { workspace = true }
+libc = { workspace = true }
+libloading = "0.8"
+
+[dev-dependencies]
+env_logger = "0.11"
+
+[features]
+default = []
+# Enable TPTIR compiler backend (requires tptc C library to be linked)
+tptir-backend = []
+# Enable vendor library backends
+cuda = []
+rocm = []
+metal = []
+# Simulation mode for CI / testing without hardware; disables all FFI
+sim = []

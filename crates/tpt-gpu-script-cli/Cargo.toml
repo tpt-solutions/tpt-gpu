@@ -1,0 +1,19 @@
+[package]
+name = "tpt-gpu-script-cli"
+version = "1.0.0"
+edition.workspace = true
+authors = ["TPT GPU Contributors"]
+description = "tpt — command-line interface for the TPT Script compiler"
+license.workspace = true
+repository.workspace = true
+documentation = "https://docs.rs/tpt-gpu-script-cli"
+readme = "README.md"
+keywords = ["gpu", "compiler", "ml", "ai", "tptscript"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "tpt-gpu-script"
+path = "src/main.rs"
+
+[dependencies]
+tpt-gpu-script-core = { path = "../tpt-gpu-script-core", version = "1.0.0" }

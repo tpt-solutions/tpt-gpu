@@ -3,9 +3,11 @@
 on:
   pull_request:
     paths:
-      - ''layer3_tptc/rust/**''
-      - ''tools/kernel-generator/**''
-      - ''tuning/**''
+      - 'crates/tptir-core/**'
+      - 'crates/tpt-gpu-kernel-generator/**'
+      - 'crates/tpt-gpu-kernel-optimizer/**'
+      - 'crates/tpt-gpu-bench/**'
+      - 'tuning/**'
 
 jobs:
   benchmark:
@@ -25,66 +27,77 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles(''**/Cargo.lock'') }}
-
-      - name: Build tpt-gpu-compiler
-        run: cargo build --release
-        working-directory: .
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run quick benchmark on base
         run: |
           git checkout ${{ github.event.pull_request.base.sha }}
-          cargo run --release -- bench --quick --output-json baseline_report.json || true
+          cargo run -p tpt-gpu-bench --release -- \
+            --config crates/tpt-gpu-bench/examples/quick_smoke.toml \
+            --gpu sim --output results/base || true
+          git checkout ${{ github.sha }}
         working-directory: .
 
       - name: Run quick benchmark on head
         run: |
-          git checkout ${{ github.sha }}
-          cargo run --release -- bench --quick --output-json current_report.json || true
+          cargo run -p tpt-gpu-bench --release -- \
+            --config crates/tpt-gpu-bench/examples/quick_smoke.toml \
+            --gpu sim --output results/head || true
         working-directory: .
 
       - name: Compare results and post comment
         uses: actions/github-script@v6
         with:
           script: |
-            const fs = require(''fs'');
-            let baseline = {};
-            let current = {};
-            try { baseline = JSON.parse(fs.readFileSync(''baseline_report.json'', ''utf8'')); } catch(e) {}
-            try { current = JSON.parse(fs.readFileSync(''current_report.json'', ''utf8'')); } catch(e) {}
+            const fs = require('fs');
+            const path = require('path');
+            function loadReport(dir) {
+              const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+              const reports = files.map(f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
+              const runs = reports.flatMap(r => r.runs || []);
+              const byLabel = {};
+              for (const r of runs) byLabel[r.label] = r;
+              return { reports, runs, byLabel };
+            }
+            let baseline = { runs: [], byLabel: {} };
+            let current = { runs: [], byLabel: {} };
+            try { baseline = loadReport('results/base'); } catch(e) {}
+            try { current = loadReport('results/head'); } catch(e) {}
 
-            let body = ''## Kernel Benchmark Results\n\n'';
+            let body = '## Kernel Benchmark Results\n\n';
 
-            if (current.kernels) {
-              body += ''**Current Report:**\n\n'';
-              body += ''| Kernel | GFLOPS | Bandwidth (GB/s) | Efficiency (%) | Status |\n'';
-              body += ''|--------|--------|-----------------|---------------|--------|\n'';
-              for (const k of current.kernels) {
-                const status = k.is_regression ? ''**REGRESSION**'' : ''OK'';
-                body += `| ${k.kernel} | ${k.gflops.toFixed(2)} | ${k.bandwidth_gbps.toFixed(2)} | ${k.efficiency_pct.toFixed(1)} | ${status} |\n`;
+            if (current.runs.length) {
+              body += '**Current Report:**\n\n';
+              body += '| Kernel | Kind | GFLOPS | Efficiency (%) | Correctness |\n';
+              body += '|--------|------|--------|----------------|-------------|\n';
+              for (const r of current.runs) {
+                const corr = r.correctness && r.correctness.passed ? 'OK' : '**FAIL**';
+                const eff = r.efficiency_pct != null ? r.efficiency_pct.toFixed(1) : 'sim';
+                body += `| ${r.label} | ${r.kind} | ${r.gflops.toFixed(2)} | ${eff} | ${corr} |\n`;
               }
-              body += ''\n'';
-              if (current.summary) {
-                body += `**Summary:** ${current.summary.total_kernels} kernels, ${current.summary.regression_count} regressions, best ${current.summary.best_gflops.toFixed(2)} GFLOPS, avg ${current.summary.avg_efficiency_pct.toFixed(1)}% efficiency\n\n`;
+              body += '\n';
+              if (current.reports.length && current.reports[0].summary) {
+                const s = current.reports[0].summary;
+                body += `**Summary:** ${s.valid}/${s.total} valid, ${s.correctness_failures} correctness failures\n\n`;
               }
             } else {
-              body += ''No current benchmark results available.\n\n'';
+              body += 'No current benchmark results available.\n\n';
             }
 
-            if (baseline.kernels && current.kernels) {
-              body += ''**Efficiency Deltas (vs baseline):**\n\n'';
-              for (let i = 0; i < baseline.kernels.length && i < current.kernels.length; i++) {
-                const b = baseline.kernels[i];
-                const c = current.kernels[i];
-                const delta = ((c.execution_time_ms - b.execution_time_ms) / b.execution_time_ms * 100).toFixed(2);
-                const sign = delta >= 0 ? ''+'' : '''';
-                const flag = delta > 5 ? '' **REGRESSION**'': '''';
-                body += `- \`${c.kernel}\`: ${sign}${delta}% (${b.execution_time_ms.toFixed(3)}ms \u2192 ${c.execution_time_ms.toFixed(3)}ms)${flag}\n`;
+            if (baseline.runs.length && current.runs.length) {
+              body += '**Time Deltas (vs baseline):**\n\n';
+              for (const r of current.runs) {
+                const b = baseline.byLabel[r.label];
+                if (!b || !b.time_ms || !r.time_ms) continue;
+                const delta = ((r.time_ms - b.time_ms) / b.time_ms * 100).toFixed(2);
+                const sign = delta >= 0 ? '+' : '';
+                const flag = delta > 5 ? ' **REGRESSION**' : '';
+                body += `- \`${r.label}\`: ${sign}${delta}% (${b.time_ms.toFixed(3)}ms \u2192 ${r.time_ms.toFixed(3)}ms)${flag}\n`;
               }
-              body += ''\n'';
+              body += '\n';
             }
 
-            body += ''*This benchmark was run automatically on every kernel change. Please review the performance impact before merging.*'';
+            body += '*This benchmark runs on every kernel change. Please review the performance impact before merging.*';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,

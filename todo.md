@@ -261,4 +261,85 @@
 - [x] C example compiles and runs against generated header (verified with clang + MSVC libs)
 - [x] Phase 7.3 integration test (TPTIR text → `load_module` → `launch_kernel` → result) passes
 - [x] `import tptr` from `layer6_framework` succeeds with no `ImportError`/`SyntaxError` (sim fallback when native ext absent; native path builds and imports)
+
+---
+
+## Phase 8: Unify all Rust crates under crates/
+
+**Context:** 27 crates (all already `tpt-gpu-`-prefixed) are scattered across `layer2_tptd/rust`, `layer3_tptc/rust`, `layer4_tptr/*`, `layer5_tptp/*`, `layer6_tptf/*`, `layer7_tptb/*`, `tools/*`, and `crates/tptir-spec`, split across 4 independent Cargo workspaces plus 3 singleton workspaces. Goal: flatten every crate into `crates/<package-name>/` and merge into one root workspace so all crates are visible in one place. Plan: `C:\Users\phill\.claude\plans\are-we-able-to-snazzy-haven.md`.
+
+### Pre-flight
+- [ ] Run `cargo fmt --all -- --check` and `cargo clippy --all-targets -- -D warnings` in each of the currently-independent workspaces (root, `layer4_tptr`, `layer5_tptp`, `layer7_tptb`, `layer2_tptd/rust`, `tools/tpt-playground`, `tools/vendor-cert`) to catalog pre-existing lint/format debt before the merge
+
+### Delete stale orphan crates
+- [ ] `git rm -r layer2_driver/rust` (duplicate of `layer2_tptd/rust`'s `tpt-gpu-driver-daemon`; rest of `layer2_driver/` left untouched)
+- [ ] `git rm -r layer6_framework/tptr-core` (duplicate of `layer6_tptf/tptf-dispatch`'s `tpt-gpu-dispatch`; rest of `layer6_framework/` left untouched)
+
+### Move crates into crates/<package-name>/
+- [ ] `git mv` all 21 surviving crates to `crates/<package-name>/` (see plan file table), including renaming `crates/tptir-spec` → `crates/tpt-gpu-ir-spec`
+
+### Remove now-orphaned workspace manifests/lockfiles/build artifacts
+- [ ] `git rm` `layer4_tptr/Cargo.{toml,lock}`, `layer5_tptp/Cargo.{toml,lock}`, `layer7_tptb/Cargo.{toml,lock}`, stray `layer3_tptc/rust/Cargo.lock`
+- [ ] Strip `[workspace]` table from `crates/tpt-gpu-driver-daemon/Cargo.toml`, `crates/tpt-gpu-playground/Cargo.toml`, `crates/tpt-gpu-vendor-cert/Cargo.toml`
+- [ ] Remove their old `Cargo.lock` files and all stale `target/` build dirs (none git-tracked)
+- [ ] Note loss of `tpt-gpu-playground`'s `[profile.release]` (dead once folded into unified workspace) — decide fast-follow fix separately
+
+### Rewrite root Cargo.toml
+- [ ] Update `[workspace] members` to the 21 `crates/tpt-gpu-*` paths; merge `[workspace.dependencies]` (bump `bytemuck` to `1.21`, add `tokio`/`tower-lsp`/`tower`/`dashmap` from layer7); keep `[workspace.package]` as-is (`0.1.0` / "TPT Solutions")
+
+### Fix per-crate workspace metadata inheritance
+- [ ] `crates/tpt-gpu-primitives`, `-primitives-benches`, `-script-core`, `-script-cli`, `-script-lsp`, `-script-format`: replace `version.workspace`/`authors.workspace` with explicit `1.0.0`/`"TPT GPU Contributors"`; hardcode `keywords`/`categories` on the 4 script-* crates
+
+### Fix path dependencies
+- [ ] Update all `path = "../../layerN_xxx/..."` and stale short-name (`../tptr-core`, `../tptb-core`, `../tptp-core`, `../shared`) dependencies to flat `../tpt-gpu-*` siblings (see plan file table — 13 edits across `tpt-gpu-runtime`, `-runtime-py`, `-runtime-c`, `-primitives-benches`, `-dispatch`, `-script-cli/-lsp/-format`, `-kernelgen`, `-kernel-optimizer`, `-model-optimizer`, `-playground`)
+- [ ] Note pre-existing `tpt-gpu-shared` version-pin mismatch (`1.0.0` pinned vs actual `0.1.0`) surfaced by this — fix now or fast-follow
+
+### Cleanup
+- [ ] Delete now-fully-empty `layer3_tptc/rust/`; leave `layer2_tptd/`, `layer4_tptr/`, `layer5_tptp/`, `layer6_tptf/`, `layer7_tptb/`, `tools/` in place (still hold non-Rust content)
+
+### CI updates
+- [ ] `.github/workflows/release.yml`: update 4 `cd layer7_tptb/tptb-*` → `cd crates/tpt-gpu-script-*` lines
+- [ ] `.github/workflows/benchmark.yml`: update path filters to `crates/tpt-gpu-compiler/**` and `crates/tpt-gpu-kernelgen/**`
+- [ ] Verify `.github/workflows/scoreboard.yml` still resolves `-p tpt-gpu-bench` post-merge (no edit expected)
+- [ ] Flag in PR description (not silently fixed): `ci.yml` `vendor-builds` CUDA/ROCm job behavior change, and fmt/clippy now covering ~10 previously-uncovered crates
+
+### Docs
+- [ ] Rewrite `CLAUDE.md` "Build & Test Commands" section to use root-level `cargo build/test -p <crate>`; update hardcoded `layer4_tptr/tptr-core/src/...` and `layer7_tptb/tptb-core/src/` path references
+- [ ] (Follow-up, out of scope) sweep remaining `README.md`/`docs/**`/tool READMEs referencing old paths
+
+### Verification
+- [ ] `cargo build --workspace`, `cargo test --workspace`, `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings`
+- [ ] `cargo build -p tpt-gpu-playground` (wasm-bindgen crate builds natively as plain workspace member)
+- [ ] `cargo publish --dry-run -p tpt-gpu-script-core` (version/authors preserved)
+- [ ] `git status` clean of leftover empty dirs / stray target or Cargo.lock files
+- [ ] Manual check: `crates/tpt-gpu-playground`'s `build.sh`/`build.ps1` still runs `wasm-pack build` successfully
+
+---
+
+## Cross-Repo Synergy Todos (tpt-spark / tpt-crucible integration)
+
+**Context:** identified by analysing the three-repo TPT AI compute suite (tpt-gpu, tpt-spark, tpt-crucible) for cross-repo synergies (merged in from `todo1.md`). None of these are required for tpt-gpu to work standalone — optional improvements that strengthen the suite.
+
+### 1. Publish TPTIR as a standalone crate/spec
+**Why:** tpt-crucible also generates an MLIR-based IR (TPT-IR) from its Catalyst ingestion module. A single shared TPTIR dialect spec lets a model compiled once route to GPU (tpt-gpu runtime), FPGA (Crucible Fusion), MCU swarm (Crucible Alloy), or analog (Crucible Element) without re-compilation.
+- [x] Extract the TPTIR dialect definition into a standalone crate — `crates/tptir-spec` (`tpt-gpu-ir-spec`) already exists
+- [ ] Define a stable text-format serialisation that tpt-crucible's Catalyst can consume
+- [ ] Publish the crate to crates.io so tpt-crucible can depend on it directly (no `publish` setting currently in its `Cargo.toml` — verify readiness and actually publish)
+- [ ] Tag the first stable release as `tptir-spec v0.1.0`
+
+### 2. Shared model registry (`~/.tpt/models/`)
+**Why:** tpt-spark and tpt-crucible both consume GGUF models; a shared convention avoids duplicate downloads/directories.
+- [x] `tools/model-registry` (`tpt-gpu-model-registry`) implements the shared registry, `ModelRegistry::open()`, HuggingFace download via `hf.rs`
+- [x] `MODELS_REGISTRY.md` exists at repo root documenting the manifest format
+- [ ] Confirm tpt-spark and tpt-crucible have actually adopted the same `~/.tpt/models/` + `models.json` convention (cross-repo verification, not just tpt-gpu-side)
+
+### 3. Expose a Rust-native inference API for tpt-spark
+**Why:** tpt-spark's `WgpuEngine` (hand-written WGSL) could delegate to tpt-gpu's production-quality kernels via a stable trait.
+- [x] `LlmInference` trait defined in `layer4_tptr/tptr-core/src/inference.rs` (`GpuInferenceEngine` implementation exists) — will move to `crates/tpt-gpu-runtime/src/inference.rs` under Phase 8
+- [ ] Confirm the trait signature matches what's proposed here (`load`/`infer`/`cancel`) or reconcile differences
+- [ ] Publish/expose `tpt-gpu-runtime` (or an `ffi` feature) so tpt-spark can add it as an optional dependency
+- [ ] Write a minimal cross-repo integration test: load a GGUF model, run inference via the trait from tpt-spark's side
+
+### 4. TPT Script frontend note (deferred — depends on item 1)
+- [ ] Once TPTIR is published as a shared spec (item 1) and tpt-crucible adopts it as Catalyst's output dialect, tpt-gpu's TPT Script compiler gains FPGA/analog/MCU-swarm as compilation targets — revisit after item 1 lands and tpt-crucible confirms adoption
 - [x] Root `README.md` and `docs/tutorials/09_python_api.md` re-checked against final API surface for doc/implementation mismatches

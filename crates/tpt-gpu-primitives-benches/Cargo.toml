@@ -1,0 +1,53 @@
+[package]
+name = "tpt-gpu-primitives-benches"
+version = "1.0.0"
+edition.workspace = true
+authors = ["TPT GPU Contributors"]
+description = "Benchmark harness for TPT Primitives - GEMM vs cuBLAS, Attention vs FlashAttention, Conv2D vs cuDNN"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+tpt-gpu-primitives = { path = "../tpt-gpu-primitives" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+env_logger = "0.11"
+clap = { workspace = true }
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
+
+[features]
+default = []
+cuda = ["tpt-gpu-primitives/cuda"]
+rocm = ["tpt-gpu-primitives/rocm"]
+all-baselines = ["cuda", "rocm"]
+
+[[example]]
+name = "run_benchmarks"
+path = "src/examples/run_benchmarks.rs"
+
+[[example]]
+name = "run_comprehensive"
+path = "src/examples/run_comprehensive.rs"
+
+[[example]]
+name = "profile_gemm"
+path = "src/examples/profile_gemm.rs"
+
+[[example]]
+name = "profile_attention"
+path = "src/examples/profile_attention.rs"
+
+[[example]]
+name = "profile_conv2d"
+path = "src/examples/profile_conv2d.rs"
+
+[[example]]
+name = "ci_regression"
+path = "src/examples/ci_regression.rs"
+
+[[example]]
+name = "fused_gemm_benchmark"
+path = "src/examples/fused_gemm_benchmark.rs"
