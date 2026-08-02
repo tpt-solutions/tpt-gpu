@@ -50,7 +50,7 @@ pub struct ModelInfo {
     pub ffn_dim: u32,
     /// Number of transformer layers (blocks).
     pub num_layers: u32,
-    /// Per-layer quantization bit depths from model-optimizer (2/4/6/8/16).
+    /// Per-layer quantization bit depths from tpt-gpu-model-optimizer (2/4/6/8/16).
     /// Empty means all layers use f32. Indexed `[layer_idx]`.
     pub per_layer_bits: Vec<u8>,
     /// Neuron indices zeroed by the surgical pruner, one `Vec<u32>` per layer.

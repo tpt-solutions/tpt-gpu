@@ -12,7 +12,7 @@ Runnable, end-to-end starting points, organized by what you're trying to do. Eac
 | Full supervised training loop | [`layer7_tptb/examples/04_training_loop.tpts`](../layer7_tptb/examples/04_training_loop.tpts) |
 | FSDP across 8 GPUs | [`layer7_tptb/examples/distributed/fsdp_8gpu.tpts`](../layer7_tptb/examples/distributed/fsdp_8gpu.tpts) |
 | Pipeline parallelism (4 stages) | [`layer7_tptb/examples/distributed/pipeline_parallel.tpts`](../layer7_tptb/examples/distributed/pipeline_parallel.tpts) |
-| Try it live in the browser, no install | [`tools/tpt-playground/`](../tools/tpt-playground/) |
+| Try it live in the browser, no install | [`crates/tpt-gpu-playground/`](../crates/tpt-gpu-playground/) |
 
 Run any `.tpts` example with `tpt check <file>` then `tpt compile <file> -o out/` — see [`layer7_tptb/examples/README.md`](../layer7_tptb/examples/README.md).
 
@@ -30,25 +30,25 @@ See also tutorials [9 (Python API)](tutorials/09_python_api.md) and [10 (PyTorch
 
 | Use case | Start here |
 |---|---|
-| Download and register a GGUF model once, shared across tools | [`tools/model-registry/README.md`](../tools/model-registry/README.md) |
-| Quantize/optimize a model within a quality budget | [`tools/model-optimizer/docs/developer-portal.md`](../tools/model-optimizer/docs/developer-portal.md) |
-| See which model architectures are supported for inference | `layer4_tptr/tptr-core/src/arch.rs` (maps GGUF `general.architecture` → forward-pass template — LLaMA 3, Mistral, Qwen2, Phi-3, Gemma 2) |
+| Download and register a GGUF model once, shared across tools | [`crates/tpt-gpu-model-registry/README.md`](../crates/tpt-gpu-model-registry/README.md) |
+| Quantize/optimize a model within a quality budget | [`crates/tpt-gpu-model-optimizer/docs/developer-portal.md`](../crates/tpt-gpu-model-optimizer/docs/developer-portal.md) |
+| See which model architectures are supported for inference | `crates/tpt-gpu-runtime/src/arch.rs` (maps GGUF `general.architecture` → forward-pass template — LLaMA 3, Mistral, Qwen2, Phi-3, Gemma 2) |
 
 ## Benchmark and tune kernels
 
 | Use case | Start here |
 |---|---|
-| Run the community benchmark suite against your GPU | [`tools/tpt-bench/README.md`](../tools/tpt-bench/README.md) — try `examples/quick_smoke.toml` first |
-| Generate a new kernel from a template or AI pipeline | [`tools/kernel-generator/README.md`](../tools/kernel-generator/README.md) |
-| Auto-tune a kernel's launch parameters | [`tools/kernel-optimizer/README.md`](../tools/kernel-optimizer/README.md) |
+| Run the community benchmark suite against your GPU | [`crates/tpt-gpu-bench/README.md`](../crates/tpt-gpu-bench/README.md) — try `examples/quick_smoke.toml` first |
+| Generate a new kernel from a template or AI pipeline | [`crates/tpt-gpu-kernelgen/README.md`](../crates/tpt-gpu-kernelgen/README.md) |
+| Auto-tune a kernel's launch parameters | [`crates/tpt-gpu-kernel-optimizer/README.md`](../crates/tpt-gpu-kernel-optimizer/README.md) |
 | See how TPT GEMM compares to cuBLAS | [`GEMM_VS_CUBLAS_IMPLEMENTATION.md`](../GEMM_VS_CUBLAS_IMPLEMENTATION.md) |
-| Rust-level primitive benchmarks (GEMM, Attention, Conv2D/3D) | [`layer5_tptp/tptp-core/examples/`](../layer5_tptp/tptp-core/examples/) and [`layer5_tptp/benches/src/examples/`](../layer5_tptp/benches/src/examples/) |
+| Rust-level primitive benchmarks (GEMM, Attention, Conv2D/3D) | [`crates/tpt-gpu-primitives/examples/`](../crates/tpt-gpu-primitives/examples/) and [`crates/tpt-gpu-primitives-benches/src/examples/`](../crates/tpt-gpu-primitives-benches/src/examples/) |
 
 ## Certify a new hardware vendor backend
 
 | Use case | Start here |
 |---|---|
-| Run Tier 1–3 certification tests against a vendor backend | [`tools/vendor-cert/README.md`](../tools/vendor-cert/README.md) |
+| Run Tier 1–3 certification tests against a vendor backend | [`crates/tpt-gpu-vendor-cert/README.md`](../crates/tpt-gpu-vendor-cert/README.md) |
 | Read the vendor certification program requirements | [`docs/vendor/VENDOR_PROGRAM.md`](vendor/VENDOR_PROGRAM.md) |
 
 ## Going deeper

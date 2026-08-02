@@ -147,7 +147,7 @@ for %i in 0..16 {
 Passes are registered and executed by the pass manager:
 
 ```rust
-// From layer3_tptc/rust/src/passes.rs
+// From crates/tpt-gpu-compiler/src/passes.rs
 use tptir_passes::{Canonicalize, DCE, ConstantFold, Vectorize, TensorLower};
 
 let mut pm = PassManager::new();

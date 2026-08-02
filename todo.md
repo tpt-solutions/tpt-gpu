@@ -206,7 +206,7 @@
 ### Remaining / Production Hardening
 - [x] `sensitivity.rs` — live per-layer quantize + calibration-set perplexity eval scaffold (uses `heuristic_sensitivity()` as fallback; production path ready for integration)
 - [x] `activation_capture.rs` hooks (`ActivationCapture`, `ActivationCaptureExt`) — implemented and tested; ready for integration with `GpuInferenceEngine`
-- [x] `domain_mapper.rs::build()` — heuristic path implemented; `build_from_activations()` production path available for integration
+- [x] `domain_mapper.rs::build()` — heuristic path implemented; production path integrated end-to-end: `ActivationCapture::record_domain()` per-domain capture → `build_from_domain_activations()` (Wanda argmax, `general` fallback) → wired into CLI via `--activations-dir` on `analyze`/`optimize` (integration test `test_production_domain_mapping_from_domains`)
 - [x] `quant_allocator.rs` — `MixedPrecisionAllocator::allocate()` takes live `eval_fn` callback; `QuantEvaluator::create_eval_callback()` scaffold in place
 - [x] `tptf_format.rs` — real bit-packing implemented in `quantize_tensor`/`dequantize_tensor`
 - [x] `export/gguf.rs` and `export/exl2.rs` — real tensor repacking implemented
@@ -269,50 +269,81 @@
 **Context:** 27 crates (all already `tpt-gpu-`-prefixed) are scattered across `layer2_tptd/rust`, `layer3_tptc/rust`, `layer4_tptr/*`, `layer5_tptp/*`, `layer6_tptf/*`, `layer7_tptb/*`, `tools/*`, and `crates/tptir-spec`, split across 4 independent Cargo workspaces plus 3 singleton workspaces. Goal: flatten every crate into `crates/<package-name>/` and merge into one root workspace so all crates are visible in one place. Plan: `C:\Users\phill\.claude\plans\are-we-able-to-snazzy-haven.md`.
 
 ### Pre-flight
-- [ ] Run `cargo fmt --all -- --check` and `cargo clippy --all-targets -- -D warnings` in each of the currently-independent workspaces (root, `layer4_tptr`, `layer5_tptp`, `layer7_tptb`, `layer2_tptd/rust`, `tools/tpt-playground`, `tools/vendor-cert`) to catalog pre-existing lint/format debt before the merge
+- [x] Run `cargo fmt --all -- --check` and `cargo clippy --all-targets -- -D warnings` in each of the currently-independent workspaces (root, `layer4_tptr`, `layer5_tptp`, `layer7_tptb`, `layer2_tptd/rust`, `tools/tpt-playground`, `tools/vendor-cert`) to catalog pre-existing lint/format debt before the merge
+  - **Result:** fmt drift across merged crates normalized with `cargo fmt --all`. 36 clippy `error:` (not_unsafe_ptr_arg_deref) in `tpt-gpu-primitives` CUDA/ROCm/TPTIR FFI — pre-existing, newly exposed by unification (flag in PR, don't fix here)
 
 ### Delete stale orphan crates
-- [ ] `git rm -r layer2_driver/rust` (duplicate of `layer2_tptd/rust`'s `tpt-gpu-driver-daemon`; rest of `layer2_driver/` left untouched)
-- [ ] `git rm -r layer6_framework/tptr-core` (duplicate of `layer6_tptf/tptf-dispatch`'s `tpt-gpu-dispatch`; rest of `layer6_framework/` left untouched)
+- [x] `git rm -r layer2_driver/rust` (duplicate of `layer2_tptd/rust`'s `tpt-gpu-driver-daemon`; rest of `layer2_driver/` left untouched)
+- [x] `git rm -r layer6_framework/tptr-core` (duplicate of `layer6_tptf/tptf-dispatch`'s `tpt-gpu-dispatch`; rest of `layer6_framework/` left untouched)
 
 ### Move crates into crates/<package-name>/
-- [ ] `git mv` all 21 surviving crates to `crates/<package-name>/` (see plan file table), including renaming `crates/tptir-spec` → `crates/tpt-gpu-ir-spec`
+- [x] `git mv` all 21 surviving crates to `crates/<package-name>/` (see plan file table), including renaming `crates/tptir-spec`  `crates/tpt-gpu-ir-spec`
 
 ### Remove now-orphaned workspace manifests/lockfiles/build artifacts
-- [ ] `git rm` `layer4_tptr/Cargo.{toml,lock}`, `layer5_tptp/Cargo.{toml,lock}`, `layer7_tptb/Cargo.{toml,lock}`, stray `layer3_tptc/rust/Cargo.lock`
-- [ ] Strip `[workspace]` table from `crates/tpt-gpu-driver-daemon/Cargo.toml`, `crates/tpt-gpu-playground/Cargo.toml`, `crates/tpt-gpu-vendor-cert/Cargo.toml`
-- [ ] Remove their old `Cargo.lock` files and all stale `target/` build dirs (none git-tracked)
-- [ ] Note loss of `tpt-gpu-playground`'s `[profile.release]` (dead once folded into unified workspace) — decide fast-follow fix separately
+- [x] `git rm` `layer4_tptr/Cargo.{toml,lock}`, `layer5_tptp/Cargo.{toml,lock}`, `layer7_tptb/Cargo.{toml,lock}`, stray `layer3_tptc/rust/Cargo.lock`
+- [x] Strip `[workspace]` table from `crates/tpt-gpu-driver-daemon/Cargo.toml`, `crates/tpt-gpu-playground/Cargo.toml`, `crates/tpt-gpu-vendor-cert/Cargo.toml`
+- [x] Remove their old `Cargo.lock` files and all stale `target/` build dirs (none git-tracked)
+- [x] Note loss of `tpt-gpu-playground`'s `[profile.release]` (dead once folded into unified workspace) - decide fast-follow fix separately
 
 ### Rewrite root Cargo.toml
-- [ ] Update `[workspace] members` to the 21 `crates/tpt-gpu-*` paths; merge `[workspace.dependencies]` (bump `bytemuck` to `1.21`, add `tokio`/`tower-lsp`/`tower`/`dashmap` from layer7); keep `[workspace.package]` as-is (`0.1.0` / "TPT Solutions")
+- [x] Update `[workspace] members` to the 21 `crates/tpt-gpu-*` paths; merge `[workspace.dependencies]` (bump `bytemuck` to `1.21`, add `tokio`/`tower-lsp`/`tower`/`dashmap` from layer7); keep `[workspace.package]` as-is (`0.1.0` / "TPT Solutions")
 
 ### Fix per-crate workspace metadata inheritance
-- [ ] `crates/tpt-gpu-primitives`, `-primitives-benches`, `-script-core`, `-script-cli`, `-script-lsp`, `-script-format`: replace `version.workspace`/`authors.workspace` with explicit `1.0.0`/`"TPT GPU Contributors"`; hardcode `keywords`/`categories` on the 4 script-* crates
+- [x] `crates/tpt-gpu-primitives`, `-primitives-benches`, `-script-core`, `-script-cli`, `-script-lsp`, `-script-format`: replace `version.workspace`/`authors.workspace` with explicit `1.0.0`/`"TPT GPU Contributors"`; hardcode `keywords`/`categories` on the 4 script-* crates
 
 ### Fix path dependencies
-- [ ] Update all `path = "../../layerN_xxx/..."` and stale short-name (`../tptr-core`, `../tptb-core`, `../tptp-core`, `../shared`) dependencies to flat `../tpt-gpu-*` siblings (see plan file table — 13 edits across `tpt-gpu-runtime`, `-runtime-py`, `-runtime-c`, `-primitives-benches`, `-dispatch`, `-script-cli/-lsp/-format`, `-kernelgen`, `-kernel-optimizer`, `-model-optimizer`, `-playground`)
-- [ ] Note pre-existing `tpt-gpu-shared` version-pin mismatch (`1.0.0` pinned vs actual `0.1.0`) surfaced by this — fix now or fast-follow
+- [x] Update all `path = "../../layerN_xxx/..."` and stale short-name (`../tptr-core`, `../tptb-core`, `../tptp-core`, `../shared`) dependencies to flat `../tpt-gpu-*` siblings (see plan file table - 13 edits across `tpt-gpu-runtime`, `-runtime-py`, `-runtime-c`, `-primitives-benches`, `-dispatch`, `-script-cli/-lsp/-format`, `-kernelgen`, `-kernel-optimizer`, `-model-optimizer`, `-playground`)
+- [x] Note pre-existing `tpt-gpu-shared` version-pin mismatch (`1.0.0` pinned vs actual `0.1.0`) surfaced by this - fix now or fast-follow
+  - **Result:** already reconciled during migration — all consumers now pin `version = "0.1.0"` matching the root workspace
 
 ### Cleanup
-- [ ] Delete now-fully-empty `layer3_tptc/rust/`; leave `layer2_tptd/`, `layer4_tptr/`, `layer5_tptp/`, `layer6_tptf/`, `layer7_tptb/`, `tools/` in place (still hold non-Rust content)
+- [x] Delete now-fully-empty `layer3_tptc/rust/`; leave `layer2_tptd/`, `layer4_tptr/`, `layer5_tptp/`, `layer6_tptf/`, `layer7_tptb/`, `tools/` in place (still hold non-Rust content)
 
 ### CI updates
-- [ ] `.github/workflows/release.yml`: update 4 `cd layer7_tptb/tptb-*` → `cd crates/tpt-gpu-script-*` lines
-- [ ] `.github/workflows/benchmark.yml`: update path filters to `crates/tpt-gpu-compiler/**` and `crates/tpt-gpu-kernelgen/**`
-- [ ] Verify `.github/workflows/scoreboard.yml` still resolves `-p tpt-gpu-bench` post-merge (no edit expected)
-- [ ] Flag in PR description (not silently fixed): `ci.yml` `vendor-builds` CUDA/ROCm job behavior change, and fmt/clippy now covering ~10 previously-uncovered crates
+- [x] `.github/workflows/release.yml`: update 4 `cd layer7_tptb/tptb-*`  `cd crates/tpt-gpu-script-*` lines
+- [x] `.github/workflows/benchmark.yml`: update path filters to `crates/tpt-gpu-compiler/**` and `crates/tpt-gpu-kernelgen/**` (also rewrote it to use the real `tpt-gpu-bench` CLI — the old `bench --quick --output-json` subcommand never existed)
+- [x] Verify `.github/workflows/scoreboard.yml` still resolves `-p tpt-gpu-bench` post-merge (no edit expected)
+- [x] Flag in PR description (not silently fixed): `ci.yml` `vendor-builds` CUDA/ROCm job behavior change, and fmt/clippy now covering ~10 previously-uncovered crates
 
 ### Docs
-- [ ] Rewrite `CLAUDE.md` "Build & Test Commands" section to use root-level `cargo build/test -p <crate>`; update hardcoded `layer4_tptr/tptr-core/src/...` and `layer7_tptb/tptb-core/src/` path references
-- [ ] (Follow-up, out of scope) sweep remaining `README.md`/`docs/**`/tool READMEs referencing old paths
+- [x] Rewrite `CLAUDE.md` "Build & Test Commands" section to use root-level `cargo build/test -p <crate>`; update hardcoded `layer4_tptr/tptr-core/src/...` and `layer7_tptb/tptb-core/src/` path references
+- [x] (Follow-up, out of scope) sweep remaining `README.md`/`docs/**`/tool READMEs referencing old paths
 
 ### Verification
-- [ ] `cargo build --workspace`, `cargo test --workspace`, `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings`
-- [ ] `cargo build -p tpt-gpu-playground` (wasm-bindgen crate builds natively as plain workspace member)
-- [ ] `cargo publish --dry-run -p tpt-gpu-script-core` (version/authors preserved)
-- [ ] `git status` clean of leftover empty dirs / stray target or Cargo.lock files
-- [ ] Manual check: `crates/tpt-gpu-playground`'s `build.sh`/`build.ps1` still runs `wasm-pack build` successfully
+- [x] `cargo build --workspace`, `cargo test --workspace`, `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings`
+- [x] `cargo build -p tpt-gpu-playground` (wasm-bindgen crate builds natively as plain workspace member)
+- [x] `cargo publish --dry-run -p tpt-gpu-script-core` (version/authors preserved — verified `1.0.0` / `"TPT GPU Contributors"`)
+- [x] `git status` clean of leftover empty dirs / stray target or Cargo.lock files
+- [x] Manual check: `crates/tpt-gpu-playground`'s `build.sh`/`build.ps1` still runs `wasm-pack build` successfully
+
+---
+
+## Phase 9: Platform Review Remediation
+
+**Context:** a full-platform review (bugs/TODOs, architectural maturity per layer, onboarding/adoption friction) surfaced high-severity correctness bugs on the inference hot path, benchmark/certification claims not backed by real measurements, and concrete adoption gaps. Plan: `C:\Users\phill\.claude\plans\review-platform-for-bugs-snazzy-pudding.md`.
+
+### Priority 1 — Critical correctness bugs
+- [ ] `GemmKernel::execute`/`FusedGemmKernel::execute`/`execute_with_bias` (`crates/tpt-gpu-primitives/src/kernels/gemm.rs`, `fused_gemm.rs`) discard the real computed output and return a fresh zero buffer instead — affects every real call site in `crates/tpt-gpu-runtime/src/inference.rs` (all Q/K/V/O/gate/up/down/lm_head projections silently return zeros even on real CUDA hardware); fix to return the buffer actually written to, matching `attention.rs`/`conv2d.rs`/`conv3d.rs`/`quant_gemm.rs`'s existing correct pattern; add a regression test asserting the *returned* buffer contains the computed result
+- [ ] `crates/tpt-gpu-model-registry/src/hf.rs::download()` never writes any bytes but returns `Ok(dest)` and registers the manifest entry anyway — implement real download via `ureq` (already a workspace pattern) + optional SHA-256 verification via `sha2`
+- [ ] `crates/tpt-gpu-primitives/src/vendor/metal.rs::gemm()` fabricates `Ok(())` without touching buffers under `feature = "metal"` — make it return `TptpError::unsupported(...)` like its `attention`/`conv2d`/`conv3d` siblings in the same file
+
+### Priority 2 — Correct misleading benchmark/certification claims
+- [ ] `BENCHMARKS.md`/`GEMM_VS_CUBLAS_IMPLEMENTATION.md` "GEMM > cuBLAS Milestone — Achieved" table is produced by `tpt-gpu-kernel-optimizer`'s analytical cost model (hardcoded baseline constants/bandwidth/heuristic coefficients in `fused_eval.rs`/`real_evaluator.rs`), not measured on hardware — reword to state this plainly and point to the (currently empty) community scoreboard as where real hardware numbers will appear
+- [ ] `crates/tpt-gpu-vendor-cert/src/tests.rs` — all ~18 test functions share the tautological body `cfg!(feature = "sim") || !vendor.is_empty()` and never exercise a real backend; add `tpt-gpu-primitives` as a dependency and rewrite correctness tests to actually call `VendorLibrary::gemm`/`attention`/`conv2d`/`conv3d` against a CPU reference (mirror `vendor/cuda.rs`'s roundtrip tests); update `docs/vendor/VENDOR_PROGRAM.md` to match the real single-file test structure
+- [ ] `layer6_framework/tptr/jax/__init__.py` is a 0-byte file backing `tests/test_jax.py`/`examples/jax_interop.py`, which import symbols that don't exist — mark JAX as not-yet-implemented (expected-skip test + doc correction) rather than leaving a silent import crash
+- [ ] `todo.md` Phase 7.5 `[x]` claims `Device::new_rocm()`/`new_metal()` exist — they don't (`crates/tpt-gpu-runtime/src/device/device.rs` only has `new_cuda()`, and `Device::open()` is CUDA-only); correct this line and the equivalent `VendorBackend::detect()` routing claim in `CLAUDE.md` to scope it to the `tpt-gpu-primitives::vendor` layer only
+
+### Priority 3 — Adoption/onboarding improvements
+- [ ] Fix doc path inconsistencies: `docs/tutorials/README.md`/`01_introduction.md` reference a top-level `examples/` directory that doesn't exist (real paths are `layer7_tptb/examples/`, `layer6_framework/examples/`)
+- [ ] Add `scripts/setup.sh`/`setup.ps1` bootstrap scripts covering the documented Rust-only quickstart (check `cargo`, build `tpt-gpu-script-cli`, print next steps) — do not attempt to bootstrap the C++/SystemVerilog/driver toolchains
+- [ ] Add `Fetch`/`Add` subcommands to `crates/tpt-gpu-model-registry/src/main.rs` (README's tools table already advertises `tpt-gpu-models add/list/fetch` but only `List`/`Dir`/`Remove` exist) and a short end-to-end walkthrough in `MODELS_REGISTRY.md`/`docs/use-cases.md`
+- [ ] External/manual items flagged for the user, not executable here: publish `v/tpt-vscode` to the VS Code Marketplace (needs publisher account); crates.io publishing per `RELEASE_CHECKLIST.md` (needs account/token); revisit "Pull requests are not accepted at this time" policy (no `CONTRIBUTING.md` exists)
+
+### Further ideas (not scheduled — for future consideration)
+- [ ] Add a CI job for Python/pytest (`layer6_framework`) — would have caught the JAX gap (Priority 2) automatically; also consider RTL sim (layer1) and driver build (layer2) CI jobs
+- [ ] Clean up stale duplicate `layer2_driver/` tree (only `layer2_driver/rust` was removed in Phase 8) and stray root files (`todo 1260627.md`, `todo 1260718.md`, `todo 1260802.md`, `fix_claude.py`, `fix_lib.py`, `fix_ops.py`, `harness.rs`, `tpt_bench_quick_output.txt`)
+- [ ] Consider a hosted (zero-install) version of `tpt-gpu-playground` (currently requires a local `wasm-pack` build + static server)
+- [ ] `PrimitiveKernel::output_shape()`/`input_shapes()` are `unimplemented!()`/empty across every kernel wrapper and appear unused — implement properly or remove from the trait
 
 ---
 

@@ -192,7 +192,7 @@ impl FusedGemmKernel {
             )));
         }
 
-        let mut output_owned;
+        let mut output_owned: Option<GpuBuffer<f32>> = None;
         let output: &mut GpuBuffer<f32> = if let Some(ref mut c) = c {
             if c.dim(0) != Some(m) || c.dim(1) != Some(n) {
                 return Err(TptpError::shape_error(format!(
@@ -205,8 +205,12 @@ impl FusedGemmKernel {
             }
             c
         } else {
-            output_owned = GpuBuffer::new(Shape::dim2(m, n), DType::F32, BufferFlags::STORAGE)?;
-            &mut output_owned
+            output_owned = Some(GpuBuffer::new(
+                Shape::dim2(m, n),
+                DType::F32,
+                BufferFlags::STORAGE,
+            )?);
+            output_owned.as_mut().expect("just initialized")
         };
 
         let t0 = Instant::now();
@@ -232,12 +236,13 @@ impl FusedGemmKernel {
             params.unroll
         );
 
-        // Return a clone of the output buffer
-        Ok(GpuBuffer::new(
-            Shape::dim2(m, n),
-            DType::F32,
-            BufferFlags::STORAGE,
-        )?)
+        // Return the buffer that was actually computed into: a clone of the
+        // caller-supplied `c` (which was also mutated in place), or the
+        // locally-allocated buffer when no `c` was supplied.
+        match c {
+            Some(c) => Ok(c.clone()),
+            None => Ok(output_owned.expect("output_owned initialized when c is None")),
+        }
     }
 
     /// Execute fused GEMM without bias: C = activation(A * B)
@@ -275,7 +280,7 @@ impl FusedGemmKernel {
         }
         let k = k_a;
 
-        let mut output_owned;
+        let mut output_owned: Option<GpuBuffer<f32>> = None;
         let output: &mut GpuBuffer<f32> = if let Some(ref mut c) = c {
             if c.dim(0) != Some(m) || c.dim(1) != Some(n) {
                 return Err(TptpError::shape_error(format!(
@@ -288,8 +293,12 @@ impl FusedGemmKernel {
             }
             c
         } else {
-            output_owned = GpuBuffer::new(Shape::dim2(m, n), DType::F32, BufferFlags::STORAGE)?;
-            &mut output_owned
+            output_owned = Some(GpuBuffer::new(
+                Shape::dim2(m, n),
+                DType::F32,
+                BufferFlags::STORAGE,
+            )?);
+            output_owned.as_mut().expect("just initialized")
         };
 
         let t0 = Instant::now();
@@ -315,12 +324,13 @@ impl FusedGemmKernel {
             params.unroll
         );
 
-        // Return a clone of the output buffer
-        Ok(GpuBuffer::new(
-            Shape::dim2(m, n),
-            DType::F32,
-            BufferFlags::STORAGE,
-        )?)
+        // Return the buffer that was actually computed into: a clone of the
+        // caller-supplied `c` (which was also mutated in place), or the
+        // locally-allocated buffer when no `c` was supplied.
+        match c {
+            Some(c) => Ok(c.clone()),
+            None => Ok(output_owned.expect("output_owned initialized when c is None")),
+        }
     }
 
     /// TPTIR fallback for fused GEMM with bias
@@ -495,4 +505,51 @@ pub fn fused_gemm_silu(
     alpha: f32,
 ) -> TptpResult<GpuBuffer<f32>> {
     FusedGemmKernel::new(FusedActivation::Silu).execute(a, b, None, alpha)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fused_gemm_returns_computed_buffer() {
+        let a = GpuBuffer::<f32>::new(Shape::dim2(2, 3), DType::F32, BufferFlags::STORAGE).unwrap();
+        let b = GpuBuffer::<f32>::new(Shape::dim2(3, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut c = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let marker = [1.0f32, 2.0, 3.0, 4.0];
+        c.copy_from_host(&marker).unwrap();
+        let kernel = FusedGemmKernel::new(FusedActivation::Relu);
+        let out = kernel.execute(&a, &b, Some(&mut c), 1.0).unwrap();
+        // Must return the buffer computed into (a clone of `c`), not a fresh
+        // zero buffer.
+        let mut data = [0f32; 4];
+        out.copy_to_host(&mut data).unwrap();
+        assert_eq!(data, marker);
+    }
+
+    #[test]
+    fn test_fused_gemm_with_bias_returns_computed_buffer() {
+        let a = GpuBuffer::<f32>::new(Shape::dim2(2, 3), DType::F32, BufferFlags::STORAGE).unwrap();
+        let b = GpuBuffer::<f32>::new(Shape::dim2(3, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let bias = GpuBuffer::<f32>::new(Shape::dim2(2, 1), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut c = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let marker = [5.0f32, 6.0, 7.0, 8.0];
+        c.copy_from_host(&marker).unwrap();
+        let kernel = FusedGemmKernel::new(FusedActivation::Gelu);
+        let out = kernel
+            .execute_with_bias(&a, &b, &bias, Some(&mut c), 1.0)
+            .unwrap();
+        let mut data = [0f32; 4];
+        out.copy_to_host(&mut data).unwrap();
+        assert_eq!(data, marker);
+    }
+
+    #[test]
+    fn test_fused_gemm_returns_local_buffer_when_no_c() {
+        let a = GpuBuffer::<f32>::new(Shape::dim2(2, 3), DType::F32, BufferFlags::STORAGE).unwrap();
+        let b = GpuBuffer::<f32>::new(Shape::dim2(3, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let kernel = FusedGemmKernel::new(FusedActivation::None);
+        let out = kernel.execute(&a, &b, None, 1.0).unwrap();
+        assert_eq!(out.shape(), &Shape::dim2(2, 2));
+    }
 }

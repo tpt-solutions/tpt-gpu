@@ -1,16 +1,16 @@
-# tptb-lsp
+# tpt-gpu-script-lsp
 
 Language Server Protocol implementation for TPT Script — powers IDE features (hover, completion, diagnostics, formatting) in any LSP-compatible editor.
 
 ## Overview
 
-`tptb-lsp` wraps `tptb-core` (parsing, type checking) and `tptb-format` (formatting) behind a `tower-lsp` server. It runs as a standalone binary and communicates over stdio.
+`tpt-gpu-script-lsp` wraps `tpt-gpu-script-core` (parsing, type checking) and `tpt-gpu-script-format` (formatting) behind a `tower-lsp` server. It runs as a standalone binary and communicates over stdio.
 
 ## Usage
 
 ```toml
 [dependencies]
-tptb-lsp = "1.0"
+tpt-gpu-script-lsp = "1.0"
 ```
 
 Or install the binary:

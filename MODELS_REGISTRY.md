@@ -56,12 +56,12 @@ On Windows the home directory is `%USERPROFILE%`, so the full path is
 
 ### tpt-gpu (this repo)
 
-- Provides the `tpt-gpu-model-registry` crate (`tools/model-registry/`) with:
+- Provides the `tpt-gpu-model-registry` crate (`crates/tpt-gpu-model-registry/`) with:
   - `ModelRegistry::open()` — loads or creates `~/.tpt/models/models.json`
   - `ModelRegistry::register()` — adds or updates a model entry
   - `ModelRegistry::find_by_name()` — looks up a model
   - `ModelRegistry::download()` — downloads a GGUF from a URL and registers it
-- The HuggingFace download helper (`tools/model-registry/src/hf.rs`) writes
+- The HuggingFace download helper (`crates/tpt-gpu-model-registry/src/hf.rs`) writes
   directly into `~/.tpt/models/` and updates the manifest on success.
 
 ### tpt-spark

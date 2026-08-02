@@ -4,7 +4,7 @@ TPT GPU userspace daemon — context management and VRAM isolation for the TPT G
 
 ## Overview
 
-`tptd-daemon` is the privileged userspace process that brokers access to TPT GPU hardware. It manages GPU context lifecycles, enforces VRAM isolation between clients, and exposes a Unix socket protocol for the `tptr-core` runtime to connect to.
+`tptd-daemon` is the privileged userspace process that brokers access to TPT GPU hardware. It manages GPU context lifecycles, enforces VRAM isolation between clients, and exposes a Unix socket protocol for the `tpt-gpu-runtime` to connect to.
 
 ## Running
 

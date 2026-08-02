@@ -8,8 +8,8 @@ import {
 let client: LanguageClient;
 
 export function activate(context: vscode.ExtensionContext) {
-  const serverPath = vscode.workspace.getConfiguration('tptb-lsp')
-    .get<string>('serverPath', 'tptb-lsp');
+  const serverPath = vscode.workspace.getConfiguration('tpt-gpu-lsp')
+    .get<string>('serverPath', 'tpt-gpu-lsp');
 
   const serverOptions: ServerOptions = {
     run: { command: serverPath },
@@ -26,7 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   client = new LanguageClient(
-    'tptb-lsp',
+    'tpt-gpu-lsp',
     'TPT Script Language Server',
     serverOptions,
     clientOptions

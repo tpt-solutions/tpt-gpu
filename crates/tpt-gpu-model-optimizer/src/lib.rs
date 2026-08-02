@@ -30,7 +30,8 @@ pub mod streaming;
 pub mod tptf_format;
 
 pub use activation_capture::{
-    ActivationCallback, ActivationCapture, ActivationMap, LayerActivations,
+    load_domain_maps_from_dir, ActivationCallback, ActivationCapture, ActivationMap,
+    LayerActivations,
 };
 pub use benchmark::QualityBenchmark;
 pub use calibration::CalibrationGenerator;

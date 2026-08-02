@@ -84,9 +84,9 @@ ctest --test-dir build
 #### Rust port
 
 ```bash
-cd layer3_tptc/rust
-cargo build
-cargo test
+# From the repo root (single root Cargo workspace)
+cargo build -p tpt-gpu-compiler
+cargo test -p tpt-gpu-compiler
 ```
 
 ### Status

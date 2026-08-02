@@ -20,7 +20,7 @@ The Python API provides access to TPT GPU through PyO3 bindings, enabling rapid 
 ├─────────────────────────────────────────────────────────────────┤
 │                    PyO3 Bindings                                 │
 ├─────────────────────────────────────────────────────────────────┤
-│                    Rust Core (tptr-core)                         │
+│                    Rust Core (tpt-gpu-runtime)                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -29,7 +29,6 @@ The Python API provides access to TPT GPU through PyO3 bindings, enabling rapid 
 ## Installation
 
 ```bash
-cd layer4_tptr
 cargo build -p tpt-gpu-runtime-py
 
 cd layer6_framework

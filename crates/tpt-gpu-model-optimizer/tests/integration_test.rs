@@ -6,6 +6,7 @@
 //! 3. Verify the components work correctly
 
 use anyhow::Result;
+use std::collections::HashMap;
 use std::io::{Seek, Write};
 use std::path::PathBuf;
 use tpt_gpu_model_optimizer::{
@@ -126,6 +127,67 @@ fn test_end_to_end_optimization_pipeline() -> Result<()> {
     // Cleanup
     let _ = std::fs::remove_file(&model_path);
     let _ = std::fs::remove_dir(&temp_dir);
+
+    Ok(())
+}
+
+#[test]
+fn test_production_domain_mapping_from_domains() -> Result<()> {
+    use tpt_gpu_model_optimizer::activation_capture::{ActivationCapture, LayerActivations};
+
+    // Capture per-domain activations the way a real calibration run would.
+    let mut capture = ActivationCapture::new(8);
+    // sql calibration prompts fire neurons 0-1; python fires neurons 4-5.
+    capture.record_domain("sql", 0, &[1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    capture.record_domain("sql", 0, &[1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    capture.record_domain("python", 0, &[0.0, 0.0, 0.0, 0.0, 3.0, 4.0, 0.0, 0.0]);
+
+    // Save to a directory and reload, exercising the CLI wiring path.
+    let temp_dir = std::env::temp_dir().join("tpt_test_domain_mapping");
+    std::fs::create_dir_all(&temp_dir)?;
+    capture.save_domains_to_dir(&temp_dir)?;
+
+    let maps = tpt_gpu_model_optimizer::load_domain_maps_from_dir(&temp_dir)?;
+    assert_eq!(maps.len(), 2);
+
+    // Production domain-mapping path: argmax per neuron across domains.
+    let weight_importance = vec![vec![1.0; 8]];
+    let domain_map = DomainMapper::build_from_domain_activations(&maps, Some(&weight_importance))?;
+    assert_eq!(domain_map.num_layers, 1);
+
+    let layer = &domain_map.scores[&0];
+    assert_eq!(layer.len(), 8);
+    assert_eq!(layer[0].domain, "sql");
+    assert_eq!(layer[1].domain, "sql");
+    assert_eq!(layer[4].domain, "python");
+    assert_eq!(layer[5].domain, "python");
+    // Inactive neurons fall back to "general".
+    assert_eq!(layer[2].domain, "general");
+    assert_eq!(layer[7].domain, "general");
+
+    // Neurons can be surgically pruned per domain.
+    let sql_neurons = domain_map.domain_neurons(0, "sql", 0.1);
+    assert_eq!(sql_neurons, vec![0, 1]);
+
+    // Manual construction path is also valid.
+    let mut sql_map = tpt_gpu_model_optimizer::ActivationMap::default();
+    sql_map.ffn_dim = 8;
+    sql_map.layers.insert(
+        0,
+        LayerActivations {
+            layer_idx: 0,
+            mean_magnitudes: vec![1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            stddev_magnitudes: vec![0.0; 8],
+            sample_count: 1,
+        },
+    );
+    let mut maps2 = HashMap::new();
+    maps2.insert("sql".to_string(), sql_map);
+    let map2 = DomainMapper::build_from_domain_activations(&maps2, None)?;
+    assert_eq!(map2.scores[&0][0].domain, "sql");
+
+    // Cleanup
+    let _ = std::fs::remove_dir_all(&temp_dir);
 
     Ok(())
 }

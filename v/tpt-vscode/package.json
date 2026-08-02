@@ -49,18 +49,18 @@
       "type": "object",
       "title": "TPT Script",
       "properties": {
-        "tptb-lsp.serverPath": {
+        "tpt-gpu-lsp.serverPath": {
           "type": "string",
-          "default": "tptb-lsp",
-          "description": "Path to the tptb-lsp server executable"
+          "default": "tpt-gpu-lsp",
+          "description": "Path to the tpt-gpu-lsp server executable"
         },
-        "tptb-lsp.trace.server": {
+        "tpt-gpu-lsp.trace.server": {
           "type": "string",
           "enum": ["off", "messages", "verbose"],
           "default": "off",
           "description": "Traces the communication between VS Code and the language server"
         },
-        "tptb-format.onSave": {
+        "tpt-gpu-script-format.onSave": {
           "type": "boolean",
           "default": false,
           "description": "Auto-format on save"

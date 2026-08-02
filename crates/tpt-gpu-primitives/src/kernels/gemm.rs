@@ -100,7 +100,7 @@ impl GemmKernel {
             });
         }
         let k = k_a;
-        let mut output_owned;
+        let mut output_owned: Option<GpuBuffer<f32>> = None;
         let output: &mut GpuBuffer<f32> = if let Some(ref mut c) = c {
             if c.dim(0) != Some(m) || c.dim(1) != Some(n) {
                 return Err(TptpError::shape_error(format!(
@@ -113,8 +113,12 @@ impl GemmKernel {
             }
             c
         } else {
-            output_owned = GpuBuffer::new(Shape::dim2(m, n), DType::F32, BufferFlags::STORAGE)?;
-            &mut output_owned
+            output_owned = Some(GpuBuffer::new(
+                Shape::dim2(m, n),
+                DType::F32,
+                BufferFlags::STORAGE,
+            )?);
+            output_owned.as_mut().expect("just initialized")
         };
         let t0 = Instant::now();
         if self.vendor.supports_gemm() {
@@ -131,11 +135,13 @@ impl GemmKernel {
             self.vendor.name(),
             elapsed_ms
         );
-        Ok(GpuBuffer::new(
-            Shape::dim2(m, n),
-            DType::F32,
-            BufferFlags::STORAGE,
-        )?)
+        // Return the buffer that was actually computed into: a clone of the
+        // caller-supplied `c` (which was also mutated in place), or the
+        // locally-allocated buffer when no `c` was supplied.
+        match c {
+            Some(c) => Ok(c.clone()),
+            None => Ok(output_owned.expect("output_owned initialized when c is None")),
+        }
     }
 
     fn tptir_fallback_gemm(
@@ -273,5 +279,29 @@ mod tests {
         });
         let result = kernel.execute(&a, &b, None, 1.0, 0.0);
         assert!(result.is_ok());
+    }
+    #[test]
+    fn test_gemm_returns_computed_buffer() {
+        let a = GpuBuffer::<f32>::new(Shape::dim2(2, 3), DType::F32, BufferFlags::STORAGE).unwrap();
+        let b = GpuBuffer::<f32>::new(Shape::dim2(3, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut c = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let marker = [1.0f32, 2.0, 3.0, 4.0];
+        c.copy_from_host(&marker).unwrap();
+        let kernel = GemmKernel::new();
+        let out = kernel.execute(&a, &b, Some(&mut c), 1.0, 0.0).unwrap();
+        // The returned buffer must be the buffer that was computed into — i.e. a
+        // clone of the caller-supplied `c` (with its marker contents intact in
+        // sim mode), NOT a freshly-allocated zero buffer.
+        let mut data = [0f32; 4];
+        out.copy_to_host(&mut data).unwrap();
+        assert_eq!(data, marker);
+    }
+    #[test]
+    fn test_gemm_returns_local_buffer_when_no_c() {
+        let a = GpuBuffer::<f32>::new(Shape::dim2(2, 3), DType::F32, BufferFlags::STORAGE).unwrap();
+        let b = GpuBuffer::<f32>::new(Shape::dim2(3, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let kernel = GemmKernel::new();
+        let out = kernel.execute(&a, &b, None, 1.0, 0.0).unwrap();
+        assert_eq!(out.shape(), &Shape::dim2(2, 2));
     }
 }

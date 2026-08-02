@@ -13,7 +13,7 @@ This crate provides the core compiler infrastructure for TPT Script, including:
 ## Usage
 
 ```rust
-use tptb_core::{compile_str, type_check, compile_full};
+use tpt_gpu_script_core::{compile_str, type_check, compile_full};
 
 // Parse source code
 let program = compile_str(source)?;

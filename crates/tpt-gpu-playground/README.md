@@ -8,7 +8,7 @@ A browser-based, in-memory playground for TPT Script. Paste or write a `.tpts` p
 - Example picker preloaded with a ReLU kernel, GEMM, scaled dot-product attention, a mixed host+GPU function, Conv2D, and a deliberate shape-mismatch error demo
 - Four output tabs: **TPTIR** (syntax-highlighted), **Rust** (syntax-highlighted), **Perf Estimate** (simulated GFLOPs/time/memory via TPT SimGPU), **Errors** (with fix suggestions where available)
 
-It runs entirely client-side — the `tptb-core` compiler (lexer → parser → type checker → codegen) is compiled to WASM via `wasm-bindgen` and loaded by `index.html`.
+It runs entirely client-side — the `tpt-gpu-script-core` compiler (lexer → parser → type checker → codegen) is compiled to WASM via `wasm-bindgen` and loaded by `index.html`.
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ It runs entirely client-side — the `tptb-core` compiler (lexer → parser → 
 ## Build & run
 
 ```bash
-cd tools/tpt-playground
+cd crates/tpt-gpu-playground
 
 # Linux/macOS
 ./build.sh

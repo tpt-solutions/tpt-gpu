@@ -1,7 +1,6 @@
-"""Tests for Rust dispatch module (tptr-core dispatch tests).
+"""Tests for the Rust runtime (tpt-gpu-runtime) test modules.
 
-These tests verify the Rust dispatch functionality.
-They run via cargo test on the tptr-core crate.
+These tests run via cargo test on the tpt-gpu-runtime crate.
 """
 import subprocess
 import os
@@ -11,7 +10,7 @@ import pytest
 
 def run_cargo_test(package=None, test_name=None):
     """Run a cargo test command and return the result."""
-    cmd = ["cargo", "test", "-p", package or "tptr-core"]
+    cmd = ["cargo", "test", "-p", package or "tpt-gpu-runtime"]
     if test_name:
         cmd.append(test_name)
     cmd.append("--")
@@ -21,39 +20,39 @@ def run_cargo_test(package=None, test_name=None):
         cmd,
         capture_output=True,
         text=True,
-        cwd=os.path.join(os.path.dirname(__file__), "..", "..", "layer4_tptr"),
+        cwd=os.path.join(os.path.dirname(__file__), "..", ".."),
     )
     return result
 
 
-class TestRustDispatch:
-    """Tests for Rust dispatch module - requires cargo."""
+class TestRustRuntime:
+    """Tests for Rust runtime modules - requires cargo."""
 
     @pytest.mark.skipif(
         shutil.which("cargo") is None,
         reason="cargo not available"
     )
-    def test_dispatch_batch_compiles(self):
-        """Verify dispatch batch module compiles."""
-        result = run_cargo_test("tptr-core", "dispatch::batch::tests")
+    def test_allocator_compiles(self):
+        """Verify allocator module tests compile."""
+        result = run_cargo_test("tpt-gpu-runtime", "memory::allocator::tests")
         assert result.returncode == 0, f"stderr: {result.stderr}"
 
     @pytest.mark.skipif(
         shutil.which("cargo") is None,
         reason="cargo not available"
     )
-    def test_dispatch_pool_compiles(self):
-        """Verify dispatch pool module compiles."""
-        result = run_cargo_test("tptr-core", "dispatch::pool::tests")
+    def test_queue_compiles(self):
+        """Verify command queue module tests compile."""
+        result = run_cargo_test("tpt-gpu-runtime", "command::queue::tests")
         assert result.returncode == 0, f"stderr: {result.stderr}"
 
     @pytest.mark.skipif(
         shutil.which("cargo") is None,
         reason="cargo not available"
     )
-    def test_dispatch_ops_compiles(self):
-        """Verify dispatch ops module compiles."""
-        result = run_cargo_test("tptr-core", "dispatch::ops::tests")
+    def test_launch_compiles(self):
+        """Verify kernel launch module tests compile."""
+        result = run_cargo_test("tpt-gpu-runtime", "kernel::launch::tests")
         assert result.returncode == 0, f"stderr: {result.stderr}"
 
     @pytest.mark.skipif(
@@ -61,10 +60,6 @@ class TestRustDispatch:
         reason="cargo not available"
     )
     def test_all_core_tests_pass(self):
-        """Run all tptr-core tests."""
-        result = run_cargo_test("tptr-core")
+        """Run all tpt-gpu-runtime tests."""
+        result = run_cargo_test("tpt-gpu-runtime")
         assert result.returncode == 0, f"stderr: {result.stderr}"
-
-
-import shutil
-

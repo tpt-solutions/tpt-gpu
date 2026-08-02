@@ -33,7 +33,7 @@ Layer 2 provides the kernel driver interface between the TPT GPU hardware (Layer
 ### Building the Driver
 
 ```bash
-cd layer2_driver/linux
+cd layer2_tptd/linux
 make KDIR=/lib/modules/$(uname -r)/build
 sudo insmod tpt_gpu.ko
 ```
@@ -82,8 +82,7 @@ Open `tpt_gpu.xcodeproj` in Xcode 14+ and build for macOS 12+.
 ### Building
 
 ```bash
-cd layer2_driver/rust
-cargo build --release
+cargo build --release -p tpt-gpu-driver-daemon
 ```
 
 ### Rust API

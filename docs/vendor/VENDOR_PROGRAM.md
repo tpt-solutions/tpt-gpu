@@ -113,17 +113,17 @@ pub trait VendorLibrary: Send + Sync {
 git clone https://github.com/tpt-solutions/tpt-gpu.git
 cd tpt-gpu
 
-# Build with vendor development features
-cd layer5_tptp
-cargo build --features vendor-dev
+# Build the primitives crate (simulation mode requires no hardware)
+cd crates/tpt-gpu-primitives
+cargo build --features sim
 
-# Run vendor compatibility tests
-cargo test --features vendor-dev vendor::
+# Run primitives tests
+cargo test --features sim
 ```
 
 ### Step 3: Implement Vendor Backend
 
-Create a new backend in `layer5_tptp/tptp-core/src/vendor/<vendor_name>.rs`:
+Create a new backend in `crates/tpt-gpu-primitives/src/vendor/<vendor_name>.rs`:
 
 ```rust
 //! <Vendor Name> Backend
@@ -164,7 +164,7 @@ impl VendorLibrary for VendorBackend {
 
 ### Step 4: Register Backend in Vendor Dispatch
 
-Update `layer5_tptp/tptp-core/src/vendor/mod.rs`:
+Update `crates/tpt-gpu-primitives/src/vendor/mod.rs`:
 
 ```rust
 pub mod <vendor_name>;
@@ -189,8 +189,7 @@ impl VendorBackend {
 
 1. Run the certification test suite:
    ```bash
-   cd tools/vendor-cert
-   cargo run -- certify --vendor <vendor_name> --tier 1
+   cargo run -p tpt-gpu-vendor-cert -- certify --vendor <vendor_name> --tier 1
    ```
 
 2. Submit results via pull request to `tuning/vendor/<vendor_name>.json`
@@ -201,7 +200,7 @@ impl VendorBackend {
 
 ### Compatibility Tests
 
-Located in `tools/vendor-cert/tests/compatibility/`:
+Covered by `run_compatibility_tests` in `crates/tpt-gpu-vendor-cert/src/tests.rs`:
 
 - `test_memory_alloc.rs` - Memory allocation and deallocation
 - `test_kernel_launch.rs` - Basic kernel launch functionality
@@ -210,7 +209,7 @@ Located in `tools/vendor-cert/tests/compatibility/`:
 
 ### Performance Tests
 
-Located in `tools/vendor-cert/tests/performance/`:
+Covered by `run_performance_tests` in `crates/tpt-gpu-vendor-cert/src/tests.rs`:
 
 - `bench_gemm.rs` - GEMM performance benchmark
 - `bench_attention.rs` - Attention performance benchmark
@@ -219,7 +218,7 @@ Located in `tools/vendor-cert/tests/performance/`:
 
 ### Correctness Tests
 
-Located in `tools/vendor-cert/tests/correctness/`:
+Covered by `run_correctness_tests` in `crates/tpt-gpu-vendor-cert/src/tests.rs`:
 
 - `test_gemm_correctness.rs` - GEMM numerical correctness
 - `test_attention_correctness.rs` - Attention numerical correctness
@@ -332,9 +331,9 @@ Submit vendor profiles to `tuning/vendor/<vendor_name>.json`:
 
 See the following reference implementations:
 
-- **NVIDIA Backend**: `layer5_tptp/tptp-core/src/vendor/cuda.rs`
-- **AMD Backend**: `layer5_tptp/tptp-core/src/vendor/rocm.rs`
-- **Apple Metal Backend**: `layer5_tptp/tptp-core/src/vendor/metal.rs`
+- **NVIDIA Backend**: `crates/tpt-gpu-primitives/src/vendor/cuda.rs`
+- **AMD Backend**: `crates/tpt-gpu-primitives/src/vendor/rocm.rs`
+- **Apple Metal Backend**: `crates/tpt-gpu-primitives/src/vendor/metal.rs`
 
 ## Contact Information
 

@@ -13,7 +13,7 @@
 //!
 //! The [`AiProvider::generate`] method provides a simple `generate(&str) -> Result<String, AiError>`
 //! convenience that wraps the structured [`AiProvider::complete`] API.  This is used by
-//! `tools/kernel-optimizer` and `tools/kernel-generator` for simple prompt-to-response
+//! `crates/tpt-gpu-kernel-optimizer` and `crates/tpt-gpu-kernelgen` for simple prompt-to-response
 //! flows without needing to construct full [`AiRequest`] objects.
 
 pub mod error;

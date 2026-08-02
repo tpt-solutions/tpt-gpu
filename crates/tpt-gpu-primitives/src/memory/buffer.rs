@@ -137,6 +137,7 @@ impl fmt::Display for Shape {
 /// including sim mode and CI without hardware. On real hardware the backing
 /// store serves as the staging buffer for transfers; the GPU-side handle
 /// would be carried separately once Layer 2 driver integration is complete.
+#[derive(Clone)]
 pub struct GpuBuffer<T: Pod> {
     shape: Shape,
     dtype: DType,

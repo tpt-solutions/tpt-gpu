@@ -27,14 +27,14 @@
 
 ## 1. Getting Started
 
-For cloning the repo, building the `tpt` CLI, and writing/compiling your first `.tpts` file, see the root [`README.md`](../README.md#quick-start) Quick Start — this guide picks up from there and focuses on the language itself. Prefer a live, no-install environment? Try the [browser playground](../tools/tpt-playground/).
+For cloning the repo, building the `tpt` CLI, and writing/compiling your first `.tpts` file, see the root [`README.md`](../README.md#quick-start) Quick Start — this guide picks up from there and focuses on the language itself. Prefer a live, no-install environment? Try the [browser playground](../crates/tpt-gpu-playground/).
 
 ### Running the Browser Playground
 
 The playground is a WASM build of the layer7 compiler with a live editor, example kernels, and TPTIR/Rust/perf/error output tabs — no server round-trip required. To launch it locally:
 
 ```bash
-cd tools/tpt-playground
+cd crates/tpt-gpu-playground
 
 # Linux/macOS
 ./build.sh
@@ -46,14 +46,13 @@ python3 -m http.server 8080
 # open http://localhost:8080
 ```
 
-See [`tools/tpt-playground/README.md`](../tools/tpt-playground/README.md) for details.
+See [`crates/tpt-gpu-playground/README.md`](../crates/tpt-gpu-playground/README.md) for details.
 
 ### Additional Tooling
 
 Beyond the `tpt` CLI, layer7 also builds an LSP server, formatter, and linter:
 
 ```bash
-cd layer7_tptb
 cargo build -p tpt-gpu-script-lsp      # LSP server (see §11 IDE Setup)
 cargo build -p tpt-gpu-script-format   # Formatter/linter (see §12)
 
@@ -433,7 +432,7 @@ import model::transformer as tr
 3. Configure LSP server path in settings:
 ```json
 {
-  "tptb-lsp.serverPath": "/path/to/tptb-lsp"
+  "tpt-gpu-lsp.serverPath": "/path/to/tpt-gpu-lsp"
 }
 ```
 
@@ -507,7 +506,7 @@ TPT Script provides structured error objects with:
 4. **Add performance metadata** - `@complexity`, `@memory`, `@flops`
 5. **Organize into modules** - Keep related code together
 6. **Use no_grad for inference** - Avoids unnecessary gradient computation
-7. **Format your code** - Use `tptb-format` for consistent style
+7. **Format your code** - Use `tpt-gpu-script-format` for consistent style
 8. **Lint early and often** - Catch style issues before they become habits
 
 ---

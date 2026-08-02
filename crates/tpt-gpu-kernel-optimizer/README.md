@@ -10,7 +10,7 @@ Auto-tunes kernel launch parameters (tile sizes, vector width, unroll factor) vi
 ## Installation
 
 ```bash
-cd tools/kernel-optimizer
+cd crates/tpt-gpu-kernel-optimizer
 cargo build --release
 ```
 
@@ -39,4 +39,4 @@ cargo run -- bench-attention --target 90.0 --ai
 cargo run -- beat-gemm --ai --output results.md
 ```
 
-See also [`tools/kernel-generator/`](../kernel-generator/) for generating the kernel being tuned, and [`GEMM_VS_CUBLAS_IMPLEMENTATION.md`](../../GEMM_VS_CUBLAS_IMPLEMENTATION.md) for background on the GEMM efficiency work.
+See also [`tpt-gpu-kernelgen`](../tpt-gpu-kernelgen/) for generating the kernel being tuned, and [`GEMM_VS_CUBLAS_IMPLEMENTATION.md`](../../GEMM_VS_CUBLAS_IMPLEMENTATION.md) for background on the GEMM efficiency work.

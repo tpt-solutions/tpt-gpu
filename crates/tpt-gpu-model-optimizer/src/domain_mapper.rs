@@ -10,7 +10,7 @@
 use crate::activation_capture::ActivationMap;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 /// Supported analysis domains.
 pub const KNOWN_DOMAINS: &[&str] = &[
@@ -158,6 +158,94 @@ impl DomainMapper {
         })
     }
 
+    /// Build domain map from per-domain captured activations (production path).
+    ///
+    /// For each neuron in each layer, computes a Wanda-style importance score
+    /// `|weight| × mean(|activation|)` per domain and assigns the neuron to the
+    /// domain that activates it most strongly (argmax). Neurons with negligible
+    /// importance in every domain are assigned to `"general"` so they survive
+    /// surgical pruning.
+    ///
+    /// `weight_importance` — optional per-layer per-neuron weight magnitudes
+    /// (`weight_importance[layer][neuron]`). When `None`, activation magnitudes
+    /// alone are used (weight factor 1.0). Layer/FFN dimensions are inferred
+    /// from the activation maps themselves.
+    pub fn build_from_domain_activations(
+        domain_activations: &HashMap<String, ActivationMap>,
+        weight_importance: Option<&[Vec<f32>]>,
+    ) -> Result<DomainMap> {
+        let ffn_dim = domain_activations
+            .values()
+            .map(|m| m.ffn_dim)
+            .max()
+            .unwrap_or(0);
+
+        // All layers observed across every domain map.
+        let mut layer_set: BTreeSet<usize> = BTreeSet::new();
+        for map in domain_activations.values() {
+            layer_set.extend(map.layers.keys().copied());
+        }
+        if let Some(w) = weight_importance {
+            layer_set.extend(0..w.len());
+        }
+
+        let mut scores: HashMap<usize, Vec<NeuronDomainScore>> = HashMap::new();
+
+        for layer_idx in &layer_set {
+            // neuron_idx → (domain, importance) accumulation
+            let mut per_neuron: HashMap<usize, Vec<(String, f32)>> = HashMap::new();
+
+            for (domain, map) in domain_activations {
+                let Some(layer_acts) = map.layers.get(layer_idx) else {
+                    continue;
+                };
+                for (neuron_idx, act_mag) in layer_acts.mean_abs().iter().enumerate() {
+                    let weight_mag = weight_importance
+                        .and_then(|w| w.get(*layer_idx))
+                        .and_then(|layer_w| layer_w.get(neuron_idx))
+                        .copied()
+                        .unwrap_or(1.0);
+                    let importance = weight_mag * act_mag;
+                    per_neuron
+                        .entry(neuron_idx)
+                        .or_default()
+                        .push((domain.clone(), importance));
+                }
+            }
+
+            let neuron_count = per_neuron
+                .keys()
+                .max()
+                .map(|&m| m + 1)
+                .unwrap_or(0)
+                .max(ffn_dim);
+
+            let mut layer_scores: Vec<NeuronDomainScore> = Vec::with_capacity(neuron_count);
+            for neuron_idx in 0..neuron_count {
+                let domain_scores = per_neuron.remove(&neuron_idx).unwrap_or_default();
+                let best = domain_scores
+                    .iter()
+                    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+                let (domain, importance) = match best {
+                    Some((d, imp)) if imp.is_finite() && *imp > 0.0 => (d.clone(), *imp),
+                    _ => ("general".to_string(), 0.0),
+                };
+                layer_scores.push(NeuronDomainScore {
+                    neuron_idx,
+                    domain,
+                    importance,
+                });
+            }
+
+            scores.insert(*layer_idx, layer_scores);
+        }
+
+        Ok(DomainMap {
+            scores,
+            num_layers: layer_set.len(),
+        })
+    }
+
     /// Build domain map from tensor weights using heuristic.
     /// Used when no activation data is available.
     pub fn build_from_weights(
@@ -268,6 +356,66 @@ mod tests {
             DomainMapper::build_from_activations(&act_map, &weight_importance).unwrap();
 
         assert!(domain_map.scores.contains_key(&0));
+    }
+
+    #[test]
+    fn build_from_domain_activations_assigns_argmax_domain() {
+        use crate::activation_capture::LayerActivations;
+
+        let mut sql = ActivationMap::default();
+        sql.ffn_dim = 4;
+        sql.layers.insert(
+            0,
+            LayerActivations {
+                layer_idx: 0,
+                mean_magnitudes: vec![0.0, 2.0, 0.0, 0.0],
+                stddev_magnitudes: vec![0.0, 0.1, 0.0, 0.0],
+                sample_count: 10,
+            },
+        );
+
+        let mut python = ActivationMap::default();
+        python.ffn_dim = 4;
+        python.layers.insert(
+            0,
+            LayerActivations {
+                layer_idx: 0,
+                mean_magnitudes: vec![0.0, 0.0, 3.0, 0.0],
+                stddev_magnitudes: vec![0.0, 0.0, 0.1, 0.0],
+                sample_count: 10,
+            },
+        );
+
+        let mut domain_activations = HashMap::new();
+        domain_activations.insert("sql".to_string(), sql);
+        domain_activations.insert("python".to_string(), python);
+
+        let weight_importance = vec![vec![1.0, 1.0, 1.0, 1.0]];
+        let map = DomainMapper::build_from_domain_activations(
+            &domain_activations,
+            Some(&weight_importance),
+        )
+        .unwrap();
+
+        assert_eq!(map.num_layers, 1);
+        let layer = &map.scores[&0];
+        assert_eq!(layer.len(), 4);
+        // Neuron 1 fires on sql prompts → sql; neuron 2 fires on python → python.
+        assert_eq!(layer[1].domain, "sql");
+        assert_eq!(layer[2].domain, "python");
+        // Inactive neurons fall back to general.
+        assert_eq!(layer[0].domain, "general");
+        assert_eq!(layer[3].domain, "general");
+        // Neuron 3 (python) has the highest importance.
+        assert!(layer[2].importance > layer[1].importance);
+    }
+
+    #[test]
+    fn build_from_domain_activations_empty_input_is_safe() {
+        let domain_activations = HashMap::new();
+        let map = DomainMapper::build_from_domain_activations(&domain_activations, None).unwrap();
+        assert_eq!(map.num_layers, 0);
+        assert!(map.scores.is_empty());
     }
 
     #[test]

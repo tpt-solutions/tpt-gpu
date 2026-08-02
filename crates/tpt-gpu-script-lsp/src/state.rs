@@ -47,7 +47,7 @@ impl LanguageServer for TptLspService {
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
-                name: String::from("tptb-lsp"),
+                name: String::from("tpt-gpu-lsp"),
                 version: Some(env!("CARGO_PKG_VERSION").to_string()),
             }),
         })
@@ -55,7 +55,7 @@ impl LanguageServer for TptLspService {
 
     async fn initialized(&self, _params: InitializedParams) {
         self.client
-            .log_message(MessageType::INFO, "tptb-lsp initialized")
+            .log_message(MessageType::INFO, "tpt-gpu-lsp initialized")
             .await;
     }
 

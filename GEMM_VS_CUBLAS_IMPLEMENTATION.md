@@ -1,6 +1,19 @@
 # GEMM > cuBLAS Implementation Summary
 
-This document summarizes the implementation of a fused GEMM kernel that outperforms cuBLAS on specific problem sizes using AI-guided optimization and kernel fusion techniques.
+> **Important:** the "outperforms cuBLAS" claims in this document are
+> **analytical cost-model projections** from `tpt-gpu-kernel-optimizer`, not
+> measured wall-clock results on real hardware. The numbers come from the
+> optimizer's evaluator (`fused_eval.rs` / `real_evaluator.rs`) combining
+> hardcoded baseline constants, a fixed bandwidth figure, and tuned heuristic
+> coefficients, and are used to guide the AI-assisted tuner. No GPU has
+> produced these timings yet — the fused kernel currently executes no compute
+> outside real vendor paths. Real hardware measurements will appear in the
+> **Community GPU Scoreboard** in [`BENCHMARKS.md`](BENCHMARKS.md) once
+> `tpt-bench` results are submitted.
+
+This document summarizes the implementation of a fused GEMM kernel that is
+*projected* to outperform cuBLAS on specific problem sizes using AI-guided
+optimization and kernel fusion techniques.
 
 ## Overview
 
@@ -29,13 +42,13 @@ The implementation adds a **Fused GEMM** kernel that combines matrix multiplicat
 ## Files Created
 
 ### Core Implementation
-- `layer5_tptp/tptp-core/src/kernels/fused_gemm.rs` - Fused GEMM kernel implementation
-- `layer5_tptp/tptp-core/src/kernels/mod.rs` - Updated to export FusedGemmKernel
-- `layer5_tptp/tptp-core/src/lib.rs` - Updated to export new types
+- `crates/tpt-gpu-primitives/src/kernels/fused_gemm.rs` - Fused GEMM kernel implementation
+- `crates/tpt-gpu-primitives/src/kernels/mod.rs` - Updated to export FusedGemmKernel
+- `crates/tpt-gpu-primitives/src/lib.rs` - Updated to export new types
 
 ### Benchmarks
-- `layer5_tptp/benches/src/examples/fused_gemm_benchmark.rs` - Benchmark comparing TPT vs cuBLAS
-- `layer5_tptp/benches/Cargo.toml` - Added fused_gemm_benchmark example
+- `crates/tpt-gpu-primitives-benches/src/examples/fused_gemm_benchmark.rs` - Benchmark comparing TPT vs cuBLAS
+- `crates/tpt-gpu-primitives-benches/Cargo.toml` - Added fused_gemm_benchmark example
 
 ## Performance Advantages
 

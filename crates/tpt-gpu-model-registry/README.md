@@ -9,7 +9,7 @@ Shared GGUF model registry used across tpt-gpu, tpt-spark, and tpt-crucible. Mod
 ## Installation
 
 ```bash
-cd tools/model-registry
+cd crates/tpt-gpu-model-registry
 cargo build --release
 ```
 
@@ -34,4 +34,4 @@ use tpt_gpu_model_registry::ModelRegistry;
 let mut registry = ModelRegistry::open()?;
 ```
 
-`ModelRegistry::open()` and HuggingFace download support (`hf.rs`) are consumed directly by other tools in this repo, e.g. [`tools/model-optimizer/`](../model-optimizer/) — see `layer4_tptr/src/arch.rs` for how the runtime maps a registered GGUF model's `general.architecture` to a forward-pass template.
+`ModelRegistry::open()` and HuggingFace download support (`hf.rs`) are consumed directly by other tools in this repo, e.g. [`tpt-gpu-model-optimizer`](../tpt-gpu-model-optimizer/) — see `crates/tpt-gpu-runtime/src/arch.rs` for how the runtime maps a registered GGUF model's `general.architecture` to a forward-pass template.

@@ -10,7 +10,7 @@ Generates TPTIR kernels either from a built-in template library or, with an AI p
 ## Installation
 
 ```bash
-cd tools/kernel-generator
+cd crates/tpt-gpu-kernelgen
 cargo build --release
 ```
 
@@ -32,4 +32,4 @@ cargo run -- bench --quick
 
 Supported built-in kernels: `vector_add`, `matmul`, `softmax`, `flash_attention`, `conv_bn_relu`, `conv3d`, `layer_norm`, `batch_norm`, `group_norm`.
 
-See also [`tools/kernel-optimizer/`](../kernel-optimizer/) for tuning the parameters of a generated kernel.
+See also [`tpt-gpu-kernel-optimizer`](../tpt-gpu-kernel-optimizer/) for tuning the parameters of a generated kernel.

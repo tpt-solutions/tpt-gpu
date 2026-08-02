@@ -13,7 +13,7 @@ This tool runs a comprehensive test suite to verify that vendor backends meet th
 ## Installation
 
 ```bash
-cd tools/vendor-cert
+cd crates/tpt-gpu-vendor-cert
 cargo build --release
 ```
 

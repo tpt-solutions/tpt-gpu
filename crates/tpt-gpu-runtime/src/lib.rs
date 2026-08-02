@@ -1,4 +1,4 @@
-//! # TPT Runtime / tptr-core
+//! # TPT Runtime (tpt-gpu-runtime)
 //!
 //! Core library for the TPT GPU compute runtime. Provides GPU memory management,
 //! command queue / scheduler, kernel launch interface, and device abstraction.

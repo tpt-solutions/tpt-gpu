@@ -9,7 +9,7 @@ User-runnable dynamic GPU benchmark harness. Runs a set of GEMM/Attention/Conv2D
 ## Installation
 
 ```bash
-cd tools/tpt-bench
+cd crates/tpt-gpu-bench
 cargo build --release
 ```
 

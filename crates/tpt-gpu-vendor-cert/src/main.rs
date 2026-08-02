@@ -3,9 +3,9 @@
 //! Runs compatibility, performance, and correctness tests for vendor backends.
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use clap::{Parser, Subcommand};
-use log::{error, info, warn};
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;

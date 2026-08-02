@@ -1,7 +1,7 @@
 """
 TPT Framework Backends (tptr) - Python thin wrapper over Rust runtime.
 
-Provides a Pythonic API over the TPT GPU runtime (tptr-core) via PyO3 bindings.
+Provides a Pythonic API over the TPT GPU runtime (tpt-gpu-runtime) via PyO3 bindings.
 Includes PyTorch and JAX integration for seamless ML framework interop.
 """
 

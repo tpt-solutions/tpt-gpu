@@ -9,34 +9,16 @@ manages GPU device resources, command execution, and memory allocation.
 
 ### Directory Structure
 
+> **Layout note:** The Rust crates formerly at `layer4_tptr/tptr-core` and
+> `layer4_tptr/tptr-py` moved to the root Cargo workspace under `crates/` —
+> `crates/tpt-gpu-runtime` and `crates/tpt-gpu-runtime-py`. This directory now
+> retains only the layer specification:
+
 ```
 layer4_tptr/
-├── Cargo.toml                  # Workspace root
-├── README.md                   # This file
-├── spec/
-│   └── tptr_spec.md            — Runtime specification document
-├── tptr-core/                  # Core runtime library
-│   ├── Cargo.toml
-│   └── src/
-│       ├── lib.rs              — Crate root, re-exports
-│       ├── error.rs            — Error handling framework
-│       ├── memory/
-│       │   ├── mod.rs          — Module exports
-│       │   ├── types.rs        — Memory types (regions, permissions, handles)
-│       │   └── allocator.rs    — Slab, buddy, and fallback allocators
-│       ├── command/
-│       │   ├── mod.rs          — Module exports
-│       │   └── queue.rs        — Command queue and priority scheduler
-│       ├── kernel/
-│       │   ├── mod.rs          — Module exports
-│       │   └── launch.rs       — Kernel config, argument buffer, launch handle
-│       └── device/
-│           ├── mod.rs          — Module exports
-│           └── device.rs       — Device abstraction with backends
-└── tptr-py/                    # Python bindings (PyO3)
-    ├── Cargo.toml
-    └── src/
-        └── lib.rs              — PyO3 module exposing tptr API to Python
+├── README.md
+└── spec/
+    └── tptr_spec.md            — Runtime specification document
 ```
 
 ### Key Components
@@ -80,14 +62,14 @@ layer4_tptr/
 
 #### Core library
 ```bash
-cd layer4_tptr
+# From the repo root (single root Cargo workspace)
 cargo build -p tpt-gpu-runtime
 cargo test -p tpt-gpu-runtime
 ```
 
 #### Python bindings
 ```bash
-cd layer4_tptr
+# From the repo root (single root Cargo workspace)
 cargo build -p tpt-gpu-runtime-py
 ```
 

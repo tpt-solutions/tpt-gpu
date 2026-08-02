@@ -67,8 +67,8 @@ pub trait AiProvider: Send + Sync {
 
     /// Simple single-shot completion: prompt string → response text.
     ///
-    /// This is a convenience method used by `tools/kernel-optimizer` and
-    /// `tools/kernel-generator` for simple prompt → response flows.
+    /// This is a convenience method used by `crates/tpt-gpu-kernel-optimizer` and
+    /// `crates/tpt-gpu-kernelgen` for simple prompt → response flows.
     /// It builds a single-user-message [`AiRequest`] and returns the text.
     fn generate(&self, prompt: &str) -> Result<String, AiError> {
         let request = AiRequest::new(self.default_model(), prompt);

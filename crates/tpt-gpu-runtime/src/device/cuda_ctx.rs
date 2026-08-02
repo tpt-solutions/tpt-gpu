@@ -1,4 +1,4 @@
-//! Real CUDA driver context for `layer4_tptr`.
+//! Real CUDA driver context for `tpt-gpu-runtime`.
 //!
 //! When the `cuda` feature is enabled this module resolves the CUDA driver
 //! (`nvcuda.dll`/`libcuda.so`) and cuBLAS (`cublas64_*.dll`/`libcublas.so`)

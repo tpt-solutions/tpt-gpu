@@ -51,8 +51,8 @@ All tutorials in order (17 hours)
 ## Build Commands
 
 ```bash
-cd layer7_tptb && cargo build --release -p tpt-gpu-script-cli
-cd layer4_tptr && cargo build -p tpt-gpu-runtime
+cargo build --release -p tpt-gpu-script-cli
+cargo build -p tpt-gpu-runtime
 cd layer6_framework && pip install -e ".[dev]"
 ```
 
@@ -71,7 +71,7 @@ python examples/basic_usage.py
 - **User Guide**: `docs/user-guide.md`
 - **Examples**: `layer7_tptb/examples/`
 - **Use Cases**: `docs/use-cases.md`
-- **Browser Playground**: `tools/tpt-playground/` — try TPT Script live, no install required
+- **Browser Playground**: `crates/tpt-gpu-playground/` — try TPT Script live, no install required
 - **Specifications**: `layer*/spec/`
 - **Architecture**: `CLAUDE.md`
 

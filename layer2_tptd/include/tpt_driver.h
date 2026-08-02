@@ -6,8 +6,8 @@
  *
  * This header defines the ABI shared between:
  *   - All OS kernel drivers  (Linux DRM, Windows WDM, macOS DriverKit)
- *   - The userspace daemon   (layer2_tptd/rust/)
- *   - The layer4 runtime     (layer4_tptr — kernel launch / memory alloc)
+ *   - The userspace daemon   (crates/tpt-gpu-driver-daemon)
+ *   - The layer4 runtime     (crates/tpt-gpu-runtime — kernel launch / memory alloc)
  *
  * Layout:
  *   § 1  MMIO register map (PCIe BAR0)

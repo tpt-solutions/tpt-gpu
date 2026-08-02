@@ -24,7 +24,7 @@ For cloning the repo and general prerequisites, see the root [`README.md`](../..
 cd tpt-gpu
 
 # Install the tpt-gpu-model-optimizer CLI
-cargo install --path tools/model-optimizer
+cargo install --path crates/tpt-gpu-model-optimizer
 ```
 
 ### Using the Model Optimizer

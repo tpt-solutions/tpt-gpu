@@ -27,16 +27,7 @@ layer2_driver/
 │   ├── TPTDriver.h           DriverKit IOService + IOUserClient declarations
 │   ├── TPTDriver.cpp         DriverKit implementation
 │   └── Info.plist            DEXT bundle metadata + PCI matching
-└── rust/
-    ├── Cargo.toml
-    └── src/
-        ├── lib.rs            Crate root, Device, QueryType
-        ├── ioctl.rs          Raw ioctl wrappers (Linux _IOWR protocol)
-        ├── mem.rs            Buffer allocation, CPU mmap, Drop-based free
-        ├── submit.rs         CmdBuf builder, Fence, blocking wait
-        ├── ffi.rs            extern "C" exports matching tpt_driver.h
-        └── bin/
-            └── tptd_info.rs  CLI tool: print device properties
+└── rust/  (moved to crates/tpt-gpu-driver-daemon)
 ```
 
 ---
@@ -97,12 +88,14 @@ PCI matching in `Info.plist` targets vendor `0x1A2E`, device `0x0001`.
 
 ## Rust Userspace Library (`tptd`)
 
+The Rust userspace library now lives in `crates/tpt-gpu-driver-daemon`.
+
 ```bash
-cd layer2_driver/rust
+cd crates/tpt-gpu-driver-daemon
 cargo build --release
 
-# Print device info
-./target/release/tpt-gpu-driver-info /dev/dri/card0
+# Run the daemon (Listens on /run/tptd.sock, JSON requests from layer4 clients)
+sudo ./target/release/tpt-gpu-daemon --device 0000:03:00.0
 ```
 
 ### Rust API

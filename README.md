@@ -16,7 +16,7 @@
 - **LLM Inference Runtime** — `GpuInferenceEngine` with arch-template dispatch (LLaMA 3, Mistral, Qwen2, Phi-3, Gemma 2), sliding-window KV cache, and automatic vendor routing (CUDA → ROCm → Metal → TPTIR)
 - **Shared Model Registry** — GGUF models stored once in `~/.tpt/models/` and shared across all TPT tools
 - **IDE Support** — Full LSP server, VS Code extension, formatter, and linter
-- **Browser Playground** — Try TPT Script live in your browser, no install required: [`tools/tpt-playground/`](tools/tpt-playground/)
+- **Browser Playground** — Try TPT Script live in your browser, no install required: [`crates/tpt-gpu-playground/`](crates/tpt-gpu-playground/)
 - **Framework Integration** — PyTorch and JAX backends with seamless dispatch
 - **AI-Assisted Kernel Generation** — Automated kernel optimization and generation tools
 - **Comprehensive Documentation** — 17 tutorials, complete language spec, and API reference
@@ -33,7 +33,6 @@ git clone https://github.com/tpt-solutions/tpt-gpu.git
 cd tpt-gpu
 
 # Build the TPT Script compiler
-cd layer7_tptb
 cargo build --release -p tpt-gpu-script-cli
 
 # The binary is at: target/release/tpt-gpu-script
@@ -87,7 +86,6 @@ Looking for a specific end-to-end scenario (training loop, LLM inference, benchm
 cargo build --release
 
 # Build specific components
-cd layer7_tptb
 cargo build --release -p tpt-gpu-script-cli      # CLI tool
 cargo build --release -p tpt-gpu-script-lsp      # LSP server
 cargo build --release -p tpt-gpu-script-format   # Formatter/linter
@@ -96,8 +94,7 @@ cargo build --release -p tpt-gpu-script-format   # Formatter/linter
 cargo test --workspace
 
 # Build with simulation mode (no hardware required)
-cd layer5_tptp
-cargo build --features sim
+cargo build -p tpt-gpu-primitives --features sim
 ```
 
 ---
@@ -161,11 +158,11 @@ layer7_tptb/     TPT Script compiler — lexer → parser → type checker → c
 | Tool | Description | Command |
 |------|-------------|---------|
 | `tpt-gpu-script` | CLI compiler | `tpt-gpu-script check`, `tpt-gpu-script compile`, `tpt-gpu-script run` |
-| `tpt-gpu-lsp` | Language Server | IDE integration |
-| `tpt-gpu-fmt` | Formatter/Linter | `tpt-gpu-fmt fmt`, `tpt-gpu-fmt lint` |
-| `model-registry` | Shared GGUF model registry | `tpt-gpu-models add/list/fetch` |
-| `kernel-generator` | AI-assisted kernel gen | Spec → TPTIR → validate → benchmark |
-| `kernel-optimizer` | Auto-tuning | Grid → hill-climb → AI-guided search |
+| `tpt-gpu-script-lsp` | Language Server | IDE integration |
+| `tpt-gpu-script-format` | Formatter/Linter | `tpt-gpu-script-format fmt`, `tpt-gpu-script-format lint` |
+| `tpt-gpu-models` | Shared GGUF model registry | `tpt-gpu-models add/list/fetch` |
+| `tpt-gpu-kernelgen` | AI-assisted kernel gen | Spec → TPTIR → validate → benchmark |
+| `tpt-gpu-kernel-optimizer` | Auto-tuning | Grid → hill-climb → AI-guided search |
 
 ---
 
@@ -183,9 +180,9 @@ tpt-gpu-runtime = "1.0"        # Runtime
 Publish commands:
 
 ```bash
-cd layer7_tptb/tptb-core && cargo publish
-cd layer5_tptp/tptp-core && cargo publish
-cd layer4_tptr/tptr-core && cargo publish
+cd crates/tpt-gpu-script-core && cargo publish
+cd crates/tpt-gpu-primitives && cargo publish
+cd crates/tpt-gpu-runtime && cargo publish
 ```
 
 ---

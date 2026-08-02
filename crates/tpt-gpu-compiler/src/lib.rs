@@ -12,7 +12,7 @@ pub const VERSION: &str = "0.1.0";
 
 /// Convenience helper: build a kernel region, run the standard pass
 /// pipeline and emit TPTIR with a provenance header prepended. Mirrors
-/// the flow used by the `tpt generate` CLI path in `tools/kernel-generator`.
+/// the flow used by the `tpt generate` CLI path in `crates/tpt-gpu-kernelgen`.
 pub fn generate_with_provenance(
     kernel: &str,
     elem: crate::ir::ElemType,

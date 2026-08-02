@@ -25,9 +25,9 @@ This document tracks the completion of all tasks for the TPT Script v1.0.0 publi
 
 ### Version Updates
 - [x] **Root Cargo.toml** - Version updated to 1.0.0
-- [x] **layer7_tptb/Cargo.toml** - Version updated to 1.0.0 with metadata
-- [x] **tptb-core/Cargo.toml** - Added crates.io metadata (keywords, categories, docs)
-- [x] **tptb-core/README.md** - Crate-level documentation
+- [x] **crates/tpt-gpu-script-core/Cargo.toml** - Version 1.0.0 with metadata
+- [x] **crates/tpt-gpu-script-core/Cargo.toml** - Added crates.io metadata (keywords, categories, docs)
+- [x] **crates/tpt-gpu-script-core/README.md** - Crate-level documentation
 
 ### Crates.io Preparation
 - [x] Added `documentation` field pointing to docs.rs
@@ -39,8 +39,8 @@ This document tracks the completion of all tasks for the TPT Script v1.0.0 publi
 - [x] Repository URL configured
 
 ### Validation
-- [x] **tptb-core compiles** - Core library builds successfully
-- [x] **tptb-cli compiles** - CLI binary builds successfully
+- [x] **tpt-gpu-script-core compiles** - Core library builds successfully
+- [x] **tpt-gpu-script-cli compiles** - CLI binary builds successfully
 - [x] **Cargo.toml valid** - No syntax errors or duplicate keys
 - [x] **Dependencies resolved** - All dependencies download and compile
 
@@ -58,13 +58,13 @@ This document tracks the completion of all tasks for the TPT Script v1.0.0 publi
 2. Login: `cargo login <token>`
 3. Publish in dependency order:
    ```bash
-   cd layer7_tptb/tptb-core
+   cd crates/tpt-gpu-script-core
    cargo publish
-   cd ../tptb-cli
+   cd ../tpt-gpu-script-cli
    cargo publish
-   cd ../tptb-lsp
+   cd ../tpt-gpu-script-lsp
    cargo publish
-   cd ../tptb-format
+   cd ../tpt-gpu-script-format
    cargo publish
    ```
 4. Verify on https://crates.io
@@ -89,14 +89,14 @@ This document tracks the completion of all tasks for the TPT Script v1.0.0 publi
 
 ### Binaries
 - `tpt` - CLI compiler
-- `tptb-lsp` - Language Server Protocol implementation
-- `tptb-format` - Formatter and linter
+- `tpt-gpu-script-lsp` - Language Server Protocol implementation
+- `tpt-gpu-script-format` - Formatter and linter
 
 ### Crates
-- `tptb-core` - Core compiler library
-- `tptb-cli` - CLI binary
-- `tptb-lsp` - LSP server
-- `tptb-format` - Formatter/linter
+- `tpt-gpu-script-core` - Core compiler library
+- `tpt-gpu-script-cli` - CLI binary
+- `tpt-gpu-script-lsp` - LSP server
+- `tpt-gpu-script-format` - Formatter/linter
 
 ### Documentation
 - User Guide (docs/user-guide.md)
@@ -109,17 +109,17 @@ This document tracks the completion of all tasks for the TPT Script v1.0.0 publi
 ## 🔗 Useful Links
 
 - **Repository:** https://github.com/tpt-solutions/tpt-gpu
-- **Documentation:** https://docs.rs/tptb-core
+- **Documentation:** https://docs.rs/tpt-gpu-script-core
 - **Issues:** https://github.com/tpt-solutions/tpt-gpu/issues
 - **Discussions:** https://github.com/tpt-solutions/tpt-gpu/discussions
-- **Crates.io:** https://crates.io/crates/tptb-core
+- **Crates.io:** https://crates.io/crates/tpt-gpu-script-core
 
 ---
 
 ## 📝 Notes
 
 ### Known Issues
-- tptb-format has borrow checker errors (pre-existing, not release-blocking)
+- tpt-gpu-script-format had borrow checker errors (pre-existing at release, not release-blocking)
 - LSP server is feature-complete but may have edge cases
 - No real hardware execution support (requires tptd driver)
 

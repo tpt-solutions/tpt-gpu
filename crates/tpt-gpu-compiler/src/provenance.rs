@@ -1,6 +1,6 @@
 //! Provenance metadata for emitted TPTIR kernels.
 //!
-//! Every `.mlir` file produced by the `kernel-generator` carries a
+//! Every `.mlir` file produced by the `tpt-gpu-kernelgen` tool carries a
 //! `# TPTIR Provenance:` comment as its first line, embedding the date,
 //! host/model identifier, GFLOPS score, and hardware triple of the run
 //! that produced it. This lets CI and developers trace a kernel back to

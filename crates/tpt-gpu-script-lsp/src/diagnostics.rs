@@ -30,7 +30,7 @@ pub fn compute_diagnostics(doc: &DocumentStore) -> Vec<Diagnostic> {
                 },
                 severity: Some(DiagnosticSeverity::ERROR),
                 code: Some(NumberOrString::String("LEX_ERROR".to_string())),
-                source: Some("tptb-lsp".to_string()),
+                source: Some("tpt-gpu-lsp".to_string()),
                 message: e.to_string(),
                 ..Default::default()
             });
@@ -51,7 +51,7 @@ pub fn compute_diagnostics(doc: &DocumentStore) -> Vec<Diagnostic> {
                     diagnostics.push(Diagnostic {
                         severity: Some(DiagnosticSeverity::ERROR),
                         code: Some(NumberOrString::String("COMPILE_ERROR".to_string())),
-                        source: Some("tptb-lsp".to_string()),
+                        source: Some("tpt-gpu-lsp".to_string()),
                         message: e.to_string(),
                         ..Default::default()
                     });
@@ -71,7 +71,7 @@ pub fn compute_diagnostics(doc: &DocumentStore) -> Vec<Diagnostic> {
                 },
                 severity: Some(DiagnosticSeverity::ERROR),
                 code: Some(NumberOrString::String("PARSE_ERROR".to_string())),
-                source: Some("tptb-lsp".to_string()),
+                source: Some("tpt-gpu-lsp".to_string()),
                 message: e.to_string(),
                 ..Default::default()
             });
@@ -94,7 +94,7 @@ pub fn compute_diagnostics(doc: &DocumentStore) -> Vec<Diagnostic> {
             },
             severity: Some(DiagnosticSeverity::ERROR),
             code: Some(NumberOrString::String(err.code.to_string())),
-            source: Some("tptb-lsp".to_string()),
+            source: Some("tpt-gpu-lsp".to_string()),
             message: err.message.clone(),
             ..Default::default()
         });

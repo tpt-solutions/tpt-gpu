@@ -24,7 +24,7 @@ __pycache__/
 node_modules/
 package-lock.json
 
-# Native build artifacts (e.g. layer4_tptr/tptr-c examples)
+# Native build artifacts (e.g. crates/tpt-gpu-runtime-c examples)
 *.exe
 *.dll
 *.so

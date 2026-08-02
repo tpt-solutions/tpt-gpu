@@ -33,7 +33,7 @@ pub struct ModelEntry {
     /// Original download URL (optional — informational).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// Per-layer bit depths produced by `model-optimizer` (2/4/6/8/16).
+    /// Per-layer bit depths produced by `tpt-gpu-model-optimizer` (2/4/6/8/16).
     /// `None` means the model is unoptimized (full f32/f16 weights).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quant_bits: Option<Vec<u8>>,

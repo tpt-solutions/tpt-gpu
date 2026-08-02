@@ -55,7 +55,7 @@ fn hardware_gemm(
     alpha: f32,
     beta: f32,
 ) -> Option<Vec<f32>> {
-    // tptr-core integration point — enabled only with --features hardware
+    // tpt-gpu-runtime integration point — enabled only with --features hardware
     use tpt_gpu_runtime::kernel::{ArgumentBuffer, KernelConfig};
     let _ = (a, b, c, m, k, n, alpha, beta); // suppress unused warnings during stub
     None // return None to fall through to fallback until runtime is wired up

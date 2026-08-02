@@ -187,25 +187,25 @@ context_len = available_bytes / kv_per_token
 
 ```bash
 # Profile hardware once
-model-optimizer profile
+tpt-gpu-model-optimizer profile
 
 # Analyze a model's domain distribution
-model-optimizer analyze model.gguf --output domain_map.json
+tpt-gpu-model-optimizer analyze model.gguf --output domain_map.json
 
 # Run full optimization
-model-optimizer optimize model.gguf --output model-opt.tptf
+tpt-gpu-model-optimizer optimize model.gguf --output model-opt.tptf
 
 # Export to GGUF for llama.cpp
-model-optimizer export model.tptf --format gguf --output model-int4.gguf
+tpt-gpu-model-optimizer export model.tptf --format gguf --output model-int4.gguf
 
 # Benchmark quality before/after
-model-optimizer bench model.gguf model-opt.tptf
+tpt-gpu-model-optimizer bench model.gguf model-opt.tptf
 ```
 
 ### Programmatic
 
 ```rust
-use tpt_model_optimizer::{
+use tpt_gpu_model_optimizer::{
     HardwareProfiler, LayerSensitivityMap, DomainMapper,
     MixedPrecisionAllocator, QualityBenchmark,
 };

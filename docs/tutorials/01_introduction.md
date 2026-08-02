@@ -70,18 +70,16 @@ git clone https://github.com/tpt-solutions/tpt-gpu.git
 cd tpt-gpu
 
 # Build the TPT Script compiler (Layer 7)
-cd layer7_tptb
 cargo build --release -p tpt-gpu-script-cli
 
 # Build the runtime (Layer 4)
-cd ../layer4_tptr
 cargo build -p tpt-gpu-runtime
 
 # Build Python bindings (optional)
 cargo build -p tpt-gpu-runtime-py
 
 # Install Python framework (Layer 6)
-cd ../layer6_framework
+cd layer6_framework
 pip install -e ".[dev]"
 ```
 
@@ -184,13 +182,14 @@ mem = device.allocate(4096)
 
 ```
 tpt-gpu/
+├── crates/              # All Rust crates (unified Cargo workspace)
 ├── layer1_isa/          # SystemVerilog ISA
-├── layer2_driver/       # Kernel drivers
-├── layer3_tptc/         # TPTIR compiler
-├── layer4_tptr/         # GPU runtime (Rust)
-├── layer5_tptp/         # GPU primitives
-├── layer6_framework/    # Framework backends
-├── layer7_tptb/         # TPT Script compiler
+├── layer2_tptd/         # Kernel drivers (Linux DRM, Windows WDM, macOS DriverKit)
+├── layer3_tptc/         # TPTIR compiler (C++)
+├── layer4_tptr/         # GPU runtime spec
+├── layer5_tptp/         # GPU primitives spec
+├── layer6_framework/    # Framework backends (Python)
+├── layer7_tptb/         # TPT Script spec + examples
 ├── docs/                # Documentation
 └── examples/            # Examples
 ```

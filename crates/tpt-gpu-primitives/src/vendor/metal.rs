@@ -67,8 +67,10 @@ impl VendorLibrary for MetalBackend {
                 alpha,
                 beta
             );
-            let _ = (a, b, c);
-            Ok(())
+            let _ = (a, b, c, alpha, beta);
+            Err(TptpError::unsupported(
+                "GEMM not yet supported on Metal MPS",
+            ))
         }
         #[cfg(not(feature = "metal"))]
         {

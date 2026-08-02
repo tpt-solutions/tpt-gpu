@@ -260,7 +260,7 @@ impl Device {
 
     /// Open the best available real device backend, falling back to a simulated
     /// device when none is present. Mirrors `VendorBackend::detect()` but at the
-    /// `layer4_tptr::Device` level (currently CUDA only).
+    /// `tpt-gpu-runtime::Device` level (currently CUDA only).
     pub fn open() -> TptrResult<Self> {
         #[cfg(feature = "cuda")]
         {

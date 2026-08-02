@@ -3,8 +3,8 @@
 on:
   pull_request:
     paths:
-      - 'crates/tptir-core/**'
-      - 'crates/tpt-gpu-kernel-generator/**'
+      - 'crates/tpt-gpu-compiler/**'
+      - 'crates/tpt-gpu-kernelgen/**'
       - 'crates/tpt-gpu-kernel-optimizer/**'
       - 'crates/tpt-gpu-bench/**'
       - 'tuning/**'

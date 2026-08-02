@@ -18,7 +18,7 @@ use tpt_gpu_model_optimizer::{
 
 #[derive(Parser)]
 #[command(
-    name = "model-optimizer",
+    name = "tpt-gpu-model-optimizer",
     about = "TPT GPU model compression and optimization"
 )]
 struct Cli {
@@ -33,9 +33,15 @@ enum Commands {
 
     /// Analyze domain-specific neuron distribution in a model
     Analyze {
-        model: PathBuf,
+        /// Path to model (.tptf). Not required when --activations-dir is given.
+        model: Option<PathBuf>,
         #[arg(long, value_delimiter = ',')]
         domains: Option<Vec<String>>,
+        /// Directory of per-domain activation maps (`<domain>.json`) captured
+        /// from calibration runs. When set, builds the domain map from real
+        /// captured activations instead of the heuristic path.
+        #[arg(long)]
+        activations_dir: Option<PathBuf>,
         /// Output file for domain map JSON (default: domain_map.json in model dir)
         #[arg(long)]
         output: Option<PathBuf>,
@@ -48,6 +54,10 @@ enum Commands {
         max_loss: f32,
         #[arg(long, value_delimiter = ',')]
         domains_drop: Option<Vec<String>>,
+        /// Directory of per-domain activation maps (`<domain>.json`) for the
+        /// production domain-mapping path during pruning.
+        #[arg(long)]
+        activations_dir: Option<PathBuf>,
         #[arg(long)]
         output: Option<PathBuf>,
         #[arg(long)]
@@ -77,15 +87,24 @@ fn main() -> Result<()> {
         Commands::Analyze {
             model,
             domains,
+            activations_dir,
             output,
-        } => cmd_analyze(model, domains, output),
+        } => cmd_analyze(model, domains, activations_dir, output),
         Commands::Optimize {
             model,
             max_loss,
             domains_drop,
+            activations_dir,
             output,
             stream,
-        } => cmd_optimize(model, max_loss, domains_drop, output, stream),
+        } => cmd_optimize(
+            model,
+            max_loss,
+            domains_drop,
+            activations_dir,
+            output,
+            stream,
+        ),
         Commands::Export {
             model,
             format,
@@ -109,15 +128,11 @@ fn cmd_profile() -> Result<()> {
 }
 
 fn cmd_analyze(
-    model: PathBuf,
+    model: Option<PathBuf>,
     domains: Option<Vec<String>>,
+    activations_dir: Option<PathBuf>,
     output: Option<PathBuf>,
 ) -> Result<()> {
-    println!("Analyzing {:?}...", model);
-
-    let header = read_header(&model)?;
-    let ffn_dim = header.ffn_dim as usize;
-
     let domains = domains.unwrap_or_else(|| {
         tpt_gpu_model_optimizer::domain_mapper::KNOWN_DOMAINS
             .iter()
@@ -125,22 +140,38 @@ fn cmd_analyze(
             .collect()
     });
 
-    // Build domain map using real weights (via streaming for large models)
-    let mapper = DomainMapper::new(domains.clone());
+    let (domain_map, num_layers, output_path) = if let Some(dir) = &activations_dir {
+        println!("Loading per-domain activations from {:?}...", dir);
+        let maps = tpt_gpu_model_optimizer::load_domain_maps_from_dir(dir)?;
+        if maps.is_empty() {
+            anyhow::bail!("no activation maps found in {:?}", dir);
+        }
+        let map = DomainMapper::build_from_domain_activations(&maps, None)?;
+        let num_layers = map.num_layers;
+        let output_path = output.unwrap_or_else(|| dir.join("domain_map.json"));
+        (map, num_layers, output_path)
+    } else {
+        let model = model
+            .ok_or_else(|| anyhow::anyhow!("either --model or --activations-dir is required"))?;
+        println!("Analyzing {:?}...", model);
+        let header = read_header(&model)?;
+        let ffn_dim = header.ffn_dim as usize;
 
-    // Try to use real weight data if available
-    let domain_map = mapper.build(header.num_layers as usize, ffn_dim)?;
+        // Build domain map using heuristic path
+        let mapper = DomainMapper::new(domains.clone());
+        let map = mapper.build(header.num_layers as usize, ffn_dim)?;
+        let output_path = output.unwrap_or_else(|| model.with_file_name("domain_map.json"));
+        (map, header.num_layers as usize, output_path)
+    };
 
     // Write domain_map.json
-    let output_path = output.unwrap_or_else(|| model.with_file_name("domain_map.json"));
-
     let json = serde_json::to_string_pretty(&domain_map)?;
     std::fs::write(&output_path, &json)?;
     println!("Domain map written to {:?}", output_path);
 
     // Print summary
     for domain in &domains {
-        let count: usize = (0..header.num_layers as usize)
+        let count: usize = (0..num_layers)
             .map(|l| domain_map.domain_neurons(l, domain, 0.1).len())
             .sum();
         println!("  {:12} — {:5} neurons", domain, count);
@@ -153,6 +184,7 @@ fn cmd_optimize(
     model: PathBuf,
     max_loss: f32,
     domains_drop: Option<Vec<String>>,
+    activations_dir: Option<PathBuf>,
     output: Option<PathBuf>,
     force_stream: bool,
 ) -> Result<()> {
@@ -160,6 +192,10 @@ fn cmd_optimize(
         let stem = model.file_stem().unwrap_or_default();
         model.with_file_name(format!("{}-opt.tptf", stem.to_string_lossy()))
     });
+
+    let header = read_header(&model)?;
+    let num_layers = header.num_layers as usize;
+    let ffn_dim = header.ffn_dim as usize;
 
     let _cfg = OptimizerConfig {
         model_path: model.clone(),
@@ -196,11 +232,20 @@ fn cmd_optimize(
         eval_tokens: 32,
         group_size: 128,
     };
-    let sensitivity = LayerSensitivityMap::build(32, &sens_config)?;
+    let sensitivity = LayerSensitivityMap::build(num_layers, &sens_config)?;
 
     println!("Step 3/5  Analyzing domain neurons...");
     let mapper = DomainMapper::with_default_domains();
-    let domain_map = mapper.build(32, 11008)?;
+    let domain_map = if let Some(dir) = &activations_dir {
+        println!("          Loading per-domain activations from {:?}...", dir);
+        let maps = tpt_gpu_model_optimizer::load_domain_maps_from_dir(dir)?;
+        if maps.is_empty() {
+            anyhow::bail!("no activation maps found in {:?}", dir);
+        }
+        DomainMapper::build_from_domain_activations(&maps, None)?
+    } else {
+        mapper.build(num_layers, ffn_dim)?
+    };
 
     if !_cfg.domains_to_drop.is_empty() {
         println!("          Pruning domains: {:?}", _cfg.domains_to_drop);
@@ -215,7 +260,7 @@ fn cmd_optimize(
     );
     let allocator = MixedPrecisionAllocator::new(max_loss);
     let config = QuantEvalConfig::default();
-    let bits = allocator.allocate(32, &sensitivity, &config, |_layer, _bits| Ok(10.0))?;
+    let bits = allocator.allocate(num_layers, &sensitivity, &config, |_layer, _bits| Ok(10.0))?;
     let avg_bits = bits.iter().map(|&b| b as f64).sum::<f64>() / bits.len() as f64;
     println!("          Average: {:.1} bits/weight", avg_bits);
 
