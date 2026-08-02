@@ -27,10 +27,12 @@ pub use kernels::layernorm::LayerNormParams;
 pub use kernels::pooling::PoolingParams;
 pub use kernels::rmsnorm::RmsNormParams;
 pub use kernels::softmax::SoftmaxParams;
+pub use kernels::quant_gemm::DEFAULT_GROUP_SIZE;
 pub use kernels::{
     ActivationKind, AttentionKernel, AvgPool2DKernel, BatchNormKernel, Conv2DKernel, Conv3DKernel,
     ElementwiseKernel, EmbeddingKernel, FusedActivation, FusedGemmKernel, FusedGemmParams,
-    GemmKernel, GroupNormKernel, LayerNormKernel, MaxPool2DKernel, RmsNormKernel, SoftmaxKernel,
+    GemmKernel, GroupNormKernel, LayerNormKernel, MaxPool2DKernel, QuantGemmKernel,
+    RmsNormKernel, SoftmaxKernel,
 };
 pub use memory::{BufferFlags, DType, GpuBuffer};
 pub use tptir::{CompilationOptions, CompilationTarget, TptirCompiler};

@@ -30,6 +30,8 @@ pub struct TptIrEmitter {
     counter: u64,
     /// Maps TPT Script local name → its TPTIR SSA name (e.g. `%x`).
     locals: HashMap<String, String>,
+    /// Compilation errors accumulated during emission.
+    errors: Vec<String>,
 }
 
 impl TptIrEmitter {
@@ -37,7 +39,13 @@ impl TptIrEmitter {
         Self {
             counter: 0,
             locals: HashMap::new(),
+            errors: Vec::new(),
         }
+    }
+
+    /// Drain and return all accumulated errors.
+    pub fn take_errors(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.errors)
     }
 
     pub fn emit_program(&mut self, program: &Program) -> String {
@@ -172,9 +180,10 @@ impl TptIrEmitter {
             }
 
             Stmt::Break(_) | Stmt::Continue(_) => {
-                // Control flow inside GPU kernels must be lowered to structured
-                // regions; emit a placeholder comment for now.
-                "  ; TODO: control-flow lowering\n".to_string()
+                let msg = "break/continue requires control-flow lowering — \
+                           not yet supported in GPU kernels";
+                self.errors.push(msg.to_string());
+                format!("  ; ERROR: {msg}\n")
             }
         }
     }
@@ -243,8 +252,15 @@ impl TptIrEmitter {
                 format!("{obj_v}[{}]", idx_parts.join(", "))
             }
 
-            // For complex sub-expressions we emit a placeholder.
-            _ => format!("; TODO: complex expr → {}", expr.span),
+            // Complex sub-expressions that cannot be lowered inline.
+            _ => {
+                let msg = format!(
+                    "unsupported sub-expression in GPU kernel at {}",
+                    expr.span
+                );
+                self.errors.push(msg.clone());
+                format!("; ERROR: {msg}")
+            }
         }
     }
 
@@ -282,12 +298,18 @@ impl TptIrEmitter {
                 let idx_parts: Vec<_> = indices.iter().map(|i| self.emit_expr_val(i)).collect();
                 format!("{obj_v}[{}]", idx_parts.join(", "))
             }
-            // For non-trivial sub-expressions in value position, allocate a
-            // fresh temporary.  The caller is responsible for emitting the
-            // definition of that temporary before using this value.
+            // Non-trivial sub-expressions in value position cannot be lowered
+            // to a single SSA value without emitting additional instructions.
+            // Record an error and return a sentinel name so downstream IR
+            // remains syntactically valid (though semantically wrong).
             _ => {
-                let tmp = self.fresh();
-                tmp
+                let msg = format!(
+                    "unsupported expression in value position at {} — \
+                     value cannot be inlined; hoist to a let-binding",
+                    expr.span
+                );
+                self.errors.push(msg.clone());
+                "%_error".to_string()
             }
         }
     }

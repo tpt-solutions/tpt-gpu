@@ -141,22 +141,91 @@ impl Conv3DKernel {
 
     fn tptir_fallback_conv3d(
         &self,
-        _input: &GpuBuffer<f32>,
-        _filter: &GpuBuffer<f32>,
-        _output: &mut GpuBuffer<f32>,
-        _strides: [u32; 3],
-        _padding: [u32; 3],
+        input: &GpuBuffer<f32>,
+        filter: &GpuBuffer<f32>,
+        output: &mut GpuBuffer<f32>,
+        strides: [u32; 3],
+        padding: [u32; 3],
     ) -> TptpResult<()> {
+        let n = input.dim(0).unwrap_or(0);
+        let c_in = input.dim(1).unwrap_or(0);
+        let d = input.dim(2).unwrap_or(0);
+        let h = input.dim(3).unwrap_or(0);
+        let w = input.dim(4).unwrap_or(0);
+        let c_out = filter.dim(0).unwrap_or(0);
+        let k_d = filter.dim(2).unwrap_or(0);
+        let k_h = filter.dim(3).unwrap_or(0);
+        let k_w = filter.dim(4).unwrap_or(0);
+        let d_out = output.dim(2).unwrap_or(0);
+        let h_out = output.dim(3).unwrap_or(0);
+        let w_out = output.dim(4).unwrap_or(0);
+        let stride_d = strides[0] as usize;
+        let stride_h = strides[1] as usize;
+        let stride_w = strides[2] as usize;
+        let pad_d = padding[0] as usize;
+        let pad_h = padding[1] as usize;
+        let pad_w = padding[2] as usize;
         log::debug!(
-            "TPTIR Conv3D fallback: strides={:?}, padding={:?}, tile={}x{}x{}x{}",
-            _strides,
-            _padding,
-            self.params.tile_od,
-            self.params.tile_oh,
-            self.params.tile_ow,
-            self.params.tile_ic
+            "TPTIR Conv3D fallback: N={} C_in={} D={}xH={}xW={} → C_out={} K={}x{}x{} stride={:?} pad={:?}",
+            n, c_in, d, h, w, c_out, k_d, k_h, k_w, strides, padding
         );
-        Ok(())
+
+        let mut in_raw = vec![0.0f32; n * c_in * d * h * w];
+        input.copy_to_host(&mut in_raw)?;
+        let mut flt_raw = vec![0.0f32; c_out * c_in * k_d * k_h * k_w];
+        filter.copy_to_host(&mut flt_raw)?;
+        let mut out_raw = vec![0.0f32; n * c_out * d_out * h_out * w_out];
+
+        for ni in 0..n {
+            for oc in 0..c_out {
+                for od in 0..d_out {
+                    for oh in 0..h_out {
+                        for ow in 0..w_out {
+                            let mut acc = 0.0f32;
+                            for ic in 0..c_in {
+                                for kd in 0..k_d {
+                                    for kh in 0..k_h {
+                                        for kw in 0..k_w {
+                                            let id = od * stride_d + kd;
+                                            let ih = oh * stride_h + kh;
+                                            let iw = ow * stride_w + kw;
+                                            if id < pad_d || ih < pad_h || iw < pad_w {
+                                                continue;
+                                            }
+                                            let id = id - pad_d;
+                                            let ih = ih - pad_h;
+                                            let iw = iw - pad_w;
+                                            if id >= d || ih >= h || iw >= w {
+                                                continue;
+                                            }
+                                            let in_idx = ni * c_in * d * h * w
+                                                + ic * d * h * w
+                                                + id * h * w
+                                                + ih * w
+                                                + iw;
+                                            let flt_idx = oc * c_in * k_d * k_h * k_w
+                                                + ic * k_d * k_h * k_w
+                                                + kd * k_h * k_w
+                                                + kh * k_w
+                                                + kw;
+                                            acc += in_raw[in_idx] * flt_raw[flt_idx];
+                                        }
+                                    }
+                                }
+                            }
+                            let out_idx = ni * c_out * d_out * h_out * w_out
+                                + oc * d_out * h_out * w_out
+                                + od * h_out * w_out
+                                + oh * w_out
+                                + ow;
+                            out_raw[out_idx] = acc;
+                        }
+                    }
+                }
+            }
+        }
+
+        output.copy_from_host(&out_raw)
     }
 }
 
@@ -266,5 +335,53 @@ mod tests {
         let params = Conv3DParams::default();
         assert_eq!(params.tile_oh, 8);
         assert_eq!(params.tile_ic, 16);
+    }
+
+    #[test]
+    fn test_conv3d_fallback_1x1x1_filter() {
+        // input [1,1,2,2,2] all ones, filter [1,1,1,1,1] = [[3.0]]
+        // output [1,1,2,2,2] = all threes
+        let mut input = GpuBuffer::<f32>::new(
+            Shape::new(&[1, 1, 2, 2, 2]),
+            DType::F32,
+            BufferFlags::STORAGE,
+        ).unwrap();
+        input.copy_from_host(&[1.0; 8]).unwrap();
+        let mut filter = GpuBuffer::<f32>::new(
+            Shape::new(&[1, 1, 1, 1, 1]),
+            DType::F32,
+            BufferFlags::STORAGE,
+        ).unwrap();
+        filter.copy_from_host(&[3.0]).unwrap();
+        let kernel = Conv3DKernel::new();
+        let out = kernel.execute(&input, &filter, [1, 1, 1], [0, 0, 0], None).unwrap();
+        let mut data = [0f32; 8];
+        out.copy_to_host(&mut data).unwrap();
+        for (i, &v) in data.iter().enumerate() {
+            assert!((v - 3.0).abs() < 1e-5, "output[{}]={} expected 3.0", i, v);
+        }
+    }
+
+    #[test]
+    fn test_conv3d_fallback_sum_kernel() {
+        // input [1,1,2,2,2] all ones, filter [1,1,2,2,2] all ones, no padding, stride 1
+        // output [1,1,1,1,1]: single value = sum of all 8 input elements = 8.0
+        let mut input = GpuBuffer::<f32>::new(
+            Shape::new(&[1, 1, 2, 2, 2]),
+            DType::F32,
+            BufferFlags::STORAGE,
+        ).unwrap();
+        input.copy_from_host(&[1.0; 8]).unwrap();
+        let mut filter = GpuBuffer::<f32>::new(
+            Shape::new(&[1, 1, 2, 2, 2]),
+            DType::F32,
+            BufferFlags::STORAGE,
+        ).unwrap();
+        filter.copy_from_host(&[1.0; 8]).unwrap();
+        let kernel = Conv3DKernel::new();
+        let out = kernel.execute(&input, &filter, [1, 1, 1], [0, 0, 0], None).unwrap();
+        let mut data = [0f32; 1];
+        out.copy_to_host(&mut data).unwrap();
+        assert!((data[0] - 8.0).abs() < 1e-5, "expected 8.0 got {}", data[0]);
     }
 }

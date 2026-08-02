@@ -68,35 +68,42 @@ impl AttentionKernel {
         if q.ndim() != 2 || k.ndim() != 2 || v.ndim() != 2 {
             return Err(TptpError::shape_error("Attention requires 2D tensors"));
         }
-        let seq_len = q
+        let q_len = q
             .dim(0)
             .ok_or_else(|| TptpError::shape_error("Q has no dim 0"))?;
         let d_k = q
             .dim(1)
             .ok_or_else(|| TptpError::shape_error("Q has no dim 1"))?;
+        let kv_len = k
+            .dim(0)
+            .ok_or_else(|| TptpError::shape_error("K has no dim 0"))?;
         let d_v = v
             .dim(1)
             .ok_or_else(|| TptpError::shape_error("V has no dim 1"))?;
-        if k.dim(0) != Some(seq_len) || k.dim(1) != Some(d_k) {
-            return Err(TptpError::shape_error("K dimensions must match Q"));
+        if k.dim(1) != Some(d_k) {
+            return Err(TptpError::shape_error("K head_dim must match Q head_dim"));
         }
-        if v.dim(0) != Some(seq_len) {
-            return Err(TptpError::shape_error("V seq_len must match Q"));
+        if v.dim(0) != Some(kv_len) {
+            return Err(TptpError::shape_error("V kv_len must match K kv_len"));
         }
         let scale_val = scale.unwrap_or_else(|| 1.0 / (d_k as f32).sqrt());
         let mut output =
-            GpuBuffer::new(Shape::dim2(seq_len, d_v), DType::F32, BufferFlags::STORAGE)?;
+            GpuBuffer::new(Shape::dim2(q_len, d_v), DType::F32, BufferFlags::STORAGE)?;
         let t0 = Instant::now();
-        if self.vendor.supports_attention() {
+        // Vendor attention backends use a single seq_len and support only
+        // self-attention (q_len == kv_len). Cross-attention always uses the
+        // host fallback which takes separate q_len and kv_len.
+        if self.vendor.supports_attention() && q_len == kv_len {
             self.vendor
-                .attention(q, k, v, &mut output, scale_val, seq_len, d_k)?;
+                .attention(q, k, v, &mut output, scale_val, q_len, d_k)?;
         } else {
-            self.tptir_fallback_attention(q, k, v, &mut output, scale_val, seq_len, d_k)?;
+            self.tptir_fallback_attention(q, k, v, &mut output, scale_val, q_len, kv_len, d_k)?;
         }
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         log::debug!(
-            "Attention seq={} d_k={} via {}: {:.3}ms",
-            seq_len,
+            "Attention q_len={} kv_len={} d_k={} via {}: {:.3}ms",
+            q_len,
+            kv_len,
             d_k,
             self.vendor.name(),
             elapsed_ms
@@ -106,21 +113,73 @@ impl AttentionKernel {
 
     fn tptir_fallback_attention(
         &self,
-        _q: &GpuBuffer<f32>,
-        _k: &GpuBuffer<f32>,
-        _v: &GpuBuffer<f32>,
-        _output: &mut GpuBuffer<f32>,
-        _scale: f32,
-        _seq_len: usize,
-        _d_k: usize,
+        q: &GpuBuffer<f32>,
+        k: &GpuBuffer<f32>,
+        v: &GpuBuffer<f32>,
+        output: &mut GpuBuffer<f32>,
+        scale: f32,
+        q_len: usize,
+        kv_len: usize,
+        d_k: usize,
     ) -> TptpResult<()> {
+        let d_v = v.dim(1).unwrap_or(d_k);
         log::debug!(
-            "TPTIR Attention fallback: seq_len={}, d_k={}, tile_seq={}",
-            _seq_len,
-            _d_k,
+            "TPTIR Attention fallback: q_len={}, kv_len={}, d_k={}, d_v={}, tile_seq={}",
+            q_len,
+            kv_len,
+            d_k,
+            d_v,
             self.params.tile_seq
         );
-        Ok(())
+
+        let mut q_raw = vec![0.0f32; q_len * d_k];
+        q.copy_to_host(&mut q_raw)?;
+        let mut k_raw = vec![0.0f32; kv_len * d_k];
+        k.copy_to_host(&mut k_raw)?;
+        let mut v_raw = vec![0.0f32; kv_len * d_v];
+        v.copy_to_host(&mut v_raw)?;
+
+        // QK^T scaled: [q_len, kv_len]
+        let mut scores = vec![0.0f32; q_len * kv_len];
+        for i in 0..q_len {
+            for j in 0..kv_len {
+                let mut acc = 0.0f32;
+                for kk in 0..d_k {
+                    acc += q_raw[i * d_k + kk] * k_raw[j * d_k + kk];
+                }
+                scores[i * kv_len + j] = acc * scale;
+            }
+        }
+
+        // Row-wise softmax (numerically stable) over the kv_len dimension
+        for i in 0..q_len {
+            let row = &mut scores[i * kv_len..(i + 1) * kv_len];
+            let max_val = row.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let mut sum = 0.0f32;
+            for s in row.iter_mut() {
+                *s = (*s - max_val).exp();
+                sum += *s;
+            }
+            if sum > 0.0 {
+                for s in row.iter_mut() {
+                    *s /= sum;
+                }
+            }
+        }
+
+        // attn @ V: [q_len, d_v]
+        let mut out_raw = vec![0.0f32; q_len * d_v];
+        for i in 0..q_len {
+            for j in 0..d_v {
+                let mut acc = 0.0f32;
+                for kk in 0..kv_len {
+                    acc += scores[i * kv_len + kk] * v_raw[kk * d_v + j];
+                }
+                out_raw[i * d_v + j] = acc;
+            }
+        }
+
+        output.copy_from_host(&out_raw)
     }
 }
 
@@ -208,21 +267,78 @@ mod tests {
         assert!(result.is_ok());
     }
     #[test]
-    fn test_attention_shape_mismatch() {
+    fn test_attention_shape_mismatch_head_dim() {
+        // K head_dim (32) differs from Q head_dim (64) — must fail.
         let q =
             GpuBuffer::<f32>::new(Shape::dim2(8, 64), DType::F32, BufferFlags::STORAGE).unwrap();
         let k =
-            GpuBuffer::<f32>::new(Shape::dim2(10, 64), DType::F32, BufferFlags::STORAGE).unwrap();
+            GpuBuffer::<f32>::new(Shape::dim2(8, 32), DType::F32, BufferFlags::STORAGE).unwrap();
         let v =
             GpuBuffer::<f32>::new(Shape::dim2(8, 64), DType::F32, BufferFlags::STORAGE).unwrap();
         let kernel = AttentionKernel::new();
         let result = kernel.execute(&q, &k, &v, None, None);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_attention_cross_attention_ok() {
+        // Cross-attention: q_len=2, kv_len=4 — distinct sequence lengths now allowed.
+        let q =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 8), DType::F32, BufferFlags::STORAGE).unwrap();
+        let k =
+            GpuBuffer::<f32>::new(Shape::dim2(4, 8), DType::F32, BufferFlags::STORAGE).unwrap();
+        let v =
+            GpuBuffer::<f32>::new(Shape::dim2(4, 8), DType::F32, BufferFlags::STORAGE).unwrap();
+        let kernel = AttentionKernel::new();
+        let result = kernel.execute(&q, &k, &v, None, None);
+        assert!(result.is_ok());
+        let out = result.unwrap();
+        // Output shape must be [q_len, d_v] = [2, 8]
+        assert_eq!(out.dim(0), Some(2));
+        assert_eq!(out.dim(1), Some(8));
+    }
     #[test]
     fn test_attention_params_default() {
         let params = AttentionParams::default();
         assert_eq!(params.tile_seq, 64);
         assert_eq!(params.tile_head, 64);
+    }
+
+    #[test]
+    fn test_attention_fallback_computes_real_output() {
+        // Q = [[1,0]], K = [[1,0]], V = [[3,4]]
+        // QK^T = [[1.0]], scaled by 1/sqrt(1) = 1.0 → softmax([[1.0]]) = [[1.0]]
+        // attn @ V = [[3,4]]
+        let mut q = GpuBuffer::<f32>::new(Shape::dim2(1, 1), DType::F32, BufferFlags::STORAGE).unwrap();
+        q.copy_from_host(&[1.0]).unwrap();
+        let mut k = GpuBuffer::<f32>::new(Shape::dim2(1, 1), DType::F32, BufferFlags::STORAGE).unwrap();
+        k.copy_from_host(&[1.0]).unwrap();
+        let mut v = GpuBuffer::<f32>::new(Shape::dim2(1, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        v.copy_from_host(&[3.0, 4.0]).unwrap();
+        let kernel = AttentionKernel::new();
+        let out = kernel.execute(&q, &k, &v, Some(1.0), None).unwrap();
+        let mut data = [0f32; 2];
+        out.copy_to_host(&mut data).unwrap();
+        assert!((data[0] - 3.0).abs() < 1e-5, "expected 3.0 got {}", data[0]);
+        assert!((data[1] - 4.0).abs() < 1e-5, "expected 4.0 got {}", data[1]);
+    }
+
+    #[test]
+    fn test_attention_fallback_softmax_distributes_weight() {
+        // Two-position sequence: Q=[[1,0],[0,1]], K=[[1,0],[0,1]], V=[[10,0],[0,10]]
+        // Q@K^T = [[1,0],[0,1]] — diagonal; softmax rows → approx [[0.73,0.27],[0.27,0.73]]
+        // Position 0 should attend more to V[0] = [10,0]; output[0][0] should be > 5.
+        let mut q = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        q.copy_from_host(&[1.0, 0.0, 0.0, 1.0]).unwrap();
+        let mut k = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        k.copy_from_host(&[1.0, 0.0, 0.0, 1.0]).unwrap();
+        let mut v = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        v.copy_from_host(&[10.0, 0.0, 0.0, 10.0]).unwrap();
+        let kernel = AttentionKernel::new();
+        let out = kernel.execute(&q, &k, &v, Some(1.0), None).unwrap();
+        let mut data = [0f32; 4];
+        out.copy_to_host(&mut data).unwrap();
+        assert!(data[0] > 5.0, "output[0][0]={} should be > 5 (attending mostly to V[0])", data[0]);
+        assert!(data[3] > 5.0, "output[1][1]={} should be > 5 (attending mostly to V[1])", data[3]);
     }
 }

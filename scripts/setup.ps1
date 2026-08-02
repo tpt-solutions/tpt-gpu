@@ -28,7 +28,7 @@ Set-Location $ScriptRoot
 Info "Building tpt-gpu-script-cli (this may take a minute on first run)..."
 cargo build --release -p tpt-gpu-script-cli
 
-$binary = Join-Path $ScriptRoot "target\release\tpt-gpu-script-cli.exe"
+$binary = Join-Path $ScriptRoot "target\release\tpt-gpu-script.exe"
 if (Test-Path $binary) {
     Info "Build successful: $binary"
 } else {

@@ -37,6 +37,23 @@ impl std::fmt::Display for FusedActivation {
     }
 }
 
+impl FusedActivation {
+    /// Apply the activation function to a single scalar (host-side reference).
+    fn apply(self, x: f32) -> f32 {
+        match self {
+            FusedActivation::None => x,
+            FusedActivation::Relu => x.max(0.0),
+            FusedActivation::Gelu => {
+                // tanh approximation, matches the common transformer GELU.
+                const SQRT_2_OVER_PI: f32 = 0.797_884_6;
+                0.5 * x * (1.0 + (SQRT_2_OVER_PI * (x + 0.044715 * x.powi(3))).tanh())
+            }
+            FusedActivation::Silu => x / (1.0 + (-x).exp()),
+            FusedActivation::Tanh => x.tanh(),
+        }
+    }
+}
+
 /// Tunable parameters for fused GEMM
 #[derive(Debug, Clone)]
 pub struct FusedGemmParams {
@@ -333,77 +350,96 @@ impl FusedGemmKernel {
         }
     }
 
-    /// TPTIR fallback for fused GEMM with bias
+    /// Host-side scalar reference for fused GEMM + bias + activation.
+    /// `VendorLibrary` has no fused-GEMM entry point, so this crate-local
+    /// compute is the only implementation regardless of detected hardware.
     fn tptir_fused_gemm_with_bias(
         &self,
-        _a: &GpuBuffer<f32>,
-        _b: &GpuBuffer<f32>,
-        _bias: &GpuBuffer<f32>,
-        _c: &mut GpuBuffer<f32>,
-        _alpha: f32,
-        _m: usize,
-        _n: usize,
-        _k: usize,
-        _params: &FusedGemmParams,
+        a: &GpuBuffer<f32>,
+        b: &GpuBuffer<f32>,
+        bias: &GpuBuffer<f32>,
+        c: &mut GpuBuffer<f32>,
+        alpha: f32,
+        m: usize,
+        n: usize,
+        k: usize,
+        params: &FusedGemmParams,
     ) -> TptpResult<()> {
-        // In a real implementation, this would:
-        // 1. Load the TPTIR template for fused GEMM
-        // 2. Substitute the tile parameters
-        // 3. Compile and launch the kernel
-        //
-        // The fused kernel would:
-        // - Load tiles of A and B into shared memory
-        // - Compute partial products in registers
-        // - Add bias vector
-        // - Apply activation function
-        // - Store result with vectorized stores
-        //
-        // This eliminates separate kernel launches for:
-        // - GEMM
-        // - Bias addition
-        // - Activation function
-        //
-        // Memory bandwidth savings: ~30-40% for the bias+activation operations
-
         log::debug!(
             "TPTIR Fused GEMM with bias: M={}, N={}, K={}, activation={}, tile={}x{}x{}, vec_width={}, unroll={}",
-            _m,
-            _n,
-            _k,
+            m,
+            n,
+            k,
             self.activation,
-            _params.tile_m,
-            _params.tile_n,
-            _params.tile_k,
-            _params.vec_width,
-            _params.unroll
+            params.tile_m,
+            params.tile_n,
+            params.tile_k,
+            params.vec_width,
+            params.unroll
         );
-        Ok(())
+
+        let mut a_raw = vec![0.0f32; m * k];
+        a.copy_to_host(&mut a_raw)?;
+        let mut b_raw = vec![0.0f32; k * n];
+        b.copy_to_host(&mut b_raw)?;
+        let mut bias_raw = vec![0.0f32; n];
+        bias.copy_to_host(&mut bias_raw)?;
+
+        let mut c_raw = vec![0.0f32; m * n];
+        for i in 0..m {
+            for j in 0..n {
+                let mut acc = 0.0f32;
+                for kk in 0..k {
+                    acc += a_raw[i * k + kk] * b_raw[kk * n + j];
+                }
+                c_raw[i * n + j] = self.activation.apply(alpha * acc + bias_raw[j]);
+            }
+        }
+
+        c.copy_from_host(&c_raw)
     }
 
-    /// TPTIR fallback for fused GEMM without bias
+    /// Host-side scalar reference for fused GEMM + activation (no bias).
     fn tptir_fused_gemm(
         &self,
-        _a: &GpuBuffer<f32>,
-        _b: &GpuBuffer<f32>,
-        _c: &mut GpuBuffer<f32>,
-        _alpha: f32,
-        _m: usize,
-        _n: usize,
-        _k: usize,
-        _params: &FusedGemmParams,
+        a: &GpuBuffer<f32>,
+        b: &GpuBuffer<f32>,
+        c: &mut GpuBuffer<f32>,
+        alpha: f32,
+        m: usize,
+        n: usize,
+        k: usize,
+        params: &FusedGemmParams,
     ) -> TptpResult<()> {
         log::debug!(
             "TPTIR Fused GEMM: M={}, N={}, K={}, activation={}, tile={}x{}x{}, vec_width={}, unroll={}",
-            _m,
-            _n,
-            _k,
+            m,
+            n,
+            k,
             self.activation,
-            _params.tile_m,
-            _params.tile_n,
-            _params.tile_k,
-            _params.vec_width,
-            _params.unroll
+            params.tile_m,
+            params.tile_n,
+            params.tile_k,
+            params.vec_width,
+            params.unroll
         );
+
+        let mut a_raw = vec![0.0f32; m * k];
+        a.copy_to_host(&mut a_raw)?;
+        let mut b_raw = vec![0.0f32; k * n];
+        b.copy_to_host(&mut b_raw)?;
+
+        let mut c_raw = vec![0.0f32; m * n];
+        for i in 0..m {
+            for j in 0..n {
+                let mut acc = 0.0f32;
+                for kk in 0..k {
+                    acc += a_raw[i * k + kk] * b_raw[kk * n + j];
+                }
+                c_raw[i * n + j] = self.activation.apply(alpha * acc);
+            }
+        }
+        c.copy_from_host(&c_raw)?;
         Ok(())
     }
 }
@@ -507,35 +543,36 @@ mod tests {
 
     #[test]
     fn test_fused_gemm_returns_computed_buffer() {
-        let a = GpuBuffer::<f32>::new(Shape::dim2(2, 3), DType::F32, BufferFlags::STORAGE).unwrap();
-        let b = GpuBuffer::<f32>::new(Shape::dim2(3, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        // A=[[1,0],[0,1]] (identity), B=[[3,4],[5,6]], alpha=1.0, act=None
+        // A@B = [[3,4],[5,6]] — verifies the caller-supplied C is returned (computed into).
+        let mut a = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        a.copy_from_host(&[1.0, 0.0, 0.0, 1.0]).unwrap();
+        let mut b = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        b.copy_from_host(&[3.0, 4.0, 5.0, 6.0]).unwrap();
         let mut c = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
-        let marker = [1.0f32, 2.0, 3.0, 4.0];
-        c.copy_from_host(&marker).unwrap();
-        let kernel = FusedGemmKernel::new(FusedActivation::Relu);
+        let kernel = FusedGemmKernel::new(FusedActivation::None);
         let out = kernel.execute(&a, &b, Some(&mut c), 1.0).unwrap();
-        // Must return the buffer computed into (a clone of `c`), not a fresh
-        // zero buffer.
         let mut data = [0f32; 4];
         out.copy_to_host(&mut data).unwrap();
-        assert_eq!(data, marker);
+        assert_eq!(data, [3.0, 4.0, 5.0, 6.0]);
     }
 
     #[test]
     fn test_fused_gemm_with_bias_returns_computed_buffer() {
-        let a = GpuBuffer::<f32>::new(Shape::dim2(2, 3), DType::F32, BufferFlags::STORAGE).unwrap();
-        let b = GpuBuffer::<f32>::new(Shape::dim2(3, 2), DType::F32, BufferFlags::STORAGE).unwrap();
-        let bias = GpuBuffer::<f32>::new(Shape::dim2(2, 1), DType::F32, BufferFlags::STORAGE).unwrap();
+        // A=[[1,0],[0,1]], B=[[2,3],[4,5]], bias=[1,2], alpha=1.0, act=None
+        // A@B = [[2,3],[4,5]], + bias = [[3,5],[5,7]]
+        let mut a = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        a.copy_from_host(&[1.0, 0.0, 0.0, 1.0]).unwrap();
+        let mut b = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        b.copy_from_host(&[2.0, 3.0, 4.0, 5.0]).unwrap();
+        let mut bias = GpuBuffer::<f32>::new(Shape::dim2(2, 1), DType::F32, BufferFlags::STORAGE).unwrap();
+        bias.copy_from_host(&[1.0, 2.0]).unwrap();
         let mut c = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
-        let marker = [5.0f32, 6.0, 7.0, 8.0];
-        c.copy_from_host(&marker).unwrap();
-        let kernel = FusedGemmKernel::new(FusedActivation::Gelu);
-        let out = kernel
-            .execute_with_bias(&a, &b, &bias, Some(&mut c), 1.0)
-            .unwrap();
+        let kernel = FusedGemmKernel::new(FusedActivation::None);
+        let out = kernel.execute_with_bias(&a, &b, &bias, Some(&mut c), 1.0).unwrap();
         let mut data = [0f32; 4];
         out.copy_to_host(&mut data).unwrap();
-        assert_eq!(data, marker);
+        assert_eq!(data, [3.0, 5.0, 5.0, 7.0]);
     }
 
     #[test]
@@ -545,5 +582,52 @@ mod tests {
         let kernel = FusedGemmKernel::new(FusedActivation::None);
         let out = kernel.execute(&a, &b, None, 1.0).unwrap();
         assert_eq!(out.shape(), &Shape::dim2(2, 2));
+    }
+
+    #[test]
+    fn test_fused_gemm_computes_real_product_no_activation() {
+        // A = [[1,2],[3,4]], B = [[5,6],[7,8]], alpha=1.0, act=None
+        // A@B = [[19,22],[43,50]]
+        let mut a = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        a.copy_from_host(&[1.0, 2.0, 3.0, 4.0]).unwrap();
+        let mut b = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        b.copy_from_host(&[5.0, 6.0, 7.0, 8.0]).unwrap();
+        let kernel = FusedGemmKernel::new(FusedActivation::None);
+        let out = kernel.execute(&a, &b, None, 1.0).unwrap();
+        let mut data = [0f32; 4];
+        out.copy_to_host(&mut data).unwrap();
+        assert_eq!(data, [19.0, 22.0, 43.0, 50.0]);
+    }
+
+    #[test]
+    fn test_fused_gemm_relu_zeros_negatives() {
+        // A = [[1,-1],[-1,1]], B = [[1,0],[0,1]] (identity), alpha=1.0, act=Relu
+        // A@B = [[1,-1],[-1,1]] → relu → [[1,0],[0,1]]
+        let mut a = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        a.copy_from_host(&[1.0, -1.0, -1.0, 1.0]).unwrap();
+        let mut b = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        b.copy_from_host(&[1.0, 0.0, 0.0, 1.0]).unwrap();
+        let kernel = FusedGemmKernel::new(FusedActivation::Relu);
+        let out = kernel.execute(&a, &b, None, 1.0).unwrap();
+        let mut data = [0f32; 4];
+        out.copy_to_host(&mut data).unwrap();
+        assert_eq!(data, [1.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn test_fused_gemm_with_bias_computes_real_product() {
+        // A = [[1,0],[0,1]], B = [[2,3],[4,5]], bias = [1, 2], alpha=1.0, act=None
+        // A@B = [[2,3],[4,5]], + bias = [[3,5],[5,7]]
+        let mut a = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        a.copy_from_host(&[1.0, 0.0, 0.0, 1.0]).unwrap();
+        let mut b = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        b.copy_from_host(&[2.0, 3.0, 4.0, 5.0]).unwrap();
+        let mut bias = GpuBuffer::<f32>::new(Shape::dim2(2, 1), DType::F32, BufferFlags::STORAGE).unwrap();
+        bias.copy_from_host(&[1.0, 2.0]).unwrap();
+        let kernel = FusedGemmKernel::new(FusedActivation::None);
+        let out = kernel.execute_with_bias(&a, &b, &bias, None, 1.0).unwrap();
+        let mut data = [0f32; 4];
+        out.copy_to_host(&mut data).unwrap();
+        assert_eq!(data, [3.0, 5.0, 5.0, 7.0]);
     }
 }

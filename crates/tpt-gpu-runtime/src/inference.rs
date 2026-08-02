@@ -18,8 +18,8 @@ use std::sync::{Arc, Mutex};
 
 use tpt_gpu_primitives::memory::{BufferFlags, DType, Shape};
 use tpt_gpu_primitives::{
-    AttentionKernel, EmbeddingKernel, GemmKernel, GpuBuffer, RmsNormKernel, SoftmaxKernel,
-    VendorBackend,
+    AttentionKernel, EmbeddingKernel, GemmKernel, GpuBuffer, QuantGemmKernel, RmsNormKernel,
+    SoftmaxKernel, VendorBackend,
 };
 
 use crate::arch::{template_for_arch, ArchTemplate, ForwardOp};
@@ -629,9 +629,12 @@ pub struct GpuInferenceEngine {
     rmsnorm_k: RmsNormKernel,
     attn_k: AttentionKernel,
     gemm_k: GemmKernel,
+    quant_gemm_k: QuantGemmKernel,
     softmax_k: SoftmaxKernel,
     kv_cache: KvCache,
     cancelled: Arc<Mutex<bool>>,
+    /// xorshift64 PRNG state for temperature sampling (never zero).
+    rng_state: u64,
 }
 
 impl std::fmt::Debug for GpuInferenceEngine {
@@ -669,6 +672,7 @@ impl LlmInference for GpuInferenceEngine {
         let rmsnorm_k = RmsNormKernel::with_vendor(vendor.clone());
         let attn_k = AttentionKernel::with_vendor(vendor.clone());
         let gemm_k = GemmKernel::with_vendor(vendor.clone());
+        let quant_gemm_k = QuantGemmKernel::with_vendor(vendor.clone());
         let softmax_k = SoftmaxKernel::with_vendor(vendor);
 
         let head_dim = info.hidden_dim / info.num_heads.max(1);
@@ -687,9 +691,11 @@ impl LlmInference for GpuInferenceEngine {
             rmsnorm_k,
             attn_k,
             gemm_k,
+            quant_gemm_k,
             softmax_k,
             kv_cache,
             cancelled: Arc::new(Mutex::new(false)),
+            rng_state: 0x853c49e6748fea9b,
         })
     }
 
@@ -761,6 +767,9 @@ impl GpuInferenceEngine {
                 return Ok(0);
             }
 
+            // Quantization bit depth for this layer (0 = f32).
+            let layer_bits = self.info.per_layer_bits.get(layer_idx).copied().unwrap_or(0);
+
             let layer = &self.weights.layers[layer_idx];
 
             // Pre-attention RmsNorm
@@ -772,52 +781,62 @@ impl GpuInferenceEngine {
             })?;
             let normed = reshape_to_2d(normed, 1, hidden_dim)?;
 
-            // Q, K, V projections
-            let q = self
-                .gemm_k
-                .execute(&normed, &layer.q_proj, None, 1.0, 0.0)
-                .map_err(|e| {
-                    TptrError::new(
-                        ErrorCode::LaunchFailure,
-                        format!("q_proj layer {}: {}", layer_idx, e),
-                    )
-                })?;
-            let k = self
-                .gemm_k
-                .execute(&normed, &layer.k_proj, None, 1.0, 0.0)
-                .map_err(|e| {
-                    TptrError::new(
-                        ErrorCode::LaunchFailure,
-                        format!("k_proj layer {}: {}", layer_idx, e),
-                    )
-                })?;
-            let v = self
-                .gemm_k
-                .execute(&normed, &layer.v_proj, None, 1.0, 0.0)
-                .map_err(|e| {
-                    TptrError::new(
-                        ErrorCode::LaunchFailure,
-                        format!("v_proj layer {}: {}", layer_idx, e),
-                    )
-                })?;
+            // Q, K, V projections — dispatch through QuantGemm for quantized layers.
+            macro_rules! proj_gemm {
+                ($input:expr, $weight:expr, $name:literal) => {
+                    if layer_bits > 0 {
+                        quant_layer_gemm(&self.quant_gemm_k, $input, $weight, layer_bits)
+                            .map_err(|e| TptrError::new(
+                                ErrorCode::LaunchFailure,
+                                format!("{} layer {}: {}", $name, layer_idx, e),
+                            ))
+                    } else {
+                        self.gemm_k
+                            .execute($input, $weight, None, 1.0, 0.0)
+                            .map_err(|e| TptrError::new(
+                                ErrorCode::LaunchFailure,
+                                format!("{} layer {}: {}", $name, layer_idx, e),
+                            ))
+                    }
+                };
+            }
 
-            // KV cache: append current step's K and V
+            let q = proj_gemm!(&normed, &layer.q_proj, "q_proj")?;
+            let k = proj_gemm!(&normed, &layer.k_proj, "k_proj")?;
+            let v = proj_gemm!(&normed, &layer.v_proj, "v_proj")?;
+
+            // KV cache: append current step's K and V.
+            // After append, the token data is at position `kv_step - 1` but
+            // seq_len only increments once the last layer has appended.
+            // We use get_k_at / get_v_at with `kv_step` to read all positions
+            // including the just-written one regardless of seq_len's state.
+            let kv_step = self.kv_cache.seq_len + 1;
             let k_data = buf_to_vec(&k);
             let v_data = buf_to_vec(&v);
             self.kv_cache.append(layer_idx, &k_data, &v_data);
 
-            // The AttentionKernel requires Q, K, V to share the same seq_len
-            // (self-attention semantics). For autoregressive decode we pass only
-            // the current step's K/V vectors (shape [1, qk_dim]) — the KV cache
-            // is still maintained above for the full causal context; wiring it
-            // to the kernel requires a cross-attention API (future layer5 work).
             let qk_dim = num_heads * head_dim;
-            let k_cur = pad_to_len(&k_data, qk_dim);
-            let v_cur = pad_to_len(&v_data, qk_dim);
-            let k_cache = vec_to_buf(k_cur, 1, qk_dim)?;
-            let v_cache = vec_to_buf(v_cur, 1, qk_dim)?;
+            let kv_row = num_kv * head_dim;
+            // Expand GQA/MQA KV heads to full query-head dimension.
+            let k_full = expand_kv_heads(
+                self.kv_cache.get_k_at(layer_idx, kv_step),
+                kv_step,
+                kv_row,
+                qk_dim,
+            );
+            let v_full = expand_kv_heads(
+                self.kv_cache.get_v_at(layer_idx, kv_step),
+                kv_step,
+                kv_row,
+                qk_dim,
+            );
+            let k_cache = vec_to_buf(k_full, kv_step, qk_dim)?;
+            let v_cache = vec_to_buf(v_full, kv_step, qk_dim)?;
 
             let scale = Some(1.0 / (head_dim as f32).sqrt());
+            // Q is the current token [1, qk_dim]; K/V are the full history
+            // [kv_step, qk_dim]. The AttentionKernel now supports cross-attention
+            // (q_len != kv_len) so this routes through the host fallback.
             let q2d = reshape_to_2d(q, 1, qk_dim)?;
             let attn_out = self
                 .attn_k
@@ -832,15 +851,7 @@ impl GpuInferenceEngine {
             let attn_out = reshape_to_2d(attn_out, 1, attn_dim)?;
 
             // Output projection + residual
-            let o = self
-                .gemm_k
-                .execute(&attn_out, &layer.o_proj, None, 1.0, 0.0)
-                .map_err(|e| {
-                    TptrError::new(
-                        ErrorCode::LaunchFailure,
-                        format!("o_proj layer {}: {}", layer_idx, e),
-                    )
-                })?;
+            let o = proj_gemm!(&attn_out, &layer.o_proj, "o_proj")?;
             let o = reshape_to_2d(o, 1, hidden_dim)?;
             hidden = elementwise_add_2d(&hidden, &o, hidden_dim)?;
 
@@ -854,37 +865,13 @@ impl GpuInferenceEngine {
             let normed2 = reshape_to_2d(normed2, 1, hidden_dim)?;
 
             // SwiGLU FFN: gate, up, silu(gate)*up, down
-            let gate = self
-                .gemm_k
-                .execute(&normed2, &layer.gate_proj, None, 1.0, 0.0)
-                .map_err(|e| {
-                    TptrError::new(
-                        ErrorCode::LaunchFailure,
-                        format!("gate_proj layer {}: {}", layer_idx, e),
-                    )
-                })?;
-            let up = self
-                .gemm_k
-                .execute(&normed2, &layer.up_proj, None, 1.0, 0.0)
-                .map_err(|e| {
-                    TptrError::new(
-                        ErrorCode::LaunchFailure,
-                        format!("up_proj layer {}: {}", layer_idx, e),
-                    )
-                })?;
+            let gate = proj_gemm!(&normed2, &layer.gate_proj, "gate_proj")?;
+            let up = proj_gemm!(&normed2, &layer.up_proj, "up_proj")?;
 
             let ffn_mid = swiglu_host(&gate, &up, ffn_dim)?;
             let ffn_mid = reshape_to_2d(ffn_mid, 1, ffn_dim)?;
 
-            let ffn_out = self
-                .gemm_k
-                .execute(&ffn_mid, &layer.down_proj, None, 1.0, 0.0)
-                .map_err(|e| {
-                    TptrError::new(
-                        ErrorCode::LaunchFailure,
-                        format!("down_proj layer {}: {}", layer_idx, e),
-                    )
-                })?;
+            let ffn_out = proj_gemm!(&ffn_mid, &layer.down_proj, "down_proj")?;
             let ffn_out = reshape_to_2d(ffn_out, 1, hidden_dim)?;
 
             hidden = elementwise_add_2d(&hidden, &ffn_out, hidden_dim)?;
@@ -923,12 +910,87 @@ impl GpuInferenceEngine {
         };
 
         let logits = reshape_to_2d(logits_raw, 1, vocab_size)?;
-        let probs = self
-            .softmax_k
-            .execute(&logits)
-            .map_err(|e| TptrError::new(ErrorCode::LaunchFailure, format!("softmax: {}", e)))?;
 
-        Ok(sample_argmax(&probs, vocab_size))
+        // Extract temperature and top_k from the arch template's Sampling post-op.
+        let (temperature, top_k) = self
+            .template
+            .post_ops
+            .iter()
+            .find_map(|op| {
+                if let ForwardOp::Sampling { temperature, top_k } = op {
+                    Some((*temperature, *top_k))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or((1.0, 1));
+
+        if temperature <= 0.0 || top_k <= 1 {
+            // Greedy: softmax then argmax.
+            let probs = self.softmax_k.execute(&logits).map_err(|e| {
+                TptrError::new(ErrorCode::LaunchFailure, format!("softmax: {}", e))
+            })?;
+            return Ok(sample_argmax(&probs, vocab_size));
+        }
+
+        // Temperature scaling + top-k sampling.
+        let next = self.sample_with_temperature(&logits, vocab_size, temperature, top_k)?;
+        Ok(next)
+    }
+
+    /// Temperature-scaled top-k categorical sampling.
+    ///
+    /// Divides logits by `temperature`, masks all but the top-k entries,
+    /// applies softmax over those k entries, then draws a sample using a
+    /// xorshift64 PRNG embedded in `self.rng_state`.
+    fn sample_with_temperature(
+        &mut self,
+        logits: &GpuBuffer<f32>,
+        vocab_size: usize,
+        temperature: f32,
+        top_k: u32,
+    ) -> TptrResult<u32> {
+        let mut raw = vec![0.0f32; vocab_size];
+        let n = raw.len().min(logits.num_elements());
+        let _ = logits.copy_to_host(&mut raw[..n]);
+
+        // Apply temperature.
+        for x in raw.iter_mut() {
+            *x /= temperature;
+        }
+
+        // Find the top-k indices by partial sort (selection).
+        let k = (top_k as usize).min(vocab_size).max(1);
+        let mut indexed: Vec<(usize, f32)> =
+            raw.iter().cloned().enumerate().collect();
+        indexed.sort_unstable_by(|(_, a), (_, b)| {
+            b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        indexed.truncate(k);
+
+        // Numerically-stable softmax over top-k.
+        let max_val = indexed
+            .iter()
+            .map(|(_, v)| *v)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let mut expd: Vec<f32> = indexed.iter().map(|(_, v)| (*v - max_val).exp()).collect();
+        let sum: f32 = expd.iter().sum();
+        if sum > 0.0 {
+            for e in expd.iter_mut() {
+                *e /= sum;
+            }
+        }
+
+        // Categorical sample via xorshift64.
+        let u = xorshift64(&mut self.rng_state);
+        let mut cumsum = 0.0f32;
+        for (i, p) in expd.iter().enumerate() {
+            cumsum += p;
+            if u <= cumsum || i + 1 == k {
+                return Ok(indexed[i].0 as u32);
+            }
+        }
+        Ok(indexed[0].0 as u32)
     }
 }
 
@@ -965,6 +1027,178 @@ fn reshape_to_2d(buf: GpuBuffer<f32>, rows: usize, cols: usize) -> TptrResult<Gp
 /// Infer the output dimension of an attention result buffer.
 fn attn_out_dim(buf: &GpuBuffer<f32>) -> usize {
     buf.dim(1).unwrap_or(buf.num_elements())
+}
+
+/// Quantize a float weight matrix and run QuantGemmKernel.
+///
+/// Computes `activation @ weight` by packing `weight^T` as `i8` with per-group
+/// scales and dispatching through `QuantGemmKernel`.  The result has shape
+/// `[1, out_dim]`, identical to the f32 GEMM path.
+///
+/// This establishes the full quantized GEMM code path. When real GGUF tensor
+/// loading lands, weights should be stored pre-packed instead of quantized here.
+fn quant_layer_gemm(
+    quant_k: &QuantGemmKernel,
+    activation: &GpuBuffer<f32>,
+    weight: &GpuBuffer<f32>,
+    bits: u8,
+) -> TptrResult<GpuBuffer<f32>> {
+
+    let in_dim = weight.dim(0).unwrap_or(0);
+    let out_dim = weight.dim(1).unwrap_or(0);
+    if in_dim == 0 || out_dim == 0 {
+        return Err(TptrError::new(
+            ErrorCode::ArgumentMismatch,
+            "quant_layer_gemm: weight has zero dimension",
+        ));
+    }
+
+    // Read weight [in_dim, out_dim] and activation [1, in_dim].
+    let mut w = vec![0.0f32; in_dim * out_dim];
+    let wn = w.len().min(weight.num_elements());
+    let _ = weight.copy_to_host(&mut w[..wn]);
+
+    let mut act = vec![0.0f32; in_dim];
+    let an = act.len().min(activation.num_elements());
+    let _ = activation.copy_to_host(&mut act[..an]);
+
+    // Transpose weight to W^T [out_dim, in_dim] for QuantGemmKernel's row-major layout.
+    let mut wt = vec![0.0f32; out_dim * in_dim];
+    for r in 0..in_dim {
+        for c in 0..out_dim {
+            wt[c * in_dim + r] = w[r * out_dim + c];
+        }
+    }
+
+    // Compute per-group scales for W^T rows (= W columns = output neurons).
+    let bits_u = bits.max(1) as usize;
+    let pack_factor = (8usize / bits_u).max(1);
+    let packed_k = (in_dim + pack_factor - 1) / pack_factor;
+    let group_size = tpt_gpu_primitives::DEFAULT_GROUP_SIZE as usize;
+    let groups_per_row = (in_dim + group_size - 1) / group_size;
+    let max_int = ((1u32 << bits) - 1) as f32 / 2.0;
+
+    let mut scales = vec![1.0f32; out_dim * groups_per_row];
+    for row in 0..out_dim {
+        for g in 0..groups_per_row {
+            let start = row * in_dim + g * group_size;
+            let end = (start + group_size).min(row * in_dim + in_dim);
+            let max_abs = wt[start..end].iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+            scales[row * groups_per_row + g] =
+                if max_abs > 0.0 { max_abs / max_int } else { 1.0 };
+        }
+    }
+
+    // Pack W^T rows into i8.
+    let mut packed = vec![0i8; out_dim * packed_k];
+    for row in 0..out_dim {
+        for col in 0..in_dim {
+            let g = col / group_size;
+            let scale = scales[row * groups_per_row + g];
+            let val = (wt[row * in_dim + col] / scale)
+                .round()
+                .clamp(-max_int, max_int) as i8;
+            let packed_col = col / pack_factor;
+            let shift = (col % pack_factor) * bits_u;
+            packed[row * packed_k + packed_col] |= ((val as u8) << shift) as i8;
+        }
+    }
+
+    // Build GpuBuffers.
+    let mut a_buf = GpuBuffer::<i8>::new(
+        Shape::dim2(out_dim, packed_k),
+        DType::I8,
+        BufferFlags::STORAGE,
+    )
+    .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
+    a_buf
+        .copy_from_host(&packed)
+        .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
+
+    // b_f32 = activation^T [in_dim, 1].
+    let mut b_buf = GpuBuffer::<f32>::new(Shape::dim2(in_dim, 1), DType::F32, BufferFlags::STORAGE)
+        .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
+    b_buf
+        .copy_from_host(&act)
+        .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
+
+    let mut sc_buf = GpuBuffer::<f32>::new(
+        Shape::dim2(out_dim, groups_per_row),
+        DType::F32,
+        BufferFlags::STORAGE,
+    )
+    .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
+    sc_buf
+        .copy_from_host(&scales)
+        .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
+
+    let zp_buf = GpuBuffer::<i8>::new(
+        Shape::dim2(out_dim, groups_per_row),
+        DType::I8,
+        BufferFlags::STORAGE,
+    )
+    .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
+
+    // dequant(W^T) @ act^T → [out_dim, 1]; reshape to [1, out_dim].
+    let result = quant_k
+        .execute(&a_buf, &b_buf, &sc_buf, &zp_buf)
+        .map_err(|e| TptrError::new(ErrorCode::LaunchFailure, e.to_string()))?;
+
+    // Transpose [out_dim, 1] → [1, out_dim].
+    let mut out_raw = vec![0.0f32; out_dim];
+    let rn = out_raw.len().min(result.num_elements());
+    let _ = result.copy_to_host(&mut out_raw[..rn]);
+    vec_to_buf(out_raw, 1, out_dim)
+}
+
+/// Expand GQA/MQA KV head layout to match the full query-head count.
+///
+/// `src` is a flat slice of `[seq_len × kv_row]` floats where `kv_row =
+/// num_kv_heads × head_dim`.  Returns a `Vec` of `[seq_len × qk_dim]` floats
+/// where `qk_dim = num_heads × head_dim`, repeating KV heads cyclically to
+/// fill all query heads (standard GQA broadcasting).
+fn expand_kv_heads(src: &[f32], seq_len: usize, kv_row: usize, qk_dim: usize) -> Vec<f32> {
+    if seq_len == 0 || qk_dim == 0 {
+        return vec![];
+    }
+    if kv_row >= qk_dim {
+        // MHA or already full width — just copy / pad each row.
+        let mut out = vec![0.0f32; seq_len * qk_dim];
+        for t in 0..seq_len {
+            let src_start = t * kv_row;
+            let dst_start = t * qk_dim;
+            let copy = qk_dim.min(kv_row).min(src.len().saturating_sub(src_start));
+            if copy > 0 {
+                out[dst_start..dst_start + copy]
+                    .copy_from_slice(&src[src_start..src_start + copy]);
+            }
+        }
+        return out;
+    }
+    // GQA: broadcast kv_row → qk_dim by cycling.
+    let mut out = vec![0.0f32; seq_len * qk_dim];
+    for t in 0..seq_len {
+        let src_start = t * kv_row;
+        let dst_start = t * qk_dim;
+        for i in 0..qk_dim {
+            let src_i = src_start + (i % kv_row);
+            if src_i < src.len() {
+                out[dst_start + i] = src[src_i];
+            }
+        }
+    }
+    out
+}
+
+/// xorshift64 PRNG — returns a uniform float in (0, 1].
+fn xorshift64(state: &mut u64) -> f32 {
+    let mut x = *state;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    *state = x;
+    // Map to (0, 1] by dividing by 2^64.
+    (x as f64 / u64::MAX as f64) as f32
 }
 
 /// Return a new `Vec<f32>` of exactly `target_len` elements from `src`,

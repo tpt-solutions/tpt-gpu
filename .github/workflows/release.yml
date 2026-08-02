@@ -73,13 +73,13 @@ jobs:
       run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
     
     - name: Publish tpt-gpu-script-core
-      run: cd crates/tptb-core && cargo publish --allow-dirty
+      run: cd crates/tpt-gpu-script-core && cargo publish --allow-dirty
 
     - name: Publish tpt-gpu-script-cli
-      run: cd crates/tptb-cli && cargo publish --allow-dirty
+      run: cd crates/tpt-gpu-script-cli && cargo publish --allow-dirty
 
     - name: Publish tpt-gpu-script-lsp
-      run: cd crates/tptb-lsp && cargo publish --allow-dirty
+      run: cd crates/tpt-gpu-script-lsp && cargo publish --allow-dirty
 
     - name: Publish tpt-gpu-script-format
-      run: cd crates/tptb-format && cargo publish --allow-dirty
+      run: cd crates/tpt-gpu-script-format && cargo publish --allow-dirty

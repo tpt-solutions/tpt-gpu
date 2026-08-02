@@ -144,27 +144,51 @@ impl GemmKernel {
         }
     }
 
+    /// Host-side scalar reference implementation, used when no vendor GPU
+    /// backend is available (e.g. dev machines / CI without CUDA or ROCm).
+    /// Computes `output = alpha * A@B + beta * output`.
     fn tptir_fallback_gemm(
         &self,
-        _a: &GpuBuffer<f32>,
-        _b: &GpuBuffer<f32>,
-        _output: &mut GpuBuffer<f32>,
-        _alpha: f32,
-        _beta: f32,
-        _m: usize,
-        _n: usize,
-        _k: usize,
+        a: &GpuBuffer<f32>,
+        b: &GpuBuffer<f32>,
+        output: &mut GpuBuffer<f32>,
+        alpha: f32,
+        beta: f32,
+        m: usize,
+        n: usize,
+        k: usize,
     ) -> TptpResult<()> {
         log::debug!(
             "TPTIR GEMM fallback: M={}, N={}, K={}, tile={}x{}x{}",
-            _m,
-            _n,
-            _k,
+            m,
+            n,
+            k,
             self.params.tile_m,
             self.params.tile_n,
             self.params.tile_k
         );
-        Ok(())
+
+        let mut a_raw = vec![0.0f32; m * k];
+        a.copy_to_host(&mut a_raw)?;
+        let mut b_raw = vec![0.0f32; k * n];
+        b.copy_to_host(&mut b_raw)?;
+        let mut c_raw = vec![0.0f32; m * n];
+        if beta != 0.0 {
+            output.copy_to_host(&mut c_raw)?;
+        }
+
+        for i in 0..m {
+            for j in 0..n {
+                let mut acc = 0.0f32;
+                for kk in 0..k {
+                    acc += a_raw[i * k + kk] * b_raw[kk * n + j];
+                }
+                let prev = if beta != 0.0 { c_raw[i * n + j] } else { 0.0 };
+                c_raw[i * n + j] = alpha * acc + beta * prev;
+            }
+        }
+
+        output.copy_from_host(&c_raw)
     }
 }
 
@@ -276,20 +300,50 @@ mod tests {
     }
     #[test]
     fn test_gemm_returns_computed_buffer() {
+        // alpha=0, beta=1 ⇒ output = 0·A@B + 1·C = C (the caller-supplied buffer).
+        // Verifies that the returned buffer is the computed-into C, not a fresh allocation.
         let a = GpuBuffer::<f32>::new(Shape::dim2(2, 3), DType::F32, BufferFlags::STORAGE).unwrap();
         let b = GpuBuffer::<f32>::new(Shape::dim2(3, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         let mut c = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         let marker = [1.0f32, 2.0, 3.0, 4.0];
         c.copy_from_host(&marker).unwrap();
         let kernel = GemmKernel::new();
-        let out = kernel.execute(&a, &b, Some(&mut c), 1.0, 0.0).unwrap();
-        // The returned buffer must be the buffer that was computed into — i.e. a
-        // clone of the caller-supplied `c` (with its marker contents intact in
-        // sim mode), NOT a freshly-allocated zero buffer.
+        let out = kernel.execute(&a, &b, Some(&mut c), 0.0, 1.0).unwrap();
         let mut data = [0f32; 4];
         out.copy_to_host(&mut data).unwrap();
         assert_eq!(data, marker);
     }
+    #[test]
+    fn test_gemm_fallback_computes_real_product() {
+        // A = [[1,2],[3,4]], B = [[5,6],[7,8]] => A@B = [[19,22],[43,50]]
+        let mut a = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        a.copy_from_host(&[1.0, 2.0, 3.0, 4.0]).unwrap();
+        let mut b = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        b.copy_from_host(&[5.0, 6.0, 7.0, 8.0]).unwrap();
+        let kernel = GemmKernel::new();
+        let out = kernel.execute(&a, &b, None, 1.0, 0.0).unwrap();
+        let mut data = [0f32; 4];
+        out.copy_to_host(&mut data).unwrap();
+        assert_eq!(data, [19.0, 22.0, 43.0, 50.0]);
+    }
+
+    #[test]
+    fn test_gemm_fallback_applies_alpha_beta() {
+        // alpha=2, beta=0.5, C_in = [[1,1],[1,1]]
+        // A@B = [[19,22],[43,50]] => C = 2*A@B + 0.5*C_in
+        let mut a = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        a.copy_from_host(&[1.0, 2.0, 3.0, 4.0]).unwrap();
+        let mut b = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        b.copy_from_host(&[5.0, 6.0, 7.0, 8.0]).unwrap();
+        let mut c = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        c.copy_from_host(&[1.0, 1.0, 1.0, 1.0]).unwrap();
+        let kernel = GemmKernel::new();
+        let out = kernel.execute(&a, &b, Some(&mut c), 2.0, 0.5).unwrap();
+        let mut data = [0f32; 4];
+        out.copy_to_host(&mut data).unwrap();
+        assert_eq!(data, [38.5, 44.5, 86.5, 100.5]);
+    }
+
     #[test]
     fn test_gemm_returns_local_buffer_when_no_c() {
         let a = GpuBuffer::<f32>::new(Shape::dim2(2, 3), DType::F32, BufferFlags::STORAGE).unwrap();

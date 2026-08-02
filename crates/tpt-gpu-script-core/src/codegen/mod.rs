@@ -16,6 +16,10 @@ pub struct CodegenOutput {
     /// Feed this into `layer3_tptc::compile_native(tptir_source, "tptisa")`
     /// or `"llvmir"` to obtain machine-level output.
     pub tptir_source: String,
+    /// Non-fatal TPTIR emission errors (e.g. unsupported control flow).
+    /// The emitted TPTIR contains `; ERROR:` comments at the affected sites.
+    /// An empty vec means the TPTIR is fully lowered.
+    pub tptir_errors: Vec<String>,
 }
 
 /// Emit code from a parsed `Program`.
@@ -24,9 +28,13 @@ pub struct CodegenOutput {
 /// - Host functions (no `@requires_gpu`) → `output.rust_source`
 /// - GPU kernel functions (`@requires_gpu(true)`) → `output.tptir_source`
 pub fn emit(program: &Program) -> CodegenOutput {
+    let mut tptir_emitter = tptir_emit::TptIrEmitter::new();
+    let tptir_source = tptir_emitter.emit_program(program);
+    let tptir_errors = tptir_emitter.take_errors();
     CodegenOutput {
         rust_source: rust_emit::RustEmitter::new().emit_program(program),
-        tptir_source: tptir_emit::TptIrEmitter::new().emit_program(program),
+        tptir_source,
+        tptir_errors,
     }
 }
 

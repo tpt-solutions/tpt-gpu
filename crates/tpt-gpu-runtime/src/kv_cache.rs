@@ -85,6 +85,24 @@ impl KvCache {
         &self.values[layer][..self.seq_len * row_size]
     }
 
+    /// Return the K slice for `layer` at an explicit token count.
+    ///
+    /// Use this after `append` to include the just-written token whose position
+    /// has been filled but `seq_len` has not yet been incremented (because
+    /// `seq_len` only advances after the final layer has appended).
+    pub fn get_k_at(&self, layer: usize, count: usize) -> &[f32] {
+        let row_size = self.num_kv_heads * self.head_dim;
+        let end = (count * row_size).min(self.keys[layer].len());
+        &self.keys[layer][..end]
+    }
+
+    /// Return the V slice for `layer` at an explicit token count.
+    pub fn get_v_at(&self, layer: usize, count: usize) -> &[f32] {
+        let row_size = self.num_kv_heads * self.head_dim;
+        let end = (count * row_size).min(self.values[layer].len());
+        &self.values[layer][..end]
+    }
+
     /// Zero out all K/V data and reset the sequence counter.
     pub fn reset(&mut self) {
         self.seq_len = 0;

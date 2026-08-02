@@ -34,11 +34,11 @@ cargo build --release -p tpt-gpu-script-cli
 # Locate the binary
 BINARY="$(cargo metadata --format-version 1 --no-deps 2>/dev/null \
     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['target_directory'])" \
-    2>/dev/null || echo "target")/release/tpt-gpu-script-cli"
+    2>/dev/null || echo "target")/release/tpt-gpu-script"
 
 if [ ! -f "$BINARY" ]; then
     # Fallback: search the workspace target dir
-    BINARY="$(find "$SCRIPT_ROOT/target/release" -maxdepth 1 -name "tpt-gpu-script-cli" 2>/dev/null | head -1)"
+    BINARY="$(find "$SCRIPT_ROOT/target/release" -maxdepth 1 -name "tpt-gpu-script" 2>/dev/null | head -1)"
 fi
 
 if [ -f "$BINARY" ]; then

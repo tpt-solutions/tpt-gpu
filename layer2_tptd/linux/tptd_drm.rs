@@ -63,11 +63,15 @@ const CMDRING_ENTRIES: u32 = 256;  // 256 × 64-byte descriptors = 16 KiB
 // Per-device state
 // ---------------------------------------------------------------------------
 pub(crate) struct TptDevice {
-    pub(crate) mmio:   IoMem<4096>,
-    pub(crate) dev:    Arc<drm::device::Device<TptGemDriver>>,
-    pub(crate) seq_no: Mutex<u64>,
-    pub(crate) vram_bytes: u64,
-    pub(crate) num_sm:     u32,
+    pub(crate) mmio:        IoMem<4096>,
+    pub(crate) dev:         Arc<drm::device::Device<TptGemDriver>>,
+    pub(crate) seq_no:      Mutex<u64>,
+    /// Cumulative count of page-fault and watchdog events since driver load.
+    /// TPT_WAIT_COMPLETE ioctl handlers check this to distinguish completion
+    /// from fault when woken by a seq_no bump from `tpt_fault_irq_handler`.
+    pub(crate) fault_count: Mutex<u64>,
+    pub(crate) vram_bytes:  u64,
+    pub(crate) num_sm:      u32,
 }
 
 impl TptDevice {
@@ -193,6 +197,7 @@ impl pci::Driver for TptPciDriver {
             mmio,
             dev: drm_dev,
             seq_no: Mutex::new(0),
+            fault_count: Mutex::new(0),
             vram_bytes,
             num_sm: 1,
         })?;
@@ -250,8 +255,23 @@ fn tpt_fault_irq_handler(dev: &TptDevice) -> irq::Return {
     if pend & (TPT_IRQ_PAGE_FAULT | TPT_IRQ_WATCHDOG) == 0 {
         return irq::Return::None;
     }
+    // Acknowledge fault/watchdog bits only (leave KERNEL_DONE intact).
     dev.write32(TPT_REG_IRQ_PEND, pend & (TPT_IRQ_PAGE_FAULT | TPT_IRQ_WATCHDOG));
-    // TODO: signal fault to waiting process (context teardown)
+
+    // Record the fault so TPT_WAIT_COMPLETE can distinguish fault from completion.
+    {
+        let mut fc = dev.fault_count.lock();
+        *fc += 1;
+    }
+
+    // Bump seq_no to unblock any process sleeping in TPT_WAIT_COMPLETE.
+    // The waiter compares fault_count before and after to detect a fault.
+    {
+        let mut seq = dev.seq_no.lock();
+        *seq += 1;
+    }
+
+    pr_err!("TPT GPU: fault IRQ (IRQ_PEND={:#010x}) — context marked faulted\n", pend);
     irq::Return::Handled
 }
 

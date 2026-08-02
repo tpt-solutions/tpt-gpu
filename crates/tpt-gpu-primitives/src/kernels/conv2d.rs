@@ -131,21 +131,66 @@ impl Conv2DKernel {
 
     fn tptir_fallback_conv2d(
         &self,
-        _input: &GpuBuffer<f32>,
-        _filter: &GpuBuffer<f32>,
-        _output: &mut GpuBuffer<f32>,
-        _strides: [u32; 2],
-        _padding: [u32; 2],
+        input: &GpuBuffer<f32>,
+        filter: &GpuBuffer<f32>,
+        output: &mut GpuBuffer<f32>,
+        strides: [u32; 2],
+        padding: [u32; 2],
     ) -> TptpResult<()> {
+        let n = input.dim(0).unwrap_or(0);
+        let c_in = input.dim(1).unwrap_or(0);
+        let h = input.dim(2).unwrap_or(0);
+        let w = input.dim(3).unwrap_or(0);
+        let c_out = filter.dim(0).unwrap_or(0);
+        let k_h = filter.dim(2).unwrap_or(0);
+        let k_w = filter.dim(3).unwrap_or(0);
+        let h_out = output.dim(2).unwrap_or(0);
+        let w_out = output.dim(3).unwrap_or(0);
+        let stride_h = strides[0] as usize;
+        let stride_w = strides[1] as usize;
+        let pad_h = padding[0] as usize;
+        let pad_w = padding[1] as usize;
         log::debug!(
-            "TPTIR Conv2D fallback: strides={:?}, padding={:?}, tile={}x{}x{}",
-            _strides,
-            _padding,
-            self.params.tile_oh,
-            self.params.tile_ow,
-            self.params.tile_ic
+            "TPTIR Conv2D fallback: N={} C_in={} H={}xW={} → C_out={} K={}x{} stride={:?} pad={:?}",
+            n, c_in, h, w, c_out, k_h, k_w, strides, padding
         );
-        Ok(())
+
+        let mut in_raw = vec![0.0f32; n * c_in * h * w];
+        input.copy_to_host(&mut in_raw)?;
+        let mut flt_raw = vec![0.0f32; c_out * c_in * k_h * k_w];
+        filter.copy_to_host(&mut flt_raw)?;
+        let mut out_raw = vec![0.0f32; n * c_out * h_out * w_out];
+
+        for ni in 0..n {
+            for oc in 0..c_out {
+                for oh in 0..h_out {
+                    for ow in 0..w_out {
+                        let mut acc = 0.0f32;
+                        for ic in 0..c_in {
+                            for kh in 0..k_h {
+                                for kw in 0..k_w {
+                                    let ih = oh * stride_h + kh;
+                                    let iw = ow * stride_w + kw;
+                                    if ih < pad_h || iw < pad_w {
+                                        continue;
+                                    }
+                                    let ih = ih - pad_h;
+                                    let iw = iw - pad_w;
+                                    if ih >= h || iw >= w {
+                                        continue;
+                                    }
+                                    acc += in_raw[ni * c_in * h * w + ic * h * w + ih * w + iw]
+                                        * flt_raw[oc * c_in * k_h * k_w + ic * k_h * k_w + kh * k_w + kw];
+                                }
+                            }
+                        }
+                        out_raw[ni * c_out * h_out * w_out + oc * h_out * w_out + oh * w_out + ow] = acc;
+                    }
+                }
+            }
+        }
+
+        output.copy_from_host(&out_raw)
     }
 }
 
@@ -242,5 +287,43 @@ mod tests {
         let params = Conv2DParams::default();
         assert_eq!(params.tile_oh, 32);
         assert_eq!(params.tile_ic, 16);
+    }
+
+    #[test]
+    fn test_conv2d_fallback_1x1_filter() {
+        // input [1,1,2,2] = [[1,2],[3,4]], filter [1,1,1,1] = [[2.0]]
+        // output [1,1,2,2] = [[2,4],[6,8]]
+        let mut input =
+            GpuBuffer::<f32>::new(Shape::dim4(1, 1, 2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        input.copy_from_host(&[1.0, 2.0, 3.0, 4.0]).unwrap();
+        let mut filter =
+            GpuBuffer::<f32>::new(Shape::dim4(1, 1, 1, 1), DType::F32, BufferFlags::STORAGE).unwrap();
+        filter.copy_from_host(&[2.0]).unwrap();
+        let kernel = Conv2DKernel::new();
+        let out = kernel.execute(&input, &filter, [1, 1], [0, 0], None).unwrap();
+        let mut data = [0f32; 4];
+        out.copy_to_host(&mut data).unwrap();
+        assert_eq!(data, [2.0, 4.0, 6.0, 8.0]);
+    }
+
+    #[test]
+    fn test_conv2d_fallback_sum_kernel() {
+        // 1x1 input image, 3x3 all-ones filter with same padding
+        // input [1,1,3,3] all ones, filter [1,1,3,3] all ones, pad=1, stride=1
+        // center output pixel: sums all 9 input pixels = 9.0
+        let input_data = vec![1.0f32; 9];
+        let filter_data = vec![1.0f32; 9];
+        let mut input =
+            GpuBuffer::<f32>::new(Shape::dim4(1, 1, 3, 3), DType::F32, BufferFlags::STORAGE).unwrap();
+        input.copy_from_host(&input_data).unwrap();
+        let mut filter =
+            GpuBuffer::<f32>::new(Shape::dim4(1, 1, 3, 3), DType::F32, BufferFlags::STORAGE).unwrap();
+        filter.copy_from_host(&filter_data).unwrap();
+        let kernel = Conv2DKernel::new();
+        // pad=1 keeps spatial size 3x3; center pixel [0,0,1,1] sums all 9 neighbours
+        let out = kernel.execute(&input, &filter, [1, 1], [1, 1], None).unwrap();
+        let mut data = [0f32; 9];
+        out.copy_to_host(&mut data).unwrap();
+        assert!((data[4] - 9.0).abs() < 1e-5, "center pixel={}", data[4]);
     }
 }
