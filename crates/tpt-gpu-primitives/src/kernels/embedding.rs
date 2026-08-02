@@ -131,12 +131,6 @@ impl PrimitiveKernel for EmbeddingKernel {
     fn name(&self) -> &str {
         "embedding"
     }
-    fn input_shapes(&self) -> &[Shape] {
-        &[]
-    }
-    fn output_shape(&self) -> &Shape {
-        unimplemented!("output_shape not static for EmbeddingKernel")
-    }
     fn supported_dtypes(&self) -> &[DType] {
         &[DType::F32, DType::F16, DType::BF16]
     }

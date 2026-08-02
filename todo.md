@@ -251,7 +251,7 @@
 - [x] Implement real CUDA backend in `layer5_tptp/tptp-core/src/vendor/cuda.rs` (dlopen `libcuda`/`nvcuda`, real `cuInit`/`cuMemAlloc`/`cuMemcpy*`/`cuLaunchKernel`-backed gemm/attention/conv2d/conv3d via cuBLAS/cuDNN) behind `feature = "cuda"`
 - [ ] Implement real ROCm backend in `rocm.rs` via HIP (dlopen `libamdhip64`), mirroring the CUDA backend structure — backend + GEMM/attention/conv2d/conv3d present but unverified (no AMD hardware)
 - [ ] Implement real Metal backend in `metal.rs` (macOS-only, `MTLCreateSystemDefaultDevice`, MSL kernels) — API stubbed, unverified (no macOS hardware)
-- [x] Wire `layer4_tptr`'s `Backend::{CUDA,ROCm,Metal}` enum variants to real `layer5_tptp::vendor` backends via `Device::new_cuda()`/`new_rocm()`/`new_metal()` or `Device::open(VendorBackend::detect())` (added `Device::new_cuda`/`Device::open` + `is_real`; `Backend::CUDA` populated; real `cuMemAlloc`/`cuMemcpyHtoD`/`cuMemcpyDtoH` round-trip verified on RTX 3050)
+- [x] Wire `layer4_tptr`'s `Backend::CUDA` enum variant to the real `layer5_tptp::vendor::cuda` backend via `Device::new_cuda()` / `Device::open()`; `is_real` flag set; real `cuMemAlloc`/`cuMemcpyHtoD`/`cuMemcpyDtoH` round-trip verified on RTX 3050 — NOTE: `Device::new_rocm()` and `Device::new_metal()` do not exist at the `layer4_tptr` level; ROCm/Metal routing is handled inside `layer5_tptp::vendor` via `VendorBackend::detect()` only
 - [x] CI: gate `feature = "cuda"`/`"rocm"` builds to confirm compilation against vendor headers; keep simulated path as default for hardware-less `cargo test` (`.github/workflows/ci.yml` → `vendor-builds` job)
 - [x] Manual/self-hosted-runner verification: real `gemm`/`memcpy` round-trip on actual GPU hardware, checked against known-correct output (RTX 3050: `test_cuda_gemm_roundtrip`, `test_cuda_attention_roundtrip`, `test_cuda_conv2d_roundtrip` in `tpt-gpu-primitives`, plus `test_new_cuda_real_memcpy_roundtrip` in `tpt-gpu-runtime`, all passing)
 
@@ -323,27 +323,27 @@
 **Context:** a full-platform review (bugs/TODOs, architectural maturity per layer, onboarding/adoption friction) surfaced high-severity correctness bugs on the inference hot path, benchmark/certification claims not backed by real measurements, and concrete adoption gaps. Plan: `C:\Users\phill\.claude\plans\review-platform-for-bugs-snazzy-pudding.md`.
 
 ### Priority 1 — Critical correctness bugs
-- [ ] `GemmKernel::execute`/`FusedGemmKernel::execute`/`execute_with_bias` (`crates/tpt-gpu-primitives/src/kernels/gemm.rs`, `fused_gemm.rs`) discard the real computed output and return a fresh zero buffer instead — affects every real call site in `crates/tpt-gpu-runtime/src/inference.rs` (all Q/K/V/O/gate/up/down/lm_head projections silently return zeros even on real CUDA hardware); fix to return the buffer actually written to, matching `attention.rs`/`conv2d.rs`/`conv3d.rs`/`quant_gemm.rs`'s existing correct pattern; add a regression test asserting the *returned* buffer contains the computed result
-- [ ] `crates/tpt-gpu-model-registry/src/hf.rs::download()` never writes any bytes but returns `Ok(dest)` and registers the manifest entry anyway — implement real download via `ureq` (already a workspace pattern) + optional SHA-256 verification via `sha2`
-- [ ] `crates/tpt-gpu-primitives/src/vendor/metal.rs::gemm()` fabricates `Ok(())` without touching buffers under `feature = "metal"` — make it return `TptpError::unsupported(...)` like its `attention`/`conv2d`/`conv3d` siblings in the same file
+- [x] `GemmKernel::execute`/`FusedGemmKernel::execute`/`execute_with_bias` (`crates/tpt-gpu-primitives/src/kernels/gemm.rs`, `fused_gemm.rs`) — fixed to return the buffer actually written to; regression tests `test_gemm_returns_computed_buffer` / `test_fused_gemm_returns_computed_buffer` added
+- [x] `crates/tpt-gpu-model-registry/src/hf.rs::download()` — fixed to stream body via `ureq` + `io::copy` with optional SHA-256 verification; manifest entry only registered after file confirmed on disk
+- [x] `crates/tpt-gpu-primitives/src/vendor/metal.rs::gemm()` — fixed to return `TptpError::unsupported(...)` under `feature = "metal"` and `TptpError::vendor_unavailable(...)` otherwise, matching `attention`/`conv2d`/`conv3d` siblings
 
 ### Priority 2 — Correct misleading benchmark/certification claims
-- [ ] `BENCHMARKS.md`/`GEMM_VS_CUBLAS_IMPLEMENTATION.md` "GEMM > cuBLAS Milestone — Achieved" table is produced by `tpt-gpu-kernel-optimizer`'s analytical cost model (hardcoded baseline constants/bandwidth/heuristic coefficients in `fused_eval.rs`/`real_evaluator.rs`), not measured on hardware — reword to state this plainly and point to the (currently empty) community scoreboard as where real hardware numbers will appear
-- [ ] `crates/tpt-gpu-vendor-cert/src/tests.rs` — all ~18 test functions share the tautological body `cfg!(feature = "sim") || !vendor.is_empty()` and never exercise a real backend; add `tpt-gpu-primitives` as a dependency and rewrite correctness tests to actually call `VendorLibrary::gemm`/`attention`/`conv2d`/`conv3d` against a CPU reference (mirror `vendor/cuda.rs`'s roundtrip tests); update `docs/vendor/VENDOR_PROGRAM.md` to match the real single-file test structure
-- [ ] `layer6_framework/tptr/jax/__init__.py` is a 0-byte file backing `tests/test_jax.py`/`examples/jax_interop.py`, which import symbols that don't exist — mark JAX as not-yet-implemented (expected-skip test + doc correction) rather than leaving a silent import crash
-- [ ] `todo.md` Phase 7.5 `[x]` claims `Device::new_rocm()`/`new_metal()` exist — they don't (`crates/tpt-gpu-runtime/src/device/device.rs` only has `new_cuda()`, and `Device::open()` is CUDA-only); correct this line and the equivalent `VendorBackend::detect()` routing claim in `CLAUDE.md` to scope it to the `tpt-gpu-primitives::vendor` layer only
+- [x] `BENCHMARKS.md`/`GEMM_VS_CUBLAS_IMPLEMENTATION.md` — reworded to clearly state all numbers are analytical cost-model projections, not hardware measurements; community scoreboard section added pointing to where real numbers will appear
+- [x] `crates/tpt-gpu-vendor-cert/src/tests.rs` — rewritten with CPU reference implementations (`ref_gemm`, `ref_attention`, `ref_conv2d`, `ref_conv3d`) and real correctness tests that call `VendorLibrary::gemm`/`attention`/`conv2d`/`conv3d` against those references; gate on `detect_backend()` so hardware-less runs skip correctly
+- [x] `layer6_framework/tptr/jax/__init__.py` — populated with not-implemented stubs; `tptr.jax.is_available()` returns `False`; `tests/test_jax.py` marked `pytestmark = pytest.mark.skip`; `examples/jax_interop.py` updated with guard
+- [x] `todo.md` Phase 7.5 — corrected to state that `Device::new_rocm()`/`new_metal()` do not exist at the `layer4_tptr` level; ROCm/Metal routing lives only in `layer5_tptp::vendor` via `VendorBackend::detect()`
 
 ### Priority 3 — Adoption/onboarding improvements
-- [ ] Fix doc path inconsistencies: `docs/tutorials/README.md`/`01_introduction.md` reference a top-level `examples/` directory that doesn't exist (real paths are `layer7_tptb/examples/`, `layer6_framework/examples/`)
-- [ ] Add `scripts/setup.sh`/`setup.ps1` bootstrap scripts covering the documented Rust-only quickstart (check `cargo`, build `tpt-gpu-script-cli`, print next steps) — do not attempt to bootstrap the C++/SystemVerilog/driver toolchains
-- [ ] Add `Fetch`/`Add` subcommands to `crates/tpt-gpu-model-registry/src/main.rs` (README's tools table already advertises `tpt-gpu-models add/list/fetch` but only `List`/`Dir`/`Remove` exist) and a short end-to-end walkthrough in `MODELS_REGISTRY.md`/`docs/use-cases.md`
+- [x] Fix doc path inconsistencies: `docs/tutorials/01_introduction.md` project-structure tree corrected — `examples/` row removed; `layer6_framework/` and `layer7_tptb/` annotated with their respective `examples/` subdirectories
+- [x] Add `scripts/setup.sh`/`setup.ps1` bootstrap scripts covering the documented Rust-only quickstart (check `cargo`, build `tpt-gpu-script-cli`, print next steps)
+- [x] Add `Fetch`/`Add` subcommands to `crates/tpt-gpu-model-registry/src/main.rs`; end-to-end walkthrough added to `MODELS_REGISTRY.md`
 - [ ] External/manual items flagged for the user, not executable here: publish `v/tpt-vscode` to the VS Code Marketplace (needs publisher account); crates.io publishing per `RELEASE_CHECKLIST.md` (needs account/token); revisit "Pull requests are not accepted at this time" policy (no `CONTRIBUTING.md` exists)
 
 ### Further ideas (not scheduled — for future consideration)
-- [ ] Add a CI job for Python/pytest (`layer6_framework`) — would have caught the JAX gap (Priority 2) automatically; also consider RTL sim (layer1) and driver build (layer2) CI jobs
-- [ ] Clean up stale duplicate `layer2_driver/` tree (only `layer2_driver/rust` was removed in Phase 8) and stray root files (`todo 1260627.md`, `todo 1260718.md`, `todo 1260802.md`, `fix_claude.py`, `fix_lib.py`, `fix_ops.py`, `harness.rs`, `tpt_bench_quick_output.txt`)
+- [x] Add a CI job for Python/pytest (`layer6_framework`) — would have caught the JAX gap (Priority 2) automatically; also consider RTL sim (layer1) and driver build (layer2) CI jobs
+- [x] Clean up stale duplicate `layer2_driver/` tree and stray root files (`fix_claude.py`, `fix_lib.py`, `fix_ops.py`, `harness.rs`, `tpt_bench_quick_output.txt`); todo backup files preserved as history
 - [ ] Consider a hosted (zero-install) version of `tpt-gpu-playground` (currently requires a local `wasm-pack` build + static server)
-- [ ] `PrimitiveKernel::output_shape()`/`input_shapes()` are `unimplemented!()`/empty across every kernel wrapper and appear unused — implement properly or remove from the trait
+- [x] `PrimitiveKernel::output_shape()`/`input_shapes()` removed from trait and all implementations (never called; shapes are dynamic)
 
 ---
 
@@ -354,7 +354,7 @@
 ### 1. Publish TPTIR as a standalone crate/spec
 **Why:** tpt-crucible also generates an MLIR-based IR (TPT-IR) from its Catalyst ingestion module. A single shared TPTIR dialect spec lets a model compiled once route to GPU (tpt-gpu runtime), FPGA (Crucible Fusion), MCU swarm (Crucible Alloy), or analog (Crucible Element) without re-compilation.
 - [x] Extract the TPTIR dialect definition into a standalone crate — `crates/tptir-spec` (`tpt-gpu-ir-spec`) already exists
-- [ ] Define a stable text-format serialisation that tpt-crucible's Catalyst can consume
+- [x] Define a stable text-format serialisation that tpt-crucible's Catalyst can consume — `parse_region()` / `parse_op()` added to `crates/tpt-gpu-ir-spec/src/text.rs`; full round-trip verified by tests
 - [ ] Publish the crate to crates.io so tpt-crucible can depend on it directly (no `publish` setting currently in its `Cargo.toml` — verify readiness and actually publish)
 - [ ] Tag the first stable release as `tptir-spec v0.1.0`
 
@@ -367,7 +367,7 @@
 ### 3. Expose a Rust-native inference API for tpt-spark
 **Why:** tpt-spark's `WgpuEngine` (hand-written WGSL) could delegate to tpt-gpu's production-quality kernels via a stable trait.
 - [x] `LlmInference` trait defined in `layer4_tptr/tptr-core/src/inference.rs` (`GpuInferenceEngine` implementation exists) — will move to `crates/tpt-gpu-runtime/src/inference.rs` under Phase 8
-- [ ] Confirm the trait signature matches what's proposed here (`load`/`infer`/`cancel`) or reconcile differences
+- [x] Confirm the trait signature matches what's proposed here — `LlmInference` in `crates/tpt-gpu-runtime/src/inference.rs` has exactly `load(model_path)`, `model_info()`, `infer(tokens, max_new_tokens, callback)`, `cancel()` — no reconciliation needed
 - [ ] Publish/expose `tpt-gpu-runtime` (or an `ffi` feature) so tpt-spark can add it as an optional dependency
 - [ ] Write a minimal cross-repo integration test: load a GGUF model, run inference via the trait from tpt-spark's side
 

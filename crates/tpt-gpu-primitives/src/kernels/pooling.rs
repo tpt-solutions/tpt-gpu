@@ -158,12 +158,6 @@ impl PrimitiveKernel for MaxPool2DKernel {
     fn name(&self) -> &str {
         "max_pool2d"
     }
-    fn input_shapes(&self) -> &[Shape] {
-        &[]
-    }
-    fn output_shape(&self) -> &Shape {
-        unimplemented!("output_shape not static for MaxPool2D")
-    }
     fn supported_dtypes(&self) -> &[DType] {
         &[DType::F32, DType::F16]
     }
@@ -305,12 +299,6 @@ impl AvgPool2DKernel {
 impl PrimitiveKernel for AvgPool2DKernel {
     fn name(&self) -> &str {
         "avg_pool2d"
-    }
-    fn input_shapes(&self) -> &[Shape] {
-        &[]
-    }
-    fn output_shape(&self) -> &Shape {
-        unimplemented!("output_shape not static for AvgPool2D")
     }
     fn supported_dtypes(&self) -> &[DType] {
         &[DType::F32, DType::F16]

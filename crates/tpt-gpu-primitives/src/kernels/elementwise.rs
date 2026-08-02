@@ -117,12 +117,6 @@ impl PrimitiveKernel for ElementwiseKernel {
     fn name(&self) -> &str {
         self.kind.tptir_fn_name()
     }
-    fn input_shapes(&self) -> &[Shape] {
-        &[]
-    }
-    fn output_shape(&self) -> &Shape {
-        unimplemented!("output_shape not static for ElementwiseKernel")
-    }
     fn supported_dtypes(&self) -> &[DType] {
         &[DType::F32, DType::F16, DType::BF16]
     }

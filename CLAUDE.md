@@ -143,7 +143,7 @@ The TPTIR text format uses `^label:` blocks. TPTIR emitted by layer7 feeds direc
 - **`kernel/launch.rs`** — `KernelConfig`, `ArgumentBuffer`, `KernelHandle`
 - **`error.rs`** — `TptrError` with structured error codes for Python surface
 - **`arch.rs`** — Architecture template dispatch: maps GGUF `general.architecture` → `ArchTemplate` (sequence of `ForwardOp`s); add new model support by adding one function + one match arm
-- **`inference.rs`** — `LlmInference` trait + `GpuInferenceEngine` implementation; routes forward-pass ops through layer5 kernel handles with `VendorBackend::detect()` (CUDA → ROCm → Metal → TPTIR)
+- **`inference.rs`** — `LlmInference` trait + `GpuInferenceEngine` implementation; routes forward-pass ops through layer5 kernel handles; vendor selection (`VendorBackend::detect()`: CUDA → ROCm → Metal → TPTIR) is resolved at the `layer5_tptp::vendor` level — `Device::new_cuda()` exists at `layer4_tptr` but `Device::new_rocm()`/`Device::new_metal()` do not
 - **`kv_cache.rs`** — `KvCache`: sliding-window host-side K/V cache per transformer layer; drops oldest token on overflow for indefinite-length decoding
 
 Python bindings (`crates/tpt-gpu-runtime-py`) wrap these via PyO3: `Device`, `Memory`, `Queue`, `Kernel`.

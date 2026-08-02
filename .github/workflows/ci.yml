@@ -85,6 +85,20 @@ jobs:
           target/release/tpt-gpu-fmt
           target/release/tpt-gpu-fmt.exe
 
+  python-tests:
+    name: Python / pytest (layer6_framework)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    - name: Install tptr + dev dependencies
+      run: pip install -e "layer6_framework[dev]"
+    - name: Run pytest
+      run: pytest layer6_framework/tests/ -v
+
   vendor-builds:
     name: Vendor backend builds (cuda / rocm)
     runs-on: ubuntu-latest

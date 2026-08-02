@@ -1,6 +1,6 @@
 //! Kernel trait and dispatch interface
 use crate::error::TptpResult;
-use crate::memory::{DType, GpuBuffer, Shape};
+use crate::memory::{DType, GpuBuffer};
 use crate::vendor::VendorBackend;
 use std::fmt;
 
@@ -91,8 +91,6 @@ impl Clone for KernelResult {
 /// Common trait for all primitive kernels
 pub trait PrimitiveKernel: Send + Sync {
     fn name(&self) -> &str;
-    fn input_shapes(&self) -> &[Shape];
-    fn output_shape(&self) -> &Shape;
     fn supported_dtypes(&self) -> &[DType];
     fn can_execute(&self, inputs: &[&GpuBuffer<f32>]) -> bool;
     fn default_config(&self) -> KernelConfig;

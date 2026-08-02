@@ -77,6 +77,49 @@ On Windows the home directory is `%USERPROFILE%`, so the full path is
 
 ---
 
+## CLI walkthrough — `tpt-gpu-models`
+
+```bash
+# Build the CLI (once)
+cargo build --release -p tpt-gpu-model-registry
+
+# Show the registry directory
+./target/release/tpt-gpu-models dir
+# → /home/user/.tpt/models
+
+# List registered models (empty at first)
+./target/release/tpt-gpu-models list
+# → No models registered.
+
+# Download a GGUF from HuggingFace and register it
+./target/release/tpt-gpu-models fetch \
+    --url  https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q4_K_M.gguf \
+    --name llama-2-7b-q4 \
+    --arch llama2 \
+    --size-gb 3.8
+# → Downloading 'llama-2-7b-q4' from https://…
+# → Downloaded and registered 'llama-2-7b-q4' at /home/user/.tpt/models/llama-2-7b.Q4_K_M.gguf.
+
+# Register a file that is already on disk
+./target/release/tpt-gpu-models add \
+    --name  my-model \
+    --file  my-model.gguf \
+    --arch  mistral \
+    --size-gb 4.1
+
+# List after adding
+./target/release/tpt-gpu-models list
+# NAME                           ARCH       SIZE_GB  FILE
+# llama-2-7b-q4                  llama2     3.8      llama-2-7b.Q4_K_M.gguf
+# my-model                       mistral    4.1      my-model.gguf
+
+# Remove an entry from the manifest (file stays on disk)
+./target/release/tpt-gpu-models remove my-model
+# → Removed 'my-model'.
+```
+
+---
+
 ## Versioning
 
 The manifest `version` field is currently `"1"`. A breaking change to the

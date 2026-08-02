@@ -18,5 +18,5 @@ pub mod types;
 pub use attr::{Attr, AttrValue};
 pub use dialect::{Dialect, DialectRegistry, TPTIR_DIALECT_VERSION};
 pub use ops::{Op, OpCategory, OpDef};
-pub use text::{emit, parse, EmitOptions};
+pub use text::{emit, parse, parse_op, parse_region, parse_type, EmitOptions, ParseError};
 pub use types::{AddressSpace, ElemType, Type, TypeKind};

@@ -188,10 +188,9 @@ tpt-gpu/
 ├── layer3_tptc/         # TPTIR compiler (C++)
 ├── layer4_tptr/         # GPU runtime spec
 ├── layer5_tptp/         # GPU primitives spec
-├── layer6_framework/    # Framework backends (Python)
-├── layer7_tptb/         # TPT Script spec + examples
-├── docs/                # Documentation
-└── examples/            # Examples
+├── layer6_framework/    # Framework backends (Python) — includes examples/
+├── layer7_tptb/         # TPT Script spec + examples/
+└── docs/                # Documentation
 ```
 
 ---

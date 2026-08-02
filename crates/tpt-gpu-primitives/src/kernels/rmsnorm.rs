@@ -125,12 +125,6 @@ impl PrimitiveKernel for RmsNormKernel {
     fn name(&self) -> &str {
         "rms_norm"
     }
-    fn input_shapes(&self) -> &[Shape] {
-        &[]
-    }
-    fn output_shape(&self) -> &Shape {
-        unimplemented!("output_shape not static for RMSNorm")
-    }
     fn supported_dtypes(&self) -> &[DType] {
         &[DType::F32, DType::F16, DType::BF16]
     }

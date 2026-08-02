@@ -412,12 +412,6 @@ impl PrimitiveKernel for FusedGemmKernel {
     fn name(&self) -> &str {
         "fused_gemm"
     }
-    fn input_shapes(&self) -> &[Shape] {
-        &[]
-    }
-    fn output_shape(&self) -> &Shape {
-        unimplemented!("output_shape not implemented")
-    }
     fn supported_dtypes(&self) -> &[DType] {
         &[DType::F32, DType::F16, DType::BF16]
     }

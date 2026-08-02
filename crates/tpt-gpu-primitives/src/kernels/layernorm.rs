@@ -128,12 +128,6 @@ impl PrimitiveKernel for LayerNormKernel {
     fn name(&self) -> &str {
         "layer_norm"
     }
-    fn input_shapes(&self) -> &[Shape] {
-        &[]
-    }
-    fn output_shape(&self) -> &Shape {
-        unimplemented!("output_shape not static for LayerNorm")
-    }
     fn supported_dtypes(&self) -> &[DType] {
         &[DType::F32, DType::F16, DType::BF16]
     }
