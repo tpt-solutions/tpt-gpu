@@ -4,7 +4,7 @@
 //! Input layout: [N, C, S] where S = H * W (or 1 for 1-D).
 use crate::error::{TptpError, TptpResult};
 use crate::kernel::{KernelConfig, KernelResult, PrimitiveKernel};
-use crate::memory::{BufferFlags, DType, GpuBuffer, Shape};
+use crate::memory::{BufferFlags, DType, GpuBuffer};
 use crate::vendor::VendorBackend;
 use std::time::Instant;
 
@@ -29,9 +29,17 @@ impl Default for GroupNormParams {
 
 /// Group normalization kernel handle
 pub struct GroupNormKernel {
+    #[allow(dead_code)]
     config: KernelConfig,
+    #[allow(dead_code)]
     vendor: VendorBackend,
     pub params: GroupNormParams,
+}
+
+impl Default for GroupNormKernel {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GroupNormKernel {
@@ -199,6 +207,7 @@ pub fn group_norm(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::Shape;
 
     fn make_1d(n: usize) -> GpuBuffer<f32> {
         GpuBuffer::<f32>::new(Shape::new(&[n]), DType::F32, BufferFlags::STORAGE).unwrap()

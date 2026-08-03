@@ -137,7 +137,7 @@ fn test_dtype_properties() {
 fn test_shape_operations() {
     let shape = Shape::dim4(1, 3, 32, 32);
     assert_eq!(shape.ndim(), 4);
-    assert_eq!(shape.num_elements(), 1 * 3 * 32 * 32);
+    assert_eq!(shape.num_elements(), 3 * 32 * 32);
     assert!(shape.is_valid());
 }
 

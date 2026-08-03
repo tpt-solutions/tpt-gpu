@@ -39,7 +39,11 @@ pub enum ForwardOp {
     ///
     /// `pos` is a placeholder (0) in the template; the runtime substitutes the
     /// real decode position from `kv_cache.seq_len` at forward-pass time.
-    ApplyRope { head_dim: u32, base: f32, pos: usize },
+    ApplyRope {
+        head_dim: u32,
+        base: f32,
+        pos: usize,
+    },
 }
 
 /// The complete op sequence for one model architecture.
@@ -98,7 +102,11 @@ fn llama3(info: &ModelInfo) -> ArchTemplate {
                 hidden_dim: info.hidden_dim,
                 eps: 1e-5,
             },
-            ForwardOp::ApplyRope { head_dim, base: 500_000.0, pos: 0 },
+            ForwardOp::ApplyRope {
+                head_dim,
+                base: 500_000.0,
+                pos: 0,
+            },
             ForwardOp::Attention {
                 num_heads,
                 num_kv_heads,
@@ -153,7 +161,11 @@ fn mistral(info: &ModelInfo) -> ArchTemplate {
                 hidden_dim: info.hidden_dim,
                 eps: 1e-5,
             },
-            ForwardOp::ApplyRope { head_dim, base: 10_000.0, pos: 0 },
+            ForwardOp::ApplyRope {
+                head_dim,
+                base: 10_000.0,
+                pos: 0,
+            },
             ForwardOp::Attention {
                 num_heads,
                 num_kv_heads,
@@ -209,7 +221,11 @@ fn qwen2(info: &ModelInfo) -> ArchTemplate {
                 hidden_dim: info.hidden_dim,
                 eps: 1e-6,
             },
-            ForwardOp::ApplyRope { head_dim, base: 1_000_000.0, pos: 0 },
+            ForwardOp::ApplyRope {
+                head_dim,
+                base: 1_000_000.0,
+                pos: 0,
+            },
             ForwardOp::Attention {
                 num_heads,
                 num_kv_heads,
@@ -270,7 +286,11 @@ fn phi3(info: &ModelInfo) -> ArchTemplate {
                 hidden_dim: info.hidden_dim,
                 eps: 1e-5,
             },
-            ForwardOp::ApplyRope { head_dim, base: 10_000.0, pos: 0 },
+            ForwardOp::ApplyRope {
+                head_dim,
+                base: 10_000.0,
+                pos: 0,
+            },
             ForwardOp::Attention {
                 num_heads,
                 num_kv_heads,
@@ -325,7 +345,11 @@ fn gemma2(info: &ModelInfo) -> ArchTemplate {
                 hidden_dim: info.hidden_dim,
                 eps: 1e-6,
             }, // pre-attention
-            ForwardOp::ApplyRope { head_dim, base: 10_000.0, pos: 0 },
+            ForwardOp::ApplyRope {
+                head_dim,
+                base: 10_000.0,
+                pos: 0,
+            },
             ForwardOp::Attention {
                 num_heads,
                 num_kv_heads,

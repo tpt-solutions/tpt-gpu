@@ -294,11 +294,11 @@ pub fn compute_weight_importance(weights: &[f32], ffn_dim: usize) -> Vec<f32> {
     let hidden_dim = weights.len() / ffn_dim.max(1);
     let mut importance = vec![0.0f32; ffn_dim];
 
-    for col in 0..ffn_dim {
+    for (col, imp) in importance.iter_mut().enumerate() {
         for row in 0..hidden_dim {
             let idx = row * ffn_dim + col;
             if idx < weights.len() {
-                importance[col] += weights[idx].abs();
+                *imp += weights[idx].abs();
             }
         }
     }
@@ -339,8 +339,10 @@ mod tests {
     fn build_from_activations() {
         use crate::activation_capture::LayerActivations;
 
-        let mut act_map = ActivationMap::default();
-        act_map.ffn_dim = 4;
+        let mut act_map = ActivationMap {
+            ffn_dim: 4,
+            ..Default::default()
+        };
         act_map.layers.insert(
             0,
             LayerActivations {
@@ -362,8 +364,10 @@ mod tests {
     fn build_from_domain_activations_assigns_argmax_domain() {
         use crate::activation_capture::LayerActivations;
 
-        let mut sql = ActivationMap::default();
-        sql.ffn_dim = 4;
+        let mut sql = ActivationMap {
+            ffn_dim: 4,
+            ..Default::default()
+        };
         sql.layers.insert(
             0,
             LayerActivations {
@@ -374,8 +378,10 @@ mod tests {
             },
         );
 
-        let mut python = ActivationMap::default();
-        python.ffn_dim = 4;
+        let mut python = ActivationMap {
+            ffn_dim: 4,
+            ..Default::default()
+        };
         python.layers.insert(
             0,
             LayerActivations {

@@ -29,9 +29,17 @@ impl Default for Conv2DParams {
 
 /// Conv2D kernel handle
 pub struct Conv2DKernel {
+    #[allow(dead_code)]
     config: KernelConfig,
+    #[allow(dead_code)]
     vendor: VendorBackend,
     pub params: Conv2DParams,
+}
+
+impl Default for Conv2DKernel {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Conv2DKernel {
@@ -152,7 +160,15 @@ impl Conv2DKernel {
         let pad_w = padding[1] as usize;
         log::debug!(
             "TPTIR Conv2D fallback: N={} C_in={} H={}xW={} → C_out={} K={}x{} stride={:?} pad={:?}",
-            n, c_in, h, w, c_out, k_h, k_w, strides, padding
+            n,
+            c_in,
+            h,
+            w,
+            c_out,
+            k_h,
+            k_w,
+            strides,
+            padding
         );
 
         let mut in_raw = vec![0.0f32; n * c_in * h * w];
@@ -180,11 +196,16 @@ impl Conv2DKernel {
                                         continue;
                                     }
                                     acc += in_raw[ni * c_in * h * w + ic * h * w + ih * w + iw]
-                                        * flt_raw[oc * c_in * k_h * k_w + ic * k_h * k_w + kh * k_w + kw];
+                                        * flt_raw[oc * c_in * k_h * k_w
+                                            + ic * k_h * k_w
+                                            + kh * k_w
+                                            + kw];
                                 }
                             }
                         }
-                        out_raw[ni * c_out * h_out * w_out + oc * h_out * w_out + oh * w_out + ow] = acc;
+                        out_raw
+                            [ni * c_out * h_out * w_out + oc * h_out * w_out + oh * w_out + ow] =
+                            acc;
                     }
                 }
             }
@@ -294,13 +315,17 @@ mod tests {
         // input [1,1,2,2] = [[1,2],[3,4]], filter [1,1,1,1] = [[2.0]]
         // output [1,1,2,2] = [[2,4],[6,8]]
         let mut input =
-            GpuBuffer::<f32>::new(Shape::dim4(1, 1, 2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+            GpuBuffer::<f32>::new(Shape::dim4(1, 1, 2, 2), DType::F32, BufferFlags::STORAGE)
+                .unwrap();
         input.copy_from_host(&[1.0, 2.0, 3.0, 4.0]).unwrap();
         let mut filter =
-            GpuBuffer::<f32>::new(Shape::dim4(1, 1, 1, 1), DType::F32, BufferFlags::STORAGE).unwrap();
+            GpuBuffer::<f32>::new(Shape::dim4(1, 1, 1, 1), DType::F32, BufferFlags::STORAGE)
+                .unwrap();
         filter.copy_from_host(&[2.0]).unwrap();
         let kernel = Conv2DKernel::new();
-        let out = kernel.execute(&input, &filter, [1, 1], [0, 0], None).unwrap();
+        let out = kernel
+            .execute(&input, &filter, [1, 1], [0, 0], None)
+            .unwrap();
         let mut data = [0f32; 4];
         out.copy_to_host(&mut data).unwrap();
         assert_eq!(data, [2.0, 4.0, 6.0, 8.0]);
@@ -314,14 +339,18 @@ mod tests {
         let input_data = vec![1.0f32; 9];
         let filter_data = vec![1.0f32; 9];
         let mut input =
-            GpuBuffer::<f32>::new(Shape::dim4(1, 1, 3, 3), DType::F32, BufferFlags::STORAGE).unwrap();
+            GpuBuffer::<f32>::new(Shape::dim4(1, 1, 3, 3), DType::F32, BufferFlags::STORAGE)
+                .unwrap();
         input.copy_from_host(&input_data).unwrap();
         let mut filter =
-            GpuBuffer::<f32>::new(Shape::dim4(1, 1, 3, 3), DType::F32, BufferFlags::STORAGE).unwrap();
+            GpuBuffer::<f32>::new(Shape::dim4(1, 1, 3, 3), DType::F32, BufferFlags::STORAGE)
+                .unwrap();
         filter.copy_from_host(&filter_data).unwrap();
         let kernel = Conv2DKernel::new();
         // pad=1 keeps spatial size 3x3; center pixel [0,0,1,1] sums all 9 neighbours
-        let out = kernel.execute(&input, &filter, [1, 1], [1, 1], None).unwrap();
+        let out = kernel
+            .execute(&input, &filter, [1, 1], [1, 1], None)
+            .unwrap();
         let mut data = [0f32; 9];
         out.copy_to_host(&mut data).unwrap();
         assert!((data[4] - 9.0).abs() < 1e-5, "center pixel={}", data[4]);

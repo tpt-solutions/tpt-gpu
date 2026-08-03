@@ -182,12 +182,10 @@ pub fn parse_assembly(source: &str) -> Result<Region, String> {
         if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
             continue;
         }
-        if line.starts_with('^') {
-            if !block.operations.is_empty() {
-                region
-                    .blocks
-                    .push(std::mem::replace(&mut block, Block::new(&line[1..])));
-            }
+        if line.starts_with('^') && !block.operations.is_empty() {
+            region
+                .blocks
+                .push(std::mem::replace(&mut block, Block::new(line.strip_prefix('^').unwrap())));
         }
     }
     if !block.operations.is_empty() || region.blocks.is_empty() {
@@ -267,6 +265,11 @@ impl Block {
 #[derive(Debug, Clone)]
 pub struct Region {
     pub blocks: Vec<Block>,
+}
+impl Default for Region {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 impl Region {
     pub fn new() -> Self {

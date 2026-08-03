@@ -12,6 +12,12 @@ use crate::semantic::metadata::extract_function_metadata;
 
 pub struct RustEmitter;
 
+impl Default for RustEmitter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RustEmitter {
     pub fn new() -> Self {
         Self

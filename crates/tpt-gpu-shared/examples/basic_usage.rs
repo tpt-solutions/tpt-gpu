@@ -2,10 +2,7 @@
 //!
 //! This example demonstrates how to use the multi-provider AI abstraction.
 
-use tpt_gpu_shared::{
-    AiMessage, AiProvider, AiRequest, ClaudeProvider, OllamaProvider, OpenRouterProvider,
-    ProviderFactory, Role,
-};
+use tpt_gpu_shared::{AiMessage, AiProvider, AiRequest, ClaudeProvider, ProviderFactory};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== TPT AI Multi-Provider Example ===\n");

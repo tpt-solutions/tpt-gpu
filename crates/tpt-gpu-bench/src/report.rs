@@ -20,6 +20,7 @@ pub struct BenchRun {
 }
 
 impl BenchRun {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         label: String,
         kind: String,

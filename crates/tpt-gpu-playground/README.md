@@ -10,6 +10,14 @@ A browser-based, in-memory playground for TPT Script. Paste or write a `.tpts` p
 
 It runs entirely client-side — the `tpt-gpu-script-core` compiler (lexer → parser → type checker → codegen) is compiled to WASM via `wasm-bindgen` and loaded by `index.html`.
 
+## Hosted playground
+
+A hosted copy is published to GitHub Pages on every push to `master` (see `.github/workflows/docs.yml`):
+
+**https://tpt-solutions.github.io/tpt-gpu/playground/**
+
+The steps below are only needed when you want to build and serve the playground locally.
+
 ## Prerequisites
 
 - Rust toolchain (see repo root `README.md`)

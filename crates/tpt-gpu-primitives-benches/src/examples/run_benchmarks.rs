@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use tpt_gpu_primitives_benches::harness::{BenchConfig, BenchHarness};
 use tpt_gpu_primitives_benches::kernels::{AttentionBench, Conv2DBench, GemmBench};
-use tpt_gpu_primitives_benches::report::{get_default_baselines, BaselineComparison, BenchReport};
+use tpt_gpu_primitives_benches::report::{get_default_baselines, BenchReport};
 
 #[derive(Parser)]
 #[command(name = "tpt-bench", version, about = "TPT Primitives Benchmark Runner")]
@@ -70,8 +70,8 @@ fn main() {
     // Combine all results
     let all_results: Vec<_> = gemm_results
         .into_iter()
-        .chain(attention_results.into_iter())
-        .chain(conv2d_results.into_iter())
+        .chain(attention_results)
+        .chain(conv2d_results)
         .collect();
 
     // Generate report with baseline comparisons (when requested).

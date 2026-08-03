@@ -1,8 +1,8 @@
 [package]
 name = "tpt-gpu-vendor-cert"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
-authors = ["TPT GPU Contributors"]
+authors.workspace = true
 description = "TPT-GPU vendor certification test suite"
 license = "MIT OR Apache-2.0 WITH LLVM-exception"
 repository = "https://github.com/tpt-solutions/tpt-gpu"
@@ -21,7 +21,7 @@ anyhow = "1"
 log = "0.4"
 env_logger = "0.11"
 chrono = { version = "0.4", features = ["serde"] }
-tpt-gpu-primitives = { path = "../tpt-gpu-primitives", default-features = false }
+tpt-gpu-primitives = { path = "../tpt-gpu-primitives", version = "0.1.0", default-features = false }
 
 [[bin]]
 name = "tpt-gpu-vendor-cert"

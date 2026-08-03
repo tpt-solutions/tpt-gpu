@@ -1,8 +1,8 @@
 [package]
 name = "tpt-gpu-primitives-benches"
-version = "1.0.0"
+version.workspace = true
 edition.workspace = true
-authors = ["TPT GPU Contributors"]
+authors.workspace = true
 description = "Benchmark harness for TPT Primitives - GEMM vs cuBLAS, Attention vs FlashAttention, Conv2D vs cuDNN"
 license.workspace = true
 repository.workspace = true

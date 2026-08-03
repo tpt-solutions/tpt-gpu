@@ -159,15 +159,10 @@ impl Parser {
         path.push(first);
 
         // Accept both `::` and `.` as path separators per spec examples.
-        loop {
-            match self.current_kind() {
-                TokenKind::ColonColon | TokenKind::Dot => {
-                    self.bump();
-                    let (seg, _) = self.eat_ident()?;
-                    path.push(seg);
-                }
-                _ => break,
-            }
+        while let TokenKind::ColonColon | TokenKind::Dot = self.current_kind() {
+            self.bump();
+            let (seg, _) = self.eat_ident()?;
+            path.push(seg);
         }
 
         // Optional `as <ident>` alias.

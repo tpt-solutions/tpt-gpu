@@ -116,3 +116,17 @@ jobs:
       run: cargo test -p tpt-gpu-runtime --features cuda
     - name: Test ROCm feature (skips gracefully when no GPU present)
       run: cargo test -p tpt-gpu-runtime --features rocm
+
+  rtl-sim:
+    name: RTL sim (layer1 ISA)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install iverilog
+      run: sudo apt-get update && sudo apt-get install -y iverilog
+    - name: Run core simulation (make sim)
+      working-directory: layer1_isa/sim
+      run: make sim
+    - name: Run silicon integration simulation (make silicon)
+      working-directory: layer1_isa/sim
+      run: make silicon

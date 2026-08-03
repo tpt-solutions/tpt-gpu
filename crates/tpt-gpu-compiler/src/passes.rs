@@ -1,5 +1,5 @@
 use crate::fusion::FusionPass;
-use crate::ir::{Block, OpKind, Operation, Region};
+use crate::ir::{OpKind, Region};
 use crate::validate::ValidatePass;
 
 pub trait Pass {
@@ -61,6 +61,12 @@ impl Pass for QuantizationPass {
 
 pub struct PassPipeline {
     passes: Vec<Box<dyn Pass>>,
+}
+
+impl Default for PassPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PassPipeline {

@@ -24,8 +24,8 @@ fn create_test_tptf(dir: &std::path::Path, num_layers: usize, ffn_dim: usize) ->
 
     // Build header
     let mut per_layer_bits = [0u8; 128];
-    for i in 0..num_layers.min(128) {
-        per_layer_bits[i] = if i == 0 || i == num_layers - 1 { 16 } else { 4 };
+    for (i, bits) in per_layer_bits.iter_mut().enumerate().take(num_layers.min(128)) {
+        *bits = if i == 0 || i == num_layers - 1 { 16 } else { 4 };
     }
 
     let header = TptfHeader {
@@ -170,8 +170,10 @@ fn test_production_domain_mapping_from_domains() -> Result<()> {
     assert_eq!(sql_neurons, vec![0, 1]);
 
     // Manual construction path is also valid.
-    let mut sql_map = tpt_gpu_model_optimizer::ActivationMap::default();
-    sql_map.ffn_dim = 8;
+    let mut sql_map = tpt_gpu_model_optimizer::ActivationMap {
+        ffn_dim: 8,
+        ..Default::default()
+    };
     sql_map.layers.insert(
         0,
         LayerActivations {
@@ -198,10 +200,10 @@ fn test_compression_ratio_calculation() -> Result<()> {
     let baseline_bytes: u64 = 8 * 4096 * 11008 * 4; // 8 layers, weights
 
     // With mixed precision (boundary layers f16, rest reduced)
-    let mixed_bits = vec![16, 4, 4, 4, 4, 4, 4, 16];
+    let mixed_bits = [16, 4, 4, 4, 4, 4, 4, 16];
     let mixed_bytes: f64 = mixed_bits
         .iter()
-        .map(|&b| (4096 * 11008 * 3 * b as u64 / 8)) // 3 FFN tensors per layer
+        .map(|&b| 4096 * 11008 * 3 * b as u64 / 8) // 3 FFN tensors per layer
         .sum::<u64>() as f64;
 
     let ratio = baseline_bytes as f64 / mixed_bytes;

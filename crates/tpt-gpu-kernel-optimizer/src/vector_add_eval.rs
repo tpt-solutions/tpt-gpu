@@ -66,7 +66,7 @@ impl RealVectorAddEvaluator {
         let elems_per_thread = (length / total_threads).ceil().max(1.0);
         let actual_threads = (length / elems_per_thread).ceil();
         let coverage = (actual_threads / total_threads).max(0.3);
-        let vw_eff = (vec_width / 8.0).min(1.0).max(0.25);
+        let vw_eff = (vec_width / 8.0).clamp(0.25, 1.0);
         let total_bytes = self.problem.memory_bytes() as f64;
         let peak_bw = 1555.0;
         let kernel_eff = coverage * vw_eff;
@@ -85,7 +85,7 @@ impl KernelEvaluator for RealVectorAddEvaluator {
             return 0.0;
         }
         let efficiency = (baseline_ms / estimated_ms) * 100.0;
-        efficiency.max(0.0).min(200.0)
+        efficiency.clamp(0.0, 200.0)
     }
 }
 

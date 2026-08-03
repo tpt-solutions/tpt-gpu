@@ -5,7 +5,7 @@
 //! - matmul + softmax + matmul → Flash Attention pattern
 //! - conv + bn + relu → fused convolution pattern
 
-use crate::ir::{AddressSpace, Block, OpKind, Operation, Region, Type, Value};
+use crate::ir::{Block, OpKind, Region};
 
 /// Represents a fused operation pattern.
 #[derive(Debug, Clone)]
@@ -36,21 +36,20 @@ pub fn detect_patterns(block: &Block) -> Vec<FusionResult> {
 
     while i < ops.len() {
         // Check for Flash Attention pattern: matmul → softmax → matmul
-        if i + 2 < ops.len() {
-            if matches!(&ops[i].kind, OpKind::Mulf)
-                && matches!(&ops[i + 1].kind, OpKind::Mulf)
-                && matches!(&ops[i + 2].kind, OpKind::Mulf)
-            {
-                // This is a simplified check; in practice we'd verify the
-                // actual semantics of the operations
-                results.push(FusionResult {
-                    pattern: FusedPattern::FlashAttention,
-                    start_op: i,
-                    end_op: i + 2,
-                });
-                i += 3;
-                continue;
-            }
+        if i + 2 < ops.len()
+            && matches!(&ops[i].kind, OpKind::Mulf)
+            && matches!(&ops[i + 1].kind, OpKind::Mulf)
+            && matches!(&ops[i + 2].kind, OpKind::Mulf)
+        {
+            // This is a simplified check; in practice we'd verify the
+            // actual semantics of the operations
+            results.push(FusionResult {
+                pattern: FusedPattern::FlashAttention,
+                start_op: i,
+                end_op: i + 2,
+            });
+            i += 3;
+            continue;
         }
 
         // Check for elementwise chain: add/sub/mul/div sequence
@@ -74,35 +73,33 @@ pub fn detect_patterns(block: &Block) -> Vec<FusionResult> {
         }
 
         // Check for Conv + BN + ReLU pattern
-        if i + 2 < ops.len() {
-            if matches!(&ops[i].kind, OpKind::Mulf)
-                && matches!(&ops[i + 1].kind, OpKind::Addf)
-                && matches!(&ops[i + 2].kind, OpKind::Mulf)
-            {
-                results.push(FusionResult {
-                    pattern: FusedPattern::ConvBnRelu,
-                    start_op: i,
-                    end_op: i + 2,
-                });
-                i += 3;
-                continue;
-            }
+        if i + 2 < ops.len()
+            && matches!(&ops[i].kind, OpKind::Mulf)
+            && matches!(&ops[i + 1].kind, OpKind::Addf)
+            && matches!(&ops[i + 2].kind, OpKind::Mulf)
+        {
+            results.push(FusionResult {
+                pattern: FusedPattern::ConvBnRelu,
+                start_op: i,
+                end_op: i + 2,
+            });
+            i += 3;
+            continue;
         }
 
         // Check for QuantGemmFuse pattern: Dequantize → Gemm
         // Fuses into a single QuantGemm, avoiding f32 weight materialization.
-        if i + 1 < ops.len() {
-            if matches!(&ops[i].kind, OpKind::Dequantize)
-                && matches!(&ops[i + 1].kind, OpKind::Gemm)
-            {
-                results.push(FusionResult {
-                    pattern: FusedPattern::QuantGemmFuse,
-                    start_op: i,
-                    end_op: i + 1,
-                });
-                i += 2;
-                continue;
-            }
+        if i + 1 < ops.len()
+            && matches!(&ops[i].kind, OpKind::Dequantize)
+            && matches!(&ops[i + 1].kind, OpKind::Gemm)
+        {
+            results.push(FusionResult {
+                pattern: FusedPattern::QuantGemmFuse,
+                start_op: i,
+                end_op: i + 1,
+            });
+            i += 2;
+            continue;
         }
 
         i += 1;
@@ -119,8 +116,7 @@ pub fn apply_fusion(region: &mut Region) -> usize {
         let patterns = detect_patterns(block);
         for pattern in &patterns {
             match &pattern.pattern {
-                FusedPattern::ElementwiseChain { ops } => {
-                    let fused_name = format!("fused_elementwise({})", ops.join(","));
+                FusedPattern::ElementwiseChain { .. } => {
                     fused_count += 1;
                 }
                 FusedPattern::FlashAttention => {
@@ -159,7 +155,7 @@ impl super::passes::Pass for FusionPass {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{Block, OpKind, Operation, Region};
+    use crate::ir::{Block, OpKind, Operation};
 
     #[test]
     fn test_detect_elementwise_chain() {

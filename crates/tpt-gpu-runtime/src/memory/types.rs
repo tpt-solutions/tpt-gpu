@@ -78,6 +78,7 @@ struct MemoryAllocationInner {
     device_ptr: u64,
     alignment: Alignment,
     freed: AtomicBool,
+    #[allow(dead_code)]
     backing: Option<BackingBuffer>,
 }
 
@@ -106,6 +107,7 @@ impl MemoryAllocation {
         }
     }
     /// Create an allocation backed by a real host-side byte buffer (simulated backend).
+    #[allow(dead_code)]
     pub(crate) fn new_backed(
         handle: u64,
         size: u64,
@@ -151,6 +153,7 @@ impl MemoryAllocation {
     pub fn alignment(&self) -> Alignment {
         self.inner.alignment
     }
+    #[allow(dead_code)]
     pub(crate) fn backing(&self) -> Option<&BackingBuffer> {
         self.inner.backing.as_ref()
     }

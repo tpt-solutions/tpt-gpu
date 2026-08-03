@@ -62,17 +62,19 @@ fn check_naming_conventions(tokens: &[tpt_gpu_script_core::Token]) -> Vec<LintWa
     let mut warnings = Vec::new();
     for token in tokens {
         if let tpt_gpu_script_core::TokenKind::Ident(name) = &token.kind {
-            if name.len() > 1 && name.chars().any(|c| c.is_uppercase()) {
-                if !is_pascal_case(name) && !is_known_tpt_name(name) {
-                    warnings.push(LintWarning {
-                        rule: "naming_convention".to_string(),
-                        message: format!("Identifier '{}' should use snake_case", name),
-                        line: token.span.line,
-                        col: token.span.col,
-                        severity: LintSeverity::Info,
-                        fix: None,
-                    });
-                }
+            if name.len() > 1
+                && name.chars().any(|c| c.is_uppercase())
+                && !is_pascal_case(name)
+                && !is_known_tpt_name(name)
+            {
+                warnings.push(LintWarning {
+                    rule: "naming_convention".to_string(),
+                    message: format!("Identifier '{}' should use snake_case", name),
+                    line: token.span.line,
+                    col: token.span.col,
+                    severity: LintSeverity::Info,
+                    fix: None,
+                });
             }
         }
     }
@@ -158,10 +160,8 @@ fn check_missing_returns(tokens: &[tpt_gpu_script_core::Token]) -> Vec<LintWarni
                                 break;
                             }
                         }
-                        tpt_gpu_script_core::TokenKind::KwReturn => {
-                            if brace_depth > 0 {
-                                has_return = true;
-                            }
+                        tpt_gpu_script_core::TokenKind::KwReturn if brace_depth > 0 => {
+                            has_return = true;
                         }
                         _ => {}
                     }

@@ -1,13 +1,7 @@
 //! Kernel category classification and kernel-specific parameter spaces.
 
-use crate::{ParamDim, ParamSpace, TuningParams};
+use crate::{ParamDim, ParamSpace};
 use serde::{Deserialize, Serialize};
-
-impl Default for TuningParams {
-    fn default() -> Self {
-        TuningParams(std::collections::HashMap::new())
-    }
-}
 
 /// Categories of kernels with distinct tuning parameter spaces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

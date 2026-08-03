@@ -31,16 +31,9 @@ impl DispatchTable {
     }
 }
 
+#[derive(Default)]
 pub struct OpRouter {
     table: DispatchTable,
-}
-
-impl Default for OpRouter {
-    fn default() -> Self {
-        Self {
-            table: DispatchTable::default(),
-        }
-    }
 }
 
 impl OpRouter {

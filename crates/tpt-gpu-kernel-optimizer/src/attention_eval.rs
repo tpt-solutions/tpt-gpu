@@ -73,13 +73,11 @@ impl RealAttentionEvaluator {
         let seq_len = self.problem.seq_len as f64;
         let bq_eff = (seq_len / (seq_len / block_q).ceil() / block_q).max(0.5);
         let bkv_eff = (seq_len / (seq_len / block_kv).ceil() / block_kv).max(0.5);
-        let heads_eff = (num_heads / self.problem.num_heads as f64)
-            .min(1.0)
-            .max(0.25);
+        let heads_eff = (num_heads / self.problem.num_heads as f64).clamp(0.25, 1.0);
         let smem_per_block = (block_q * head_dim + 2.0 * block_kv * head_dim) * 2.0;
         let max_smem = 100_000.0;
         let occupancy = ((max_smem / smem_per_block).floor().max(1.0) / 32.0).min(1.0);
-        let unroll_eff = (unroll / 4.0).min(1.0).max(0.5);
+        let unroll_eff = (unroll / 4.0).clamp(0.5, 1.0);
         let kernel_eff = bq_eff * bkv_eff * heads_eff * occupancy * unroll_eff;
         let tptir_vs_fa2 = 0.65 + 0.30 * kernel_eff;
         let fa2_tflops = 170.0 * 0.80;
@@ -98,7 +96,7 @@ impl KernelEvaluator for RealAttentionEvaluator {
             return 0.0;
         }
         let efficiency = (baseline_ms / estimated_ms) * 100.0;
-        efficiency.max(0.0).min(200.0)
+        efficiency.clamp(0.0, 200.0)
     }
 }
 

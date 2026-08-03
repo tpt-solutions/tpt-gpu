@@ -113,8 +113,8 @@ impl RealGemmEvaluator {
         let occupancy = ((max_smem / smem_per_block).floor().max(1.0) / 32.0).min(1.0);
 
         // Vector width & unroll efficiency
-        let vec_eff = (vec_width / 8.0).min(1.0).max(0.25);
-        let unroll_eff = (unroll / 4.0).min(1.0).max(0.5);
+        let vec_eff = (vec_width / 8.0).clamp(0.25, 1.0);
+        let unroll_eff = (unroll / 4.0).clamp(0.5, 1.0);
 
         // Size scaling factor
         let total_elems = m * n;
@@ -147,7 +147,7 @@ impl KernelEvaluator for RealGemmEvaluator {
             return 0.0;
         }
         let efficiency = (baseline_ms / estimated_ms) * 100.0;
-        efficiency.max(0.0).min(200.0)
+        efficiency.clamp(0.0, 200.0)
     }
 }
 
@@ -477,8 +477,8 @@ impl RealAttentionEvaluator {
         let occupancy = ((max_smem / smem_per_block).floor().max(1.0) / 32.0).min(1.0);
 
         // Vector width & unroll efficiency
-        let vec_eff = (vec_width / 8.0).min(1.0).max(0.25);
-        let unroll_eff = (unroll / 4.0).min(1.0).max(0.5);
+        let vec_eff = (vec_width / 8.0).clamp(0.25, 1.0);
+        let unroll_eff = (unroll / 4.0).clamp(0.5, 1.0);
 
         // Size scaling factor — attention benefits more from larger sizes
         let total_ops = seq_len * seq_len * d_k;

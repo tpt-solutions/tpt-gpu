@@ -63,11 +63,10 @@ impl KvCacheCalculator {
             * self.kv_elem_bytes as u64
             * self.num_layers as u64;
 
-        let context_len = if kv_bytes_per_token == 0 {
-            0
-        } else {
-            (available_bytes / kv_bytes_per_token).min(u32::MAX as u64) as u32
-        };
+        let context_len = available_bytes
+            .checked_div(kv_bytes_per_token)
+            .unwrap_or(0)
+            .min(u32::MAX as u64) as u32;
 
         Ok(KvCacheRecommendation {
             context_len,

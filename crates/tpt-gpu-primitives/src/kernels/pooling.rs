@@ -42,9 +42,17 @@ impl PoolingParams {
 // ─── MaxPool2D ───────────────────────────────────────────────────────────────
 
 pub struct MaxPool2DKernel {
+    #[allow(dead_code)]
     config: KernelConfig,
+    #[allow(dead_code)]
     vendor: VendorBackend,
     pub params: PoolingParams,
+}
+
+impl Default for MaxPool2DKernel {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MaxPool2DKernel {
@@ -196,9 +204,17 @@ impl PrimitiveKernel for MaxPool2DKernel {
 // ─── AvgPool2D ───────────────────────────────────────────────────────────────
 
 pub struct AvgPool2DKernel {
+    #[allow(dead_code)]
     config: KernelConfig,
+    #[allow(dead_code)]
     vendor: VendorBackend,
     pub params: PoolingParams,
+}
+
+impl Default for AvgPool2DKernel {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AvgPool2DKernel {

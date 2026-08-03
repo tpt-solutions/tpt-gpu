@@ -5,6 +5,7 @@
 use crate::gemm::fallback_gemm;
 
 /// Dispatch: softmax(Q @ K^T * scale) @ V → (batch × heads × seq_q × d_v)
+#[allow(clippy::too_many_arguments)]
 pub fn dispatch(
     q: &[f32],
     k: &[f32],

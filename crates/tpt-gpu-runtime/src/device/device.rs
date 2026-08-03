@@ -575,7 +575,7 @@ impl Device {
                             "reduce_max: input buffer unavailable",
                         )
                     })?;
-                    let elems = (guard.len() / 4) as usize;
+                    let elems = guard.len() / 4;
                     let mut m = f32::NEG_INFINITY;
                     for i in 0..elems {
                         let off = i * 4;
@@ -618,6 +618,7 @@ impl Device {
         Ok(())
     }
     /// Lock the backing arena buffer for a live device pointer.
+    #[allow(dead_code)]
     fn lock_ptr(&self, device_ptr: u64) -> TptrResult<(u64, MutexGuard<'_, Vec<u8>>)> {
         let guard = self.arena.get(device_ptr)?;
         let size = guard.len() as u64;

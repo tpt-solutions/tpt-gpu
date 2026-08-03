@@ -152,12 +152,12 @@ pub fn quantize_tensor(
     if bits >= 16 {
         // No quantization needed for 16-bit
         let bytes = bytemuck::cast_slice(weights).to_vec();
-        let num_groups = (weights.len() + group_size - 1) / group_size;
+        let num_groups = weights.len().div_ceil(group_size);
         return Ok((bytes, vec![1.0; num_groups], vec![0i8; num_groups]));
     }
 
-    let num_groups = (weights.len() + group_size - 1) / group_size;
-    let mut quantized = Vec::with_capacity((weights.len() * bits as usize + 7) / 8);
+    let num_groups = weights.len().div_ceil(group_size);
+    let mut quantized = Vec::with_capacity((weights.len() * bits as usize).div_ceil(8));
     let mut scales = Vec::with_capacity(num_groups);
     let mut zero_points = Vec::with_capacity(num_groups);
 
@@ -181,7 +181,6 @@ pub fn quantize_tensor(
         zero_points.push(zp);
 
         // Pack values into bytes
-        let pack_factor = 8usize / bits as usize;
         let mut packed_byte: u8 = 0;
         let mut bit_offset: u8 = 0;
 
@@ -190,7 +189,7 @@ pub fn quantize_tensor(
             let q = quantized_val.clamp(0, (1 << bits) - 1) as u8;
 
             packed_byte |= q << bit_offset;
-            bit_offset += bits as u8;
+            bit_offset += bits;
 
             if bit_offset >= 8 {
                 quantized.push(packed_byte);
@@ -230,7 +229,7 @@ pub fn dequantize_tensor(
     let pack_factor = 8usize / bits as usize;
     let mask = (1u16 << bits) - 1;
 
-    for elem_idx in 0..num_elements {
+    for (elem_idx, out) in result.iter_mut().enumerate() {
         let packed_byte_idx = elem_idx / pack_factor;
         let bit_offset = (elem_idx % pack_factor) * bits as usize;
 
@@ -250,7 +249,7 @@ pub fn dequantize_tensor(
                 0.0
             };
 
-            result[elem_idx] = (q as f32 + zp) * scale;
+            *out = (q as f32 + zp) * scale;
         }
     }
 

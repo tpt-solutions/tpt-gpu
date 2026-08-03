@@ -3,7 +3,7 @@
 //! No mean subtraction; used in LLaMA, Mistral, Qwen, etc.
 use crate::error::{TptpError, TptpResult};
 use crate::kernel::{KernelConfig, KernelResult, PrimitiveKernel};
-use crate::memory::{BufferFlags, DType, GpuBuffer, Shape};
+use crate::memory::{BufferFlags, DType, GpuBuffer};
 use crate::vendor::VendorBackend;
 use std::time::Instant;
 
@@ -28,9 +28,17 @@ impl Default for RmsNormParams {
 
 /// RMS normalization kernel handle
 pub struct RmsNormKernel {
+    #[allow(dead_code)]
     config: KernelConfig,
+    #[allow(dead_code)]
     vendor: VendorBackend,
     pub params: RmsNormParams,
+}
+
+impl Default for RmsNormKernel {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RmsNormKernel {
@@ -168,6 +176,7 @@ pub fn rms_norm(input: &GpuBuffer<f32>, gamma: &GpuBuffer<f32>) -> TptpResult<Gp
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::Shape;
 
     #[test]
     fn test_rmsnorm_gamma_mismatch() {

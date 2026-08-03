@@ -79,9 +79,9 @@ pub fn load_results(dir: &Path) -> Result<Vec<BenchReport>> {
 pub fn build_scorecards(reports: &[BenchReport]) -> Vec<GpuScorecard> {
     // (gflops_sum, peak_gflops, eff_sum, run_count, eff_count)
     type KindAccum = (f64, f64, f64, usize, usize);
+    type GpuAccum = (usize, String, usize, usize, HashMap<String, KindAccum>);
 
-    let mut by_gpu: HashMap<String, (usize, String, usize, usize, HashMap<String, KindAccum>)> =
-        HashMap::new();
+    let mut by_gpu: HashMap<String, GpuAccum> = HashMap::new();
 
     for report in reports {
         let entry = by_gpu

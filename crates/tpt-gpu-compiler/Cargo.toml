@@ -1,8 +1,8 @@
 ﻿[package]
 name = "tpt-gpu-compiler"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
-authors = ["TPT GPU Contributors"]
+authors.workspace = true
 description = "Rust port of TPTIR compiler stack"
 license = "MIT OR Apache-2.0 WITH LLVM-exception"
 repository = "https://github.com/tpt-solutions/tpt-gpu"

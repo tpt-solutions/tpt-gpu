@@ -38,12 +38,12 @@ pub use benchmark::QualityBenchmark;
 pub use calibration::CalibrationGenerator;
 pub use domain_mapper::DomainMapper;
 pub use export::detect::ModelFormat;
+pub use import::gguf::{GgufImporter, GgufModel};
 pub use kv_calculator::KvCacheCalculator;
 pub use profiler::HardwareProfiler;
 pub use pruner::SurgicalPruner;
 pub use quant_allocator::MixedPrecisionAllocator;
 pub use sensitivity::{LayerSensitivityMap, SensitivityConfig};
-pub use import::gguf::{GgufImporter, GgufModel};
 pub use streaming::StreamingLoader;
 pub use tptf_format::{TensorBlock, TptfHeader, TptfWriter};
 

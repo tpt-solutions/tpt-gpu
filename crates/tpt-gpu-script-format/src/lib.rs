@@ -1,8 +1,6 @@
 pub mod formatter;
 pub mod linter;
 
-use tpt_gpu_script_core;
-
 /// Format a TPT Script source string, returning the canonical formatted output.
 pub fn format(source: &str) -> Result<String, tpt_gpu_script_core::CompileError> {
     formatter::format_source(source)

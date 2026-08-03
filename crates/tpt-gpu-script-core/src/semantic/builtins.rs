@@ -67,17 +67,15 @@ pub fn infer_builtin(name: &str, args: &[TptType], named: &[(&str, TptType)]) ->
         | "neg" | "exp" | "log" | "log2" | "floor" | "ceil" | "round" | "contiguous"
         | "to_host" | "is_nan" | "is_inf" => {
             // Output shape mirrors input.
-            if let Some(t) = args.first() {
-                if let TptType::Tensor { dtype, shape } = t {
-                    let out_dtype = match name {
-                        "is_nan" | "is_inf" => Box::new(TptType::Bool),
-                        _ => dtype.clone(),
-                    };
-                    return TptType::Tensor {
-                        dtype: out_dtype,
-                        shape: shape.clone(),
-                    };
-                }
+            if let Some(TptType::Tensor { dtype, shape }) = args.first() {
+                let out_dtype = match name {
+                    "is_nan" | "is_inf" => Box::new(TptType::Bool),
+                    _ => dtype.clone(),
+                };
+                return TptType::Tensor {
+                    dtype: out_dtype,
+                    shape: shape.clone(),
+                };
             }
             TptType::Unknown
         }
@@ -102,7 +100,7 @@ pub fn infer_builtin(name: &str, args: &[TptType], named: &[(&str, TptType)]) ->
         // ---- Linear algebra ----
         "matmul" => {
             // (Tensor[T, m, k], Tensor[T, k, n]) -> Tensor[T, m, n]
-            match (args.get(0), args.get(1)) {
+            match (args.first(), args.get(1)) {
                 (
                     Some(TptType::Tensor { dtype, shape: s1 }),
                     Some(TptType::Tensor { shape: s2, .. }),
@@ -122,7 +120,7 @@ pub fn infer_builtin(name: &str, args: &[TptType], named: &[(&str, TptType)]) ->
         }
         "bmm" => {
             // (Tensor[T, b, m, k], Tensor[T, b, k, n]) -> Tensor[T, b, m, n]
-            match (args.get(0), args.get(1)) {
+            match (args.first(), args.get(1)) {
                 (
                     Some(TptType::Tensor { dtype, shape: s1 }),
                     Some(TptType::Tensor { shape: s2, .. }),
@@ -145,7 +143,7 @@ pub fn infer_builtin(name: &str, args: &[TptType], named: &[(&str, TptType)]) ->
                 TptType::Unknown
             }
         }
-        "outer" => match (args.get(0), args.get(1)) {
+        "outer" => match (args.first(), args.get(1)) {
             (
                 Some(TptType::Tensor { dtype, shape: s1 }),
                 Some(TptType::Tensor { shape: s2, .. }),
@@ -357,7 +355,7 @@ pub fn infer_builtin(name: &str, args: &[TptType], named: &[(&str, TptType)]) ->
         }
 
         // ---- Specialized matmul ----
-        "matmul_2d" => match (args.get(0), args.get(1)) {
+        "matmul_2d" => match (args.first(), args.get(1)) {
             (
                 Some(TptType::Tensor { dtype, shape: s1 }),
                 Some(TptType::Tensor { shape: s2, .. }),
@@ -393,13 +391,11 @@ pub fn infer_builtin(name: &str, args: &[TptType], named: &[(&str, TptType)]) ->
         "mish" | "hardswish" | "hardsigmoid" | "hardtanh" | "softsign" | "softplus"
         | "log_sigmoid" | "gelu_tanh" | "gelu_new" | "selu" | "celu" | "prelu" | "rrelu"
         | "threshold" => {
-            if let Some(t) = args.first() {
-                if let TptType::Tensor { dtype, shape } = t {
-                    return TptType::Tensor {
-                        dtype: dtype.clone(),
-                        shape: shape.clone(),
-                    };
-                }
+            if let Some(TptType::Tensor { dtype, shape }) = args.first() {
+                return TptType::Tensor {
+                    dtype: dtype.clone(),
+                    shape: shape.clone(),
+                };
             }
             TptType::Unknown
         }

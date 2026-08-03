@@ -69,9 +69,11 @@ fn main() -> Result<()> {
         Cmd::List => {
             let models = registry.models();
             if models.is_empty() {
-                println!("No models registered. Run `tpt-gpu-models fetch --help` to download one.");
+                println!(
+                    "No models registered. Run `tpt-gpu-models fetch --help` to download one."
+                );
             } else {
-                println!("{:<30} {:<10} {:<8} {}", "NAME", "ARCH", "SIZE_GB", "FILE");
+                println!("NAME                     ARCH       SIZE_GB  FILE");
                 for m in models {
                     println!(
                         "{:<30} {:<10} {:<8.1} {}",
@@ -90,7 +92,14 @@ fn main() -> Result<()> {
                 println!("No model named '{}' found.", name);
             }
         }
-        Cmd::Add { name, file, arch, size_gb, sha256, source } => {
+        Cmd::Add {
+            name,
+            file,
+            arch,
+            size_gb,
+            sha256,
+            source,
+        } => {
             registry.register(ModelEntry {
                 name: name.clone(),
                 file,
@@ -104,13 +113,29 @@ fn main() -> Result<()> {
             })?;
             println!("Registered '{}'.", name);
         }
-        Cmd::Fetch { url, name, arch, size_gb, sha256 } => {
+        Cmd::Fetch {
+            url,
+            name,
+            arch,
+            size_gb,
+            sha256,
+        } => {
             println!("Downloading '{}' from {}…", name, url);
             let dest = tpt_gpu_model_registry::hf::download(
                 &mut registry,
-                HfDownload { url, name: name.clone(), arch, size_gb, expected_sha256: sha256 },
+                HfDownload {
+                    url,
+                    name: name.clone(),
+                    arch,
+                    size_gb,
+                    expected_sha256: sha256,
+                },
             )?;
-            println!("Downloaded and registered '{}' at {}.", name, dest.display());
+            println!(
+                "Downloaded and registered '{}' at {}.",
+                name,
+                dest.display()
+            );
         }
     }
 

@@ -227,7 +227,7 @@ pub fn read_tensor_blocks(path: &Path, header: &TptfHeader) -> Result<Vec<Tensor
 
     for layer_idx in 0..header.num_layers as usize {
         // Read FFN tensors (gate, up, down projections)
-        for name in &["gate_proj", "up_proj", "down_proj"] {
+        for _ in &["gate_proj", "up_proj", "down_proj"] {
             f.seek(SeekFrom::Start(pos))?;
 
             let block_layer_idx = f.read_u32::<LittleEndian>()? as usize;
@@ -380,17 +380,6 @@ fn align_to<W: Write + Seek>(w: &mut W, align: usize) -> Result<()> {
         w.write_all(&padding)?;
     }
     Ok(())
-}
-
-/// Helper extension for u64 alignment
-trait AlignExt {
-    fn next_multiple_of(self, align: u64) -> u64;
-}
-
-impl AlignExt for u64 {
-    fn next_multiple_of(self, align: u64) -> u64 {
-        ((self + align - 1) / align) * align
-    }
 }
 
 #[cfg(test)]

@@ -16,7 +16,7 @@
 - **LLM Inference Runtime** — `GpuInferenceEngine` with arch-template dispatch (LLaMA 3, Mistral, Qwen2, Phi-3, Gemma 2), sliding-window KV cache, and automatic vendor routing (CUDA → ROCm → Metal → TPTIR)
 - **Shared Model Registry** — GGUF models stored once in `~/.tpt/models/` and shared across all TPT tools
 - **IDE Support** — Full LSP server, VS Code extension, formatter, and linter
-- **Browser Playground** — Try TPT Script live in your browser, no install required: [`crates/tpt-gpu-playground/`](crates/tpt-gpu-playground/)
+- **Browser Playground** — Try TPT Script in your browser at [`tpt-solutions.github.io/tpt-gpu/playground/`](https://tpt-solutions.github.io/tpt-gpu/playground/) (rebuilt on every push to master; also runnable locally from [`crates/tpt-gpu-playground/`](crates/tpt-gpu-playground/))
 - **Framework Integration** — PyTorch dispatch backend; JAX backend planned, not yet implemented
 - **AI-Assisted Kernel Generation** — Automated kernel optimization and generation tools
 - **Comprehensive Documentation** — 17 tutorials, complete language spec, and API reference
@@ -97,6 +97,17 @@ cargo test --workspace
 cargo build -p tpt-gpu-primitives --features sim
 ```
 
+### No GPU? CPU Fallback Works
+
+Every layer runs without any GPU hardware:
+
+- **Simulation mode** — `cargo build -p tpt-gpu-primitives --features sim` builds scalar CPU fallbacks for every primitive kernel (GEMM, Attention, Conv2D, Conv3D, norm layers), verified by the same correctness tests as the accelerated paths
+- **Runtime vendor routing** — `GpuInferenceEngine` auto-detects backends in order CUDA → ROCm → Metal → TPTIR; with no GPU present it degrades to the CPU fallback instead of failing
+- **LLM inference on CPU** — the full `LlmInference` pipeline (arch-template dispatch, KV cache, RoPE) runs on the fallback kernels, so model quality and numerics can be validated before you bring up hardware
+- **Python bindings** — `tptr` imports fine without a GPU; the layer6 test suite (122 passing) exercises the CPU path
+
+Run `cargo test -p tpt-gpu-primitives --features sim` to see the fallback path verified.
+
 ---
 
 ## Key Features
@@ -163,6 +174,21 @@ layer7_tptb/     TPT Script compiler — lexer → parser → type checker → c
 | `tpt-gpu-models` | Shared GGUF model registry | `tpt-gpu-models add/list/fetch` |
 | `tpt-gpu-kernelgen` | AI-assisted kernel gen | Spec → TPTIR → validate → benchmark |
 | `tpt-gpu-kernel-optimizer` | Auto-tuning | Grid → hill-climb → AI-guided search |
+| `tpt-gpu-doctor` | Environment health check | `tpt-gpu-doctor` (see below) |
+
+---
+
+## Environment Health Check
+
+`tpt-gpu-doctor` verifies that your machine is ready to build and contribute to TPT GPU. It mirrors the exact CI gates plus optional vendor SDK detection:
+
+```bash
+cargo run -p tpt-gpu-doctor        # full check (Rust + fmt/clippy gates + SDKs)
+cargo run -p tpt-gpu-doctor -- --pre-commit   # just Rust + fmt + clippy
+cargo run -p tpt-gpu-doctor -- --fast         # just the Rust toolchain
+```
+
+It reports **PASS** / **FAIL** / **WARN** / **SKIP** for each check and exits non-zero when any required check fails — useful as a pre-commit hook or in a new-developer onboarding script.
 
 ---
 
@@ -172,9 +198,9 @@ TPT GPU components are published to crates.io for easy integration:
 
 ```toml
 [dependencies]
-tpt-gpu-script-core = "1.0"    # TPT Script compiler
-tpt-gpu-primitives = "1.0"     # GPU primitives
-tpt-gpu-runtime = "1.0"        # Runtime
+tpt-gpu-script-core = "0.1"    # TPT Script compiler
+tpt-gpu-primitives = "0.1"     # GPU primitives
+tpt-gpu-runtime = "0.1"        # Runtime
 ```
 
 Publish commands:

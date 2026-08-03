@@ -11,7 +11,7 @@ use tpt_gpu_primitives_benches::kernels::{AttentionBench, Conv2DBench, GemmBench
 use tpt_gpu_primitives_benches::problem_configs::{
     get_all_baselines, get_attention_config, get_conv2d_config, get_gemm_config,
 };
-use tpt_gpu_primitives_benches::report::{BaselineComparison, BenchReport};
+use tpt_gpu_primitives_benches::report::BenchReport;
 use tpt_gpu_primitives_benches::stats::compute_statistics;
 
 #[derive(Parser)]
@@ -239,8 +239,8 @@ fn main() {
     if !report.comparisons.is_empty() {
         println!("\n═══ Baseline Comparisons ═══");
         println!(
-            "{:<10} {:<30} {:>10} {:>14} {:>18} {:>12}  {}",
-            "Kernel", "Problem", "TPT (ms)", "Baseline (ms)", "Baseline", "Efficiency", "Result"
+            "{:<10} {:<30} {:>10} {:>14} {:>18} {:>12}  Result",
+            "Kernel", "Problem", "TPT (ms)", "Baseline (ms)", "Baseline", "Efficiency"
         );
         println!("{}", "-".repeat(100));
         for cmp in &report.comparisons {

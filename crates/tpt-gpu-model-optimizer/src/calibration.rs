@@ -60,9 +60,8 @@ impl CalibrationGenerator {
 
     /// Set an AI provider from environment variables (claude, openrouter, or ollama)
     pub fn with_provider_from_env(self) -> Self {
-        match tpt_gpu_shared::provider_from_env() {
-            p => self.with_provider(p),
-        }
+        let p = tpt_gpu_shared::provider_from_env();
+        self.with_provider(p)
     }
 
     /// Check if AI provider is available
@@ -82,7 +81,7 @@ impl CalibrationGenerator {
 
         // Try to generate using AI provider, fall back to heuristic
         let samples = match &self.ai_provider {
-            Some(provider) if provider.is_available() => self.generate_with_ai(provider)?,
+            Some(provider) if provider.is_available() => self.generate_with_ai(provider.as_ref())?,
             _ => self.generate_heuristic(),
         };
 
@@ -123,7 +122,7 @@ impl CalibrationGenerator {
     }
 
     /// Generate samples using AI provider
-    fn generate_with_ai(&self, provider: &Box<dyn AiProvider>) -> Result<Vec<CalibrationSample>> {
+    fn generate_with_ai(&self, provider: &dyn AiProvider) -> Result<Vec<CalibrationSample>> {
         let mut samples = Vec::new();
         for domain in &self.domains {
             for i in 0..self.samples_per_domain {

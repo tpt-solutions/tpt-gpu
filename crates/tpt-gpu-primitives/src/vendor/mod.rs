@@ -9,7 +9,6 @@ pub mod metal;
 pub mod rocm;
 
 use crate::error::TptpResult;
-use crate::kernel::{KernelConfig, KernelResult};
 use crate::memory::GpuBuffer;
 
 /// Available vendor backends
@@ -123,6 +122,7 @@ pub trait VendorLibrary: Send + Sync {
     fn is_available(&self) -> bool;
 
     /// Execute GEMM: C = alpha * A * B + beta * C
+    #[allow(clippy::too_many_arguments)]
     fn gemm(
         &self,
         a: &GpuBuffer<f32>,
@@ -136,6 +136,7 @@ pub trait VendorLibrary: Send + Sync {
     ) -> TptpResult<()>;
 
     /// Execute Attention
+    #[allow(clippy::too_many_arguments)]
     fn attention(
         &self,
         q: &GpuBuffer<f32>,

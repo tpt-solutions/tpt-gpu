@@ -170,21 +170,25 @@ impl<'a> BufReader<'a> {
     fn read_u8(&mut self) -> io::Result<u8> {
         Ok(self.read_bytes(1)?[0])
     }
+    #[allow(dead_code)]
     fn read_u16(&mut self) -> io::Result<u16> {
         Ok(u16::from_le_bytes(self.read_bytes(2)?.try_into().unwrap()))
     }
     fn read_u32(&mut self) -> io::Result<u32> {
         Ok(u32::from_le_bytes(self.read_bytes(4)?.try_into().unwrap()))
     }
+    #[allow(dead_code)]
     fn read_i32(&mut self) -> io::Result<i32> {
         Ok(i32::from_le_bytes(self.read_bytes(4)?.try_into().unwrap()))
     }
     fn read_u64(&mut self) -> io::Result<u64> {
         Ok(u64::from_le_bytes(self.read_bytes(8)?.try_into().unwrap()))
     }
+    #[allow(dead_code)]
     fn read_f32(&mut self) -> io::Result<f32> {
         Ok(f32::from_le_bytes(self.read_bytes(4)?.try_into().unwrap()))
     }
+    #[allow(dead_code)]
     fn read_bool(&mut self) -> io::Result<bool> {
         Ok(self.read_u8()? != 0)
     }
@@ -340,7 +344,7 @@ pub fn parse_gguf_header(path: &Path) -> TptrResult<ModelInfo> {
                 }
             }
             _ => {
-                if let Err(_) = r.skip_value(vtype) {
+                if r.skip_value(vtype).is_err() {
                     break;
                 }
             }
@@ -578,7 +582,11 @@ impl ModelWeights {
                     .try_into()
                     .unwrap(),
             ) as usize;
-            if raw >= TPTF_HEADER_SIZE { raw } else { TPTF_HEADER_SIZE }
+            if raw >= TPTF_HEADER_SIZE {
+                raw
+            } else {
+                TPTF_HEADER_SIZE
+            }
         } else {
             TPTF_HEADER_SIZE
         };
@@ -623,24 +631,31 @@ impl ModelWeights {
             let block_start = pos;
 
             // layer_idx
-            if pos + 4 > data.len() { break; }
+            if pos + 4 > data.len() {
+                break;
+            }
             let layer_idx = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
             pos += 4;
 
             // name
-            if pos >= data.len() { break; }
+            if pos >= data.len() {
+                break;
+            }
             let name_len = data[pos] as usize;
             pos += 1;
-            if name_len > 31 || pos + name_len > data.len() { break; }
+            if name_len > 31 || pos + name_len > data.len() {
+                break;
+            }
             let name = String::from_utf8_lossy(&data[pos..pos + name_len]).to_string();
             pos += name_len;
 
             // bits, group_size, rows, cols
-            if pos + 13 > data.len() { break; }
+            if pos + 13 > data.len() {
+                break;
+            }
             let bits = data[pos];
             pos += 1;
-            let group_size =
-                u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+            let group_size = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
             pos += 4;
             let rows = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
             pos += 4;
@@ -648,20 +663,26 @@ impl ModelWeights {
             pos += 4;
 
             // packed weights
-            if pos + 4 > data.len() { break; }
-            let weights_len =
-                u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+            if pos + 4 > data.len() {
+                break;
+            }
+            let weights_len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
             pos += 4;
-            if pos + weights_len > data.len() { break; }
+            if pos + weights_len > data.len() {
+                break;
+            }
             let packed = data[pos..pos + weights_len].to_vec();
             pos += weights_len;
 
             // scales
-            if pos + 4 > data.len() { break; }
-            let scales_len =
-                u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+            if pos + 4 > data.len() {
+                break;
+            }
+            let scales_len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
             pos += 4;
-            if pos + scales_len * 4 > data.len() { break; }
+            if pos + scales_len * 4 > data.len() {
+                break;
+            }
             let mut scales = vec![1.0f32; scales_len];
             for s in scales.iter_mut() {
                 *s = f32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
@@ -669,13 +690,15 @@ impl ModelWeights {
             }
 
             // zero_points
-            if pos + 4 > data.len() { break; }
-            let zp_len =
-                u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+            if pos + 4 > data.len() {
+                break;
+            }
+            let zp_len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
             pos += 4;
-            if pos + zp_len > data.len() { break; }
-            let zero_points: Vec<i8> =
-                data[pos..pos + zp_len].iter().map(|&b| b as i8).collect();
+            if pos + zp_len > data.len() {
+                break;
+            }
+            let zero_points: Vec<i8> = data[pos..pos + zp_len].iter().map(|&b| b as i8).collect();
             pos += zp_len;
 
             // Advance to the next 128-byte boundary (absolute file position).
@@ -684,7 +707,11 @@ impl ModelWeights {
 
             // Dequantize.
             let num_elements = rows * cols;
-            let group_sz = if group_size > 0 { group_size } else { num_elements.max(1) };
+            let group_sz = if group_size > 0 {
+                group_size
+            } else {
+                num_elements.max(1)
+            };
             let f32_data =
                 tptf_dequantize(&packed, &scales, &zero_points, bits, group_sz, num_elements);
 
@@ -693,14 +720,14 @@ impl ModelWeights {
                 let layer = &mut weights.layers[layer_idx];
                 let target: Option<&mut GpuBuffer<f32>> = match name.as_str() {
                     "gate_proj" => Some(&mut layer.gate_proj),
-                    "up_proj"   => Some(&mut layer.up_proj),
+                    "up_proj" => Some(&mut layer.up_proj),
                     "down_proj" => Some(&mut layer.down_proj),
-                    "q_proj"    => Some(&mut layer.q_proj),
-                    "k_proj"    => Some(&mut layer.k_proj),
-                    "v_proj"    => Some(&mut layer.v_proj),
-                    "o_proj"    => Some(&mut layer.o_proj),
-                    "norm1"     => Some(&mut layer.norm1),
-                    "norm2"     => Some(&mut layer.norm2),
+                    "q_proj" => Some(&mut layer.q_proj),
+                    "k_proj" => Some(&mut layer.k_proj),
+                    "v_proj" => Some(&mut layer.v_proj),
+                    "o_proj" => Some(&mut layer.o_proj),
+                    "norm1" => Some(&mut layer.norm1),
+                    "norm2" => Some(&mut layer.norm2),
                     _ => None,
                 };
                 if let Some(buf) = target {
@@ -782,12 +809,36 @@ fn rope_config_for_arch(arch: &str, info: &ModelInfo) -> Option<RopeConfig> {
     let head_dim = info.hidden_dim as usize / num_heads;
     let max_seq_len = info.context_len as usize;
     match arch {
-        "llama3" => Some(RopeConfig { head_dim, base: 500_000.0, max_seq_len }),
-        "llama"  => Some(RopeConfig { head_dim, base: 10_000.0,  max_seq_len }),
-        "mistral" => Some(RopeConfig { head_dim, base: 10_000.0, max_seq_len }),
-        "qwen2" | "qwen" => Some(RopeConfig { head_dim, base: 1_000_000.0, max_seq_len }),
-        "phi3"   => Some(RopeConfig { head_dim, base: 10_000.0,  max_seq_len }),
-        "gemma2" | "gemma" => Some(RopeConfig { head_dim, base: 10_000.0, max_seq_len }),
+        "llama3" => Some(RopeConfig {
+            head_dim,
+            base: 500_000.0,
+            max_seq_len,
+        }),
+        "llama" => Some(RopeConfig {
+            head_dim,
+            base: 10_000.0,
+            max_seq_len,
+        }),
+        "mistral" => Some(RopeConfig {
+            head_dim,
+            base: 10_000.0,
+            max_seq_len,
+        }),
+        "qwen2" | "qwen" => Some(RopeConfig {
+            head_dim,
+            base: 1_000_000.0,
+            max_seq_len,
+        }),
+        "phi3" => Some(RopeConfig {
+            head_dim,
+            base: 10_000.0,
+            max_seq_len,
+        }),
+        "gemma2" | "gemma" => Some(RopeConfig {
+            head_dim,
+            base: 10_000.0,
+            max_seq_len,
+        }),
         _ => None,
     }
 }
@@ -984,7 +1035,12 @@ impl GpuInferenceEngine {
             }
 
             // Quantization bit depth for this layer (0 = f32).
-            let layer_bits = self.info.per_layer_bits.get(layer_idx).copied().unwrap_or(0);
+            let layer_bits = self
+                .info
+                .per_layer_bits
+                .get(layer_idx)
+                .copied()
+                .unwrap_or(0);
 
             let layer = &self.weights.layers[layer_idx];
 
@@ -1001,18 +1057,23 @@ impl GpuInferenceEngine {
             macro_rules! proj_gemm {
                 ($input:expr, $weight:expr, $name:literal) => {
                     if layer_bits > 0 {
-                        quant_layer_gemm(&self.quant_gemm_k, $input, $weight, layer_bits)
-                            .map_err(|e| TptrError::new(
-                                ErrorCode::LaunchFailure,
-                                format!("{} layer {}: {}", $name, layer_idx, e),
-                            ))
+                        quant_layer_gemm(&self.quant_gemm_k, $input, $weight, layer_bits).map_err(
+                            |e| {
+                                TptrError::new(
+                                    ErrorCode::LaunchFailure,
+                                    format!("{} layer {}: {}", $name, layer_idx, e),
+                                )
+                            },
+                        )
                     } else {
                         self.gemm_k
                             .execute($input, $weight, None, 1.0, 0.0)
-                            .map_err(|e| TptrError::new(
-                                ErrorCode::LaunchFailure,
-                                format!("{} layer {}: {}", $name, layer_idx, e),
-                            ))
+                            .map_err(|e| {
+                                TptrError::new(
+                                    ErrorCode::LaunchFailure,
+                                    format!("{} layer {}: {}", $name, layer_idx, e),
+                                )
+                            })
                     }
                 };
             }
@@ -1158,9 +1219,10 @@ impl GpuInferenceEngine {
 
         if temperature <= 0.0 || top_k <= 1 {
             // Greedy: softmax then argmax.
-            let probs = self.softmax_k.execute(&logits).map_err(|e| {
-                TptrError::new(ErrorCode::LaunchFailure, format!("softmax: {}", e))
-            })?;
+            let probs = self
+                .softmax_k
+                .execute(&logits)
+                .map_err(|e| TptrError::new(ErrorCode::LaunchFailure, format!("softmax: {}", e)))?;
             return Ok(sample_argmax(&probs, vocab_size));
         }
 
@@ -1192,8 +1254,7 @@ impl GpuInferenceEngine {
 
         // Find the top-k indices by partial sort (selection).
         let k = (top_k as usize).min(vocab_size).max(1);
-        let mut indexed: Vec<(usize, f32)> =
-            raw.iter().cloned().enumerate().collect();
+        let mut indexed: Vec<(usize, f32)> = raw.iter().cloned().enumerate().collect();
         indexed.sort_unstable_by(|(_, a), (_, b)| {
             b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
         });
@@ -1274,7 +1335,6 @@ fn quant_layer_gemm(
     weight: &GpuBuffer<f32>,
     bits: u8,
 ) -> TptrResult<GpuBuffer<f32>> {
-
     let in_dim = weight.dim(0).unwrap_or(0);
     let out_dim = weight.dim(1).unwrap_or(0);
     if in_dim == 0 || out_dim == 0 {
@@ -1304,9 +1364,9 @@ fn quant_layer_gemm(
     // Compute per-group scales for W^T rows (= W columns = output neurons).
     let bits_u = bits.max(1) as usize;
     let pack_factor = (8usize / bits_u).max(1);
-    let packed_k = (in_dim + pack_factor - 1) / pack_factor;
+    let packed_k = in_dim.div_ceil(pack_factor);
     let group_size = tpt_gpu_primitives::DEFAULT_GROUP_SIZE as usize;
-    let groups_per_row = (in_dim + group_size - 1) / group_size;
+    let groups_per_row = in_dim.div_ceil(group_size);
     let max_int = ((1u32 << bits) - 1) as f32 / 2.0;
 
     let mut scales = vec![1.0f32; out_dim * groups_per_row];
@@ -1314,9 +1374,15 @@ fn quant_layer_gemm(
         for g in 0..groups_per_row {
             let start = row * in_dim + g * group_size;
             let end = (start + group_size).min(row * in_dim + in_dim);
-            let max_abs = wt[start..end].iter().map(|x| x.abs()).fold(0.0f32, f32::max);
-            scales[row * groups_per_row + g] =
-                if max_abs > 0.0 { max_abs / max_int } else { 1.0 };
+            let max_abs = wt[start..end]
+                .iter()
+                .map(|x| x.abs())
+                .fold(0.0f32, f32::max);
+            scales[row * groups_per_row + g] = if max_abs > 0.0 {
+                max_abs / max_int
+            } else {
+                1.0
+            };
         }
     }
 
@@ -1400,8 +1466,7 @@ fn expand_kv_heads(src: &[f32], seq_len: usize, kv_row: usize, qk_dim: usize) ->
             let dst_start = t * qk_dim;
             let copy = qk_dim.min(kv_row).min(src.len().saturating_sub(src_start));
             if copy > 0 {
-                out[dst_start..dst_start + copy]
-                    .copy_from_slice(&src[src_start..src_start + copy]);
+                out[dst_start..dst_start + copy].copy_from_slice(&src[src_start..src_start + copy]);
             }
         }
         return out;
@@ -1452,7 +1517,7 @@ fn tptf_dequantize(
     let mask = (1u16 << bits) - 1;
     let mut result = vec![0.0f32; num_elements];
 
-    for elem_idx in 0..num_elements {
+    for (elem_idx, out) in result.iter_mut().enumerate() {
         let packed_byte_idx = elem_idx / pack_factor;
         let bit_offset = (elem_idx % pack_factor) * bits as usize;
 
@@ -1464,7 +1529,7 @@ fn tptf_dequantize(
             let scale = scales.get(group_idx).copied().unwrap_or(1.0);
             let zp = zero_points.get(group_idx).copied().unwrap_or(0) as f32;
 
-            result[elem_idx] = (q as f32 + zp) * scale;
+            *out = (q as f32 + zp) * scale;
         }
     }
 
@@ -1487,9 +1552,7 @@ pub fn execute_sampling(logits: &[f32], temperature: f32, top_k: usize) -> usize
         return logits
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| {
-                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-            })
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(i, _)| i)
             .unwrap_or(0);
     }
@@ -1503,9 +1566,7 @@ pub fn execute_sampling(logits: &[f32], temperature: f32, top_k: usize) -> usize
 
     // Partial sort: keep only the top-k entries (descending by score).
     let k = top_k.min(logits.len()).max(1);
-    scaled.sort_unstable_by(|(_, a), (_, b)| {
-        b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
-    });
+    scaled.sort_unstable_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
     scaled.truncate(k);
 
     // Numerically-stable softmax over the top-k scores.
@@ -1556,6 +1617,7 @@ fn xorshift64(state: &mut u64) -> f32 {
 
 /// Return a new `Vec<f32>` of exactly `target_len` elements from `src`,
 /// padding with zeros if `src` is shorter.
+#[allow(dead_code)]
 fn pad_to_len(src: &[f32], target_len: usize) -> Vec<f32> {
     let mut out = vec![0.0f32; target_len];
     let copy = src.len().min(target_len);
@@ -1664,7 +1726,6 @@ fn sample_argmax(probs: &GpuBuffer<f32>, vocab_size: usize) -> u32 {
 mod tests {
     use super::*;
     use std::fs;
-    use std::io::Write;
 
     /// Write a minimal valid GGUF v2 file with the given KV metadata.
     fn write_gguf(path: &Path, kv: &[(&str, GgufKvVal)]) {
@@ -1922,6 +1983,7 @@ mod tests {
     // ----- TPTF tensor-loading roundtrip -----
 
     /// Write a TPTF block binary (matching TensorBlock::write_to from tpt-gpu-model-optimizer).
+    #[allow(clippy::too_many_arguments)]
     fn append_tptf_tensor_block(
         data: &mut Vec<u8>,
         layer_idx: u32,
@@ -1950,7 +2012,7 @@ mod tests {
         data.extend_from_slice(&1u32.to_le_bytes());
         data.push(0u8);
         // pad absolute position to next 128-byte boundary
-        while data.len() % 128 != 0 {
+        while !data.len().is_multiple_of(128) {
             data.push(0u8);
         }
     }
@@ -1973,7 +2035,7 @@ mod tests {
         buf[92..96].copy_from_slice(&1u32.to_le_bytes()); // num_kv_heads
         buf[96..100].copy_from_slice(&8u32.to_le_bytes()); // ffn_dim
         buf[100..104].copy_from_slice(&1u32.to_le_bytes()); // num_layers = 1
-        // tensor_offset at byte 460 = 512 (start of tensor section)
+                                                            // tensor_offset at byte 460 = 512 (start of tensor section)
         buf[460..468].copy_from_slice(&512u64.to_le_bytes());
         // tokenizer_offset = 0 (no tokenizer → read tensors until EOF)
 
@@ -1981,14 +2043,12 @@ mod tests {
 
         // Tensor 1: gate_proj for layer 0 — 32 elements (4 × 8), bits=16
         let gate_vals: Vec<f32> = (1u32..=32).map(|i| i as f32 * 0.1).collect();
-        let gate_bytes: Vec<u8> =
-            gate_vals.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let gate_bytes: Vec<u8> = gate_vals.iter().flat_map(|v| v.to_le_bytes()).collect();
         append_tptf_tensor_block(&mut data, 0, "gate_proj", 16, 32, 4, 8, &gate_bytes);
 
         // Tensor 2: up_proj for layer 0 — 32 elements (4 × 8), bits=16
         let up_vals: Vec<f32> = (1u32..=32).map(|i| i as f32 * 0.2).collect();
-        let up_bytes: Vec<u8> =
-            up_vals.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let up_bytes: Vec<u8> = up_vals.iter().flat_map(|v| v.to_le_bytes()).collect();
         append_tptf_tensor_block(&mut data, 0, "up_proj", 16, 32, 4, 8, &up_bytes);
 
         fs::write(path, &data).unwrap();
@@ -2006,33 +2066,33 @@ mod tests {
         assert_eq!(info.ffn_dim, 8);
 
         // llama3 does not tie lm_head
-        let weights = ModelWeights::load_tptf(&p, &info, /*tied=*/false).unwrap();
+        let weights = ModelWeights::load_tptf(&p, &info, /*tied=*/ false).unwrap();
 
         // gate_proj[layer=0] should be (0.1, 0.2, ..., 3.2)
         let gate = buf_to_vec(&weights.layers[0].gate_proj);
         assert_eq!(gate.len(), 4 * 8, "gate_proj shape mismatch");
-        for i in 0..32 {
+        for (i, &v) in gate.iter().enumerate() {
             let expected = (i + 1) as f32 * 0.1;
             assert!(
-                (gate[i] - expected).abs() < 1e-5,
+                (v - expected).abs() < 1e-5,
                 "gate_proj[{}]: expected {:.4}, got {:.4}",
                 i,
                 expected,
-                gate[i]
+                v
             );
         }
 
         // up_proj[layer=0] should be (0.2, 0.4, ..., 6.4)
         let up = buf_to_vec(&weights.layers[0].up_proj);
         assert_eq!(up.len(), 4 * 8, "up_proj shape mismatch");
-        for i in 0..32 {
+        for (i, &v) in up.iter().enumerate() {
             let expected = (i + 1) as f32 * 0.2;
             assert!(
-                (up[i] - expected).abs() < 1e-5,
+                (v - expected).abs() < 1e-5,
                 "up_proj[{}]: expected {:.4}, got {:.4}",
                 i,
                 expected,
-                up[i]
+                v
             );
         }
 
@@ -2047,7 +2107,11 @@ mod tests {
         // regardless of the values of the other logits.
         let logits = vec![0.1f32, 0.5, 0.9, 0.3, 0.2];
         let idx = execute_sampling(&logits, 0.0, 5);
-        assert_eq!(idx, 2, "argmax of [0.1,0.5,0.9,0.3,0.2] should be 2, got {}", idx);
+        assert_eq!(
+            idx, 2,
+            "argmax of [0.1,0.5,0.9,0.3,0.2] should be 2, got {}",
+            idx
+        );
 
         // Also verify with a negative max-at-zero case.
         let logits2 = vec![10.0f32, 1.0, 2.0];

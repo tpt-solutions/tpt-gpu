@@ -3,7 +3,7 @@ use tpt_gpu_script_core::TokenKind;
 
 pub fn format_source(source: &str) -> Result<String, tpt_gpu_script_core::CompileError> {
     let tokens = tpt_gpu_script_core::tokenize(source)?;
-    let mut formatter = Formatter::new(&tokens);
+    let formatter = Formatter::new(&tokens);
     Ok(formatter.format())
 }
 

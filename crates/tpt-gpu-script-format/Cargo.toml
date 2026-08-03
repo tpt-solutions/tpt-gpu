@@ -1,8 +1,8 @@
 [package]
 name = "tpt-gpu-script-format"
-version = "1.0.0"
+version.workspace = true
 edition.workspace = true
-authors = ["TPT GPU Contributors"]
+authors.workspace = true
 description = "TPT Script formatter and linter"
 license.workspace = true
 repository.workspace = true
@@ -12,5 +12,5 @@ keywords = ["gpu", "compiler", "ml", "ai", "tptscript"]
 categories = ["compilers", "development-tools"]
 
 [dependencies]
-tpt-gpu-script-core = { path = "../tpt-gpu-script-core", version = "1.0.0" }
+tpt-gpu-script-core = { path = "../tpt-gpu-script-core", version = "0.1.0" }
 serde = { workspace = true }

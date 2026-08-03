@@ -229,6 +229,7 @@ impl DeviceBackend {
     /// Try to open a real CUDA context on device 0. Returns `None` when the
     /// `cuda` feature is disabled or no GPU/driver is available, allowing the
     /// caller to transparently fall back to the simulated backend.
+    #[allow(dead_code)]
     pub(super) fn try_cuda() -> Option<Self> {
         #[cfg(feature = "cuda")]
         {
@@ -240,6 +241,7 @@ impl DeviceBackend {
         }
     }
 
+    #[allow(unused_variables)]
     pub(super) fn alloc(&self, size: u64) -> TptrResult<u64> {
         match self {
             #[cfg(feature = "cuda")]
@@ -251,6 +253,7 @@ impl DeviceBackend {
         }
     }
 
+    #[allow(unused_variables)]
     pub(super) fn free(&self, ptr: u64) -> TptrResult<()> {
         match self {
             #[cfg(feature = "cuda")]
@@ -259,6 +262,7 @@ impl DeviceBackend {
         }
     }
 
+    #[allow(unused_variables)]
     pub(super) fn upload(&self, dst: u64, src: &[u8]) -> TptrResult<()> {
         match self {
             #[cfg(feature = "cuda")]
@@ -270,6 +274,7 @@ impl DeviceBackend {
         }
     }
 
+    #[allow(unused_variables)]
     pub(super) fn download(&self, src: u64, dst: &mut [u8]) -> TptrResult<()> {
         match self {
             #[cfg(feature = "cuda")]

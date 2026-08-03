@@ -1,7 +1,8 @@
 [package]
 name = "tpt-gpu-runtime-c"
-version = "1.0.0"
+version.workspace = true
 edition = "2021"
+authors.workspace = true
 description = "TPT Runtime - C ABI (stable C API over tpt-gpu-runtime)"
 license = "MIT OR Apache-2.0 WITH LLVM-exception"
 publish = false

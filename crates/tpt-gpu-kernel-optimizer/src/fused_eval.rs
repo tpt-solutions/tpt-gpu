@@ -177,7 +177,7 @@ impl FusedGemmEvaluator {
         // A100 has 96KB shared mem per SM; we target 256 threads per block.
         let smem_per_block = (tile_m * tile_k + tile_k * tile_n) * 4.0; // f32 = 4B
         let sm_smem_bytes = 98_304.0; // A100: 96 KB
-        let blocks_per_sm = (sm_smem_bytes / smem_per_block).floor().max(1.0).min(8.0);
+        let blocks_per_sm = (sm_smem_bytes / smem_per_block).floor().clamp(1.0, 8.0);
         let raw_occupancy = (blocks_per_sm * 256.0 / 2048.0).min(1.0);
         // Blend with 0.5 floor so the occupancy factor doesn't overwhelm tile quality.
         // Rationale: the fused kernel uses registers more efficiently (bias/act in-register),
@@ -191,8 +191,8 @@ impl FusedGemmEvaluator {
         let register_reuse = 0.5 + 0.5 * tile_size_factor;
 
         // Vectorization and unroll efficiency
-        let vec_eff = (vec_width / 8.0).min(1.0).max(0.25);
-        let unroll_eff = (unroll / 4.0).min(1.0).max(0.5);
+        let vec_eff = (vec_width / 8.0).clamp(0.25, 1.0);
+        let unroll_eff = (unroll / 4.0).clamp(0.5, 1.0);
 
         // Size scaling (small matrices underutilize the GPU)
         let total_elems = m * n;

@@ -1,8 +1,8 @@
 [package]
 name = "tpt-gpu-script-lsp"
-version = "1.0.0"
+version.workspace = true
 edition.workspace = true
-authors = ["TPT GPU Contributors"]
+authors.workspace = true
 description = "TPT Script Language Server Protocol implementation"
 license.workspace = true
 repository.workspace = true
@@ -16,8 +16,8 @@ name = "tpt-gpu-lsp"
 path = "src/main.rs"
 
 [dependencies]
-tpt-gpu-script-core = { path = "../tpt-gpu-script-core", version = "1.0.0" }
-tpt-gpu-script-format = { path = "../tpt-gpu-script-format", version = "1.0.0" }
+tpt-gpu-script-core = { path = "../tpt-gpu-script-core", version = "0.1.0" }
+tpt-gpu-script-format = { path = "../tpt-gpu-script-format", version = "0.1.0" }
 tokio = { workspace = true }
 tower-lsp = { workspace = true }
 dashmap = { workspace = true }

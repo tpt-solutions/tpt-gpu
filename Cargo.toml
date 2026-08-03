@@ -4,6 +4,7 @@ members = [
     "crates/tpt-gpu-bench",
     "crates/tpt-gpu-compiler",
     "crates/tpt-gpu-dispatch",
+    "crates/tpt-gpu-doctor",
     "crates/tpt-gpu-driver-daemon",
     "crates/tpt-gpu-ir-spec",
     "crates/tpt-gpu-kernel-optimizer",

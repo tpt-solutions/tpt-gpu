@@ -93,7 +93,7 @@ impl SurgicalPruner {
     pub fn apply_to_weights(
         mask: &PruningMask,
         layer: usize,
-        weights: &mut Vec<f32>,
+        weights: &mut [f32],
         rows: usize,
         cols: usize,
         pruned_dim: PrunedDim,

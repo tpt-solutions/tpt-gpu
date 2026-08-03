@@ -52,7 +52,7 @@ pub fn compute_statistics(data: &[f64]) -> StatisticalSummary {
         0.0
     };
     let std_dev = variance.sqrt();
-    let median = if count % 2 == 0 {
+    let median = if count.is_multiple_of(2) {
         (sorted[count / 2 - 1] + sorted[count / 2]) / 2.0
     } else {
         sorted[count / 2]

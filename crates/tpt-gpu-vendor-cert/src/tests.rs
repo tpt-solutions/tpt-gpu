@@ -109,14 +109,7 @@ fn ref_gemm(ha: &[f32], hb: &[f32], m: usize, n: usize, k: usize) -> Vec<f32> {
     out
 }
 
-fn ref_attention(
-    hq: &[f32],
-    hk: &[f32],
-    hv: &[f32],
-    scale: f32,
-    seq: usize,
-    d: usize,
-) -> Vec<f32> {
+fn ref_attention(hq: &[f32], hk: &[f32], hv: &[f32], scale: f32, seq: usize, d: usize) -> Vec<f32> {
     let mut scores = vec![0f32; seq * seq];
     for i in 0..seq {
         for j in 0..seq {
@@ -153,6 +146,7 @@ fn ref_attention(
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 fn ref_conv2d(
     input: &[f32],
     filt: &[f32],
@@ -184,7 +178,8 @@ fn ref_conv2d(
                                 let yy = in_y + ky as isize;
                                 let xx = in_x + kx as isize;
                                 if yy >= 0 && yy < h as isize && xx >= 0 && xx < w as isize {
-                                    acc += input[((nn * c + cc) * h + yy as usize) * w + xx as usize]
+                                    acc += input
+                                        [((nn * c + cc) * h + yy as usize) * w + xx as usize]
                                         * filt[((kk * c + cc) * r + ky) * s + kx];
                                 }
                             }
@@ -198,6 +193,7 @@ fn ref_conv2d(
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 fn ref_conv3d(
     input: &[f32],
     filt: &[f32],
@@ -248,8 +244,8 @@ fn ref_conv3d(
                                                 + yy as usize)
                                                 * w
                                                 + xx as usize]
-                                                * filt[(((kk * c + cc) * kt + kz) * r + ky) * s
-                                                    + kx];
+                                                * filt
+                                                    [(((kk * c + cc) * kt + kz) * r + ky) * s + kx];
                                         }
                                     }
                                 }
@@ -450,7 +446,10 @@ fn test_kernel_launch(vendor: &str) -> bool {
         None => return false,
     };
     if !backend.supports_gemm() {
-        warn!("{} does not support GEMM; kernel launch not exercised", vendor);
+        warn!(
+            "{} does not support GEMM; kernel launch not exercised",
+            vendor
+        );
         return false;
     }
     let (m, k, n) = (16, 16, 16);
@@ -468,7 +467,10 @@ fn test_tptir_compilation(vendor: &str) -> bool {
     // Actual TPTIR compilation is covered by the `tpt-gpu-compiler` crate's own
     // test suite; this certification path only verifies the vendor is present so
     // it can receive compiled kernels.
-    debug!("Verifying vendor presence for TPTIR compilation path: {}", vendor);
+    debug!(
+        "Verifying vendor presence for TPTIR compilation path: {}",
+        vendor
+    );
     detect_backend(vendor).is_some()
 }
 
@@ -572,11 +574,18 @@ fn test_conv2d_correctness(vendor: &str) -> bool {
     let mut filt = make(&[kf, c, r, s]);
     let mut out = make(&[n, kf, (hh + 2 * ph - r) / sh + 1, (w + 2 * pw - s) / sw + 1]);
     let hi: Vec<f32> = (0..n * c * hh * w).map(|i| (i % 7) as f32).collect();
-    let hf: Vec<f32> = (0..kf * c * r * s).map(|i| ((i % 3) as f32) * 0.5 + 1.0).collect();
+    let hf: Vec<f32> = (0..kf * c * r * s)
+        .map(|i| ((i % 3) as f32) * 0.5 + 1.0)
+        .collect();
     input.copy_from_host(&hi).unwrap();
     filt.copy_from_host(&hf).unwrap();
-    if let Err(e) = backend.conv2d(&input, &filt, &mut out, [sh as u32, sw as u32], [ph as u32, pw as u32])
-    {
+    if let Err(e) = backend.conv2d(
+        &input,
+        &filt,
+        &mut out,
+        [sh as u32, sw as u32],
+        [ph as u32, pw as u32],
+    ) {
         error!("Conv2D failed: {}", e);
         return false;
     }
@@ -611,7 +620,9 @@ fn test_conv3d_correctness(vendor: &str) -> bool {
     let ow = (w + 2 * pw - s) / sw + 1;
     let mut out = make(&[n, kf, od, oh, ow]);
     let hi: Vec<f32> = (0..n * c * d * hh * w).map(|i| (i % 5) as f32).collect();
-    let hf: Vec<f32> = (0..kf * c * kt * r * s).map(|i| ((i % 2) as f32) * 0.25 + 0.5).collect();
+    let hf: Vec<f32> = (0..kf * c * kt * r * s)
+        .map(|i| ((i % 2) as f32) * 0.25 + 0.5)
+        .collect();
     input.copy_from_host(&hi).unwrap();
     filt.copy_from_host(&hf).unwrap();
     if let Err(e) = backend.conv3d(
@@ -626,7 +637,9 @@ fn test_conv3d_correctness(vendor: &str) -> bool {
     }
     let mut ho = vec![0f32; out.num_elements()];
     out.copy_to_host(&mut ho).unwrap();
-    let reference = ref_conv3d(&hi, &hf, n, c, d, hh, w, kf, kt, r, s, sd, sh, sw, pd, ph, pw);
+    let reference = ref_conv3d(
+        &hi, &hf, n, c, d, hh, w, kf, kt, r, s, sd, sh, sw, pd, ph, pw,
+    );
     let err = max_err(&ho, &reference);
     if err > 1e-2 {
         error!("Conv3D max error {} exceeds 1e-2", err);
@@ -747,7 +760,11 @@ fn test_conv2d_performance(vendor: &str) -> bool {
     let mut filt = make(&[kf, c, r, s]);
     let mut out = make(&[n, kf, hh, w]);
     input
-        .copy_from_host(&(0..n * c * hh * w).map(|i| (i % 5) as f32).collect::<Vec<f32>>())
+        .copy_from_host(
+            &(0..n * c * hh * w)
+                .map(|i| (i % 5) as f32)
+                .collect::<Vec<f32>>(),
+        )
         .unwrap();
     filt.copy_from_host(&(0..kf * c * r * s).map(|_| 1.0).collect::<Vec<f32>>())
         .unwrap();
@@ -777,7 +794,11 @@ fn test_conv3d_performance(vendor: &str) -> bool {
     let mut filt = make(&[kf, c, kt, r, s]);
     let mut out = make(&[n, kf, d, hh, w]);
     input
-        .copy_from_host(&(0..n * c * d * hh * w).map(|i| (i % 5) as f32).collect::<Vec<f32>>())
+        .copy_from_host(
+            &(0..n * c * d * hh * w)
+                .map(|i| (i % 5) as f32)
+                .collect::<Vec<f32>>(),
+        )
         .unwrap();
     filt.copy_from_host(
         &(0..kf * c * kt * r * s)
@@ -828,6 +849,7 @@ fn test_sustained_performance(vendor: &str) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use super::*;
 
@@ -877,7 +899,9 @@ mod tests {
         let (kf, kt, r, s) = (1, 1, 1, 1);
         let input: Vec<f32> = (0..8).map(|i| i as f32).collect();
         let filt = vec![1.0f32];
-        let out = ref_conv3d(&input, &filt, n, c, d, hh, w, kf, kt, r, s, 1, 1, 1, 0, 0, 0);
+        let out = ref_conv3d(
+            &input, &filt, n, c, d, hh, w, kf, kt, r, s, 1, 1, 1, 0, 0, 0,
+        );
         assert_eq!(out, input);
     }
 

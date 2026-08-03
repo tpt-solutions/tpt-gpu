@@ -22,7 +22,6 @@ pub struct VramBuffer {
 
 /// Per-process GPU context.
 pub struct GpuContext {
-    mmio: Arc<Mmio>,
     pub ring: Arc<CommandRing>,
     vram_bump: Mutex<u64>,
     buffers: Mutex<HashMap<u64, VramBuffer>>,
@@ -31,9 +30,8 @@ pub struct GpuContext {
 
 impl GpuContext {
     pub fn new(mmio: Arc<Mmio>) -> Self {
-        let ring = Arc::new(CommandRing::new(mmio.clone()));
+        let ring = Arc::new(CommandRing::new(mmio));
         GpuContext {
-            mmio,
             ring,
             vram_bump: Mutex::new(VRAM_ALLOC_BASE),
             buffers: Mutex::new(HashMap::new()),

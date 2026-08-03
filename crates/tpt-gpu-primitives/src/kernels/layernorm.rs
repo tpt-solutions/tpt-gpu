@@ -3,7 +3,7 @@
 //! Normalizes over the innermost axis (norm_size) of a [batch, norm_size] view.
 use crate::error::{TptpError, TptpResult};
 use crate::kernel::{KernelConfig, KernelResult, PrimitiveKernel};
-use crate::memory::{BufferFlags, DType, GpuBuffer, Shape};
+use crate::memory::{BufferFlags, DType, GpuBuffer};
 use crate::vendor::VendorBackend;
 use std::time::Instant;
 
@@ -28,9 +28,17 @@ impl Default for LayerNormParams {
 
 /// Layer normalization kernel handle
 pub struct LayerNormKernel {
+    #[allow(dead_code)]
     config: KernelConfig,
+    #[allow(dead_code)]
     vendor: VendorBackend,
     pub params: LayerNormParams,
+}
+
+impl Default for LayerNormKernel {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LayerNormKernel {
@@ -177,6 +185,7 @@ pub fn layer_norm(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::Shape;
 
     #[test]
     fn test_layernorm_gamma_beta_mismatch() {

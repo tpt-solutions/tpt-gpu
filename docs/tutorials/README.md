@@ -75,7 +75,7 @@ tpt check file.tpts
 tpt compile file.tpts -o out/
 tpt inspect matmul
 tpt ops
-python examples/basic_usage.py
+python layer6_framework/examples/basic_usage.py
 ```
 
 ## Additional Resources

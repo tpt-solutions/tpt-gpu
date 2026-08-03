@@ -2,7 +2,7 @@
 //!
 //! High-level interface for compiling TPTIR kernel source code.
 
-use crate::error::{TptpError, TptpResult};
+use crate::error::TptpResult;
 use crate::ffi::tptir_ffi;
 
 /// Compilation target format
@@ -45,6 +45,7 @@ impl Default for CompilationOptions {
 
 /// TPTIR compiler handle
 pub struct TptirCompiler {
+    #[allow(dead_code)]
     context: tptir_ffi::TptirCompilerHandle,
     options: CompilationOptions,
 }

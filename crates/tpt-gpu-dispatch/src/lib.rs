@@ -64,7 +64,7 @@ fn py_gemm<'py>(
     let flat = gemm::dispatch(a_s, b_s, &c_buf, m, k, n, alpha, beta);
     let arr = Array2::from_shape_vec((m, n), flat)
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-    Ok(arr.into_pyarray_bound(py))
+    Ok(arr.into_pyarray(py))
 }
 
 // ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ fn py_attention<'py>(
     );
     let arr = Array4::from_shape_vec((batch, heads, seq_q, d_v), flat)
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-    Ok(arr.into_pyarray_bound(py))
+    Ok(arr.into_pyarray(py))
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +163,7 @@ fn py_conv2d<'py>(
     );
     let arr = Array4::from_shape_vec((n, c_out, h_out, w_out), flat)
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-    Ok(arr.into_pyarray_bound(py))
+    Ok(arr.into_pyarray(py))
 }
 
 // ---------------------------------------------------------------------------

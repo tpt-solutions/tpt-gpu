@@ -71,8 +71,8 @@ impl RealNormalizationEvaluator {
         let num_cols = self.problem.num_cols as f64;
         let rows_per_block = (block_size / num_cols).max(1.0);
         let bs_eff = (num_rows / (num_rows / rows_per_block).ceil() / rows_per_block).max(0.4);
-        let vw_eff = (vec_width / 8.0).min(1.0).max(0.25);
-        let ur_eff = (unroll / 4.0).min(1.0).max(0.5);
+        let vw_eff = (vec_width / 8.0).clamp(0.25, 1.0);
+        let ur_eff = (unroll / 4.0).clamp(0.5, 1.0);
         let wr_bonus = if warp_reduce >= 1.0 { 1.0 } else { 0.65 };
         let total_bytes = self.problem.memory_bytes() as f64;
         let peak_bw = 1555.0;
@@ -92,7 +92,7 @@ impl KernelEvaluator for RealNormalizationEvaluator {
             return 0.0;
         }
         let efficiency = (baseline_ms / estimated_ms) * 100.0;
-        efficiency.max(0.0).min(200.0)
+        efficiency.clamp(0.0, 200.0)
     }
 }
 

@@ -6,7 +6,7 @@ on:
 
 jobs:
   deploy:
-    name: Build and deploy docs (GitHub Pages)
+    name: Build and deploy docs + playground (GitHub Pages)
     runs-on: ubuntu-latest
 
     steps:
@@ -22,6 +22,25 @@ jobs:
 
       - name: Build docs
         run: mkdocs build --strict
+
+      - name: Set up Rust with wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+
+      - name: Build playground WASM
+        working-directory: crates/tpt-gpu-playground
+        run: wasm-pack build --target web --out-dir pkg --release
+
+      - name: Stage playground into docs site
+        run: |
+          mkdir -p site/playground
+          cp -r crates/tpt-gpu-playground/index.html crates/tpt-gpu-playground/pkg site/playground/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

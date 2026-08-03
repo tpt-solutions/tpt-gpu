@@ -460,10 +460,8 @@ fn parse_arg_list(s: &str, line: usize) -> Result<Vec<(String, Type)>, ParseErro
             message: format!("expected 'name: type' in arg, got '{}'", part),
         })?;
         let name = part[..colon].trim().to_string();
-        let ty = parse_type(part[colon + 1..].trim()).map_err(|e| ParseError {
-            line,
-            message: e,
-        })?;
+        let ty =
+            parse_type(part[colon + 1..].trim()).map_err(|e| ParseError { line, message: e })?;
         args.push((name, ty));
     }
     Ok(args)
@@ -479,18 +477,12 @@ fn parse_return_types(s: &str, line: usize) -> Result<Vec<Type>, ParseError> {
         let inner = &s[1..s.len() - 1];
         return split_comma_aware(inner)
             .into_iter()
-            .map(|t| {
-                parse_type(t).map_err(|e| ParseError {
-                    line,
-                    message: e,
-                })
-            })
+            .map(|t| parse_type(t).map_err(|e| ParseError { line, message: e }))
             .collect();
     }
-    Ok(vec![parse_type(s).map_err(|e| ParseError {
-        line,
-        message: e,
-    })?])
+    Ok(vec![
+        parse_type(s).map_err(|e| ParseError { line, message: e })?
+    ])
 }
 
 /// Parse a single instruction line.
@@ -532,7 +524,7 @@ fn parse_instruction(s: &str, line: usize) -> Result<Instruction, ParseError> {
     if remaining.starts_with('%') {
         // Collect operand tokens until we hit `{` or `:`
         let operand_end = remaining
-            .find(|c: char| c == '{' || c == ':')
+            .find(['{', ':'])
             .unwrap_or(remaining.len());
         let operand_str = remaining[..operand_end].trim();
         remaining = remaining[operand_end..].trim();
@@ -565,10 +557,7 @@ fn parse_instruction(s: &str, line: usize) -> Result<Instruction, ParseError> {
     // Extract result type: `: type`
     let result_type = if let Some(colon) = remaining.strip_prefix(':') {
         let ty_str = colon.trim();
-        Some(parse_type(ty_str).map_err(|e| ParseError {
-            line,
-            message: e,
-        })?)
+        Some(parse_type(ty_str).map_err(|e| ParseError { line, message: e })?)
     } else {
         None
     };

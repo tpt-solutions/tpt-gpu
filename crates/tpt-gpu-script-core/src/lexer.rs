@@ -748,6 +748,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_float_literals() {
         let ks = kinds("3.14 1.0e-5 0.5");
         assert_eq!(ks[0], TokenKind::FloatLit(3.14));

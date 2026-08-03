@@ -127,19 +127,21 @@ ready for inference:
 
 ```bash
 # 1. Download a GGUF from HuggingFace into the shared registry
-tpt-gpu-model-registry fetch \
-    --hf google/gemma-2-2b-it \
-    --format gguf
-# Downloads to ~/.tpt/models/gemma-2-2b-it.gguf and registers the entry.
+./target/release/tpt-gpu-models fetch \
+    --url  https://huggingface.co/google/gemma-2-2b-it-gguf/resolve/main/gemma-2-2b-it-q4_k_m.gguf \
+    --name gemma-2-2b-it-q4 \
+    --arch gemma2 \
+    --size-gb 1.6
+# Downloads to ~/.tpt/models/gemma-2-2b-it-q4_k_m.gguf and registers the entry.
 
 # 2. Convert GGUF → TPTF (imports header metadata and raw tensor bytes)
 tpt-gpu-model-optimizer convert \
-    --input  ~/.tpt/models/gemma-2-2b-it.gguf \
+    --input  ~/.tpt/models/gemma-2-2b-it-q4_k_m.gguf \
     --output gemma2.tptf
 
 # 3. Optimise: sensitivity analysis → mixed-precision quantisation → TPTF output
 tpt-gpu-model-optimizer optimize \
-    --input  gemma2.tptf \
+    gemma2.tptf \
     --output gemma2-opt.tptf
 
 # 4. (Optional) Re-export to GGUF for llama.cpp / other tools

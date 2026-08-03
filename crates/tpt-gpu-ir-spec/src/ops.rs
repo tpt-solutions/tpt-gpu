@@ -173,6 +173,7 @@ impl Op {
     }
 
     /// Parse an op from its stable text-format name.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "addi" => Op::Addi,

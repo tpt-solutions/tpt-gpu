@@ -3,7 +3,7 @@
 //! All activations operate element-by-element over a flat tensor view.
 use crate::error::{TptpError, TptpResult};
 use crate::kernel::{KernelConfig, KernelResult, PrimitiveKernel};
-use crate::memory::{BufferFlags, DType, GpuBuffer, Shape};
+use crate::memory::{BufferFlags, DType, GpuBuffer};
 use crate::vendor::VendorBackend;
 use std::time::Instant;
 
@@ -46,7 +46,9 @@ impl Default for ElementwiseParams {
 
 /// Elementwise activation kernel handle
 pub struct ElementwiseKernel {
+    #[allow(dead_code)]
     config: KernelConfig,
+    #[allow(dead_code)]
     vendor: VendorBackend,
     pub params: ElementwiseParams,
     pub kind: ActivationKind,
@@ -173,6 +175,7 @@ pub fn sigmoid(input: &GpuBuffer<f32>) -> TptpResult<GpuBuffer<f32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::Shape;
 
     fn make_buf(n: usize) -> GpuBuffer<f32> {
         GpuBuffer::<f32>::new(Shape::new(&[n]), DType::F32, BufferFlags::STORAGE).unwrap()

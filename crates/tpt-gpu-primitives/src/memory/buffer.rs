@@ -142,6 +142,7 @@ pub struct GpuBuffer<T: Pod> {
     shape: Shape,
     dtype: DType,
     byte_size: usize,
+    #[allow(dead_code)]
     flags: BufferFlags,
     storage: Vec<u8>,
     _phantom: std::marker::PhantomData<T>,

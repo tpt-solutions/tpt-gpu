@@ -20,7 +20,7 @@ fn tptr(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[pyclass(name = "TptrError", extends = PyRuntimeError)]
+#[pyclass(name = "TptrError", extends = PyRuntimeError, from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyTptrError {
     #[pyo3(get)]
@@ -153,7 +153,7 @@ impl PyDevice {
     }
 }
 
-#[pyclass(name = "MemoryAllocation")]
+#[pyclass(name = "MemoryAllocation", from_py_object)]
 #[derive(Clone)]
 pub struct PyMemoryAllocation {
     inner: MemoryAllocation,
@@ -228,7 +228,7 @@ impl PyKernel {
     }
 }
 
-#[pyclass(name = "KernelConfig")]
+#[pyclass(name = "KernelConfig", from_py_object)]
 #[derive(Clone)]
 pub struct PyKernelConfig {
     inner: KernelConfig,

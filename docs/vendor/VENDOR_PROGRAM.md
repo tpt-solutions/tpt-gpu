@@ -7,7 +7,7 @@ The TPT-GPU Third-Party Hardware Vendor Support Program provides a structured fr
 ## Program Benefits
 
 ### For Hardware Vendors
-- **Market Access**: Integration with TPT-GPU's growing ecosystem of ML frameworks (PyTorch, JAX)
+- **Market Access**: Integration with TPT-GPU's growing ecosystem of ML frameworks (PyTorch; JAX planned)
 - **Performance Optimization**: Access to TPT-GPU's kernel optimization tools and tuning infrastructure
 - **Certification Badge**: Official "TPT-GPU Certified" designation for qualifying hardware
 - **Technical Support**: Direct engineering support from TPT-GPU maintainers
@@ -59,7 +59,7 @@ The TPT-GPU Third-Party Hardware Vendor Support Program provides a structured fr
 ┌─────────────────────────────────────────────────────────────┐
 │                    TPT-GPU Applications                      │
 ├─────────────────────────────────────────────────────────────┤
-│              TPT Script / PyTorch / JAX                      │
+│              TPT Script / PyTorch (JAX planned)               │
 ├─────────────────────────────────────────────────────────────┤
 │                    TPTIR Compiler (Layer 3)                  │
 ├─────────────────────────────────────────────────────────────┤
@@ -198,31 +198,32 @@ impl VendorBackend {
 
 ## Certification Test Suite
 
+All tests live in a single module, `crates/tpt-gpu-vendor-cert/src/tests.rs`, grouped into the three
+entry points used by the CLI:
+
 ### Compatibility Tests
 
-Covered by `run_compatibility_tests` in `crates/tpt-gpu-vendor-cert/src/tests.rs`:
-
-- `test_memory_alloc.rs` - Memory allocation and deallocation
-- `test_kernel_launch.rs` - Basic kernel launch functionality
-- `test_tptir_compile.rs` - TPTIR compilation for core operations
-- `test_data_transfer.rs` - Host-to-device and device-to-host transfers
+`run_compatibility_tests` — backend detection for the requested vendor (via
+`tpt-gpu-primitives::vendor::detect`) plus checks that each primitive (GEMM, attention, Conv2D, Conv3D)
+is supported by the detected backend.
 
 ### Performance Tests
 
-Covered by `run_performance_tests` in `crates/tpt-gpu-vendor-cert/src/tests.rs`:
-
-- `bench_gemm.rs` - GEMM performance benchmark
-- `bench_attention.rs` - Attention performance benchmark
-- `bench_conv2d.rs` - Conv2D performance benchmark
-- `bench_conv3d.rs` - Conv3D performance benchmark
+`run_performance_tests` — for each supported primitive, actually launches the kernel on the detected
+backend and asserts a real elapsed-time measurement was taken. Thresholds are intentionally lenient;
+pass/fail is determined by "the operation ran and produced output", not by an analytical cost model.
 
 ### Correctness Tests
 
-Covered by `run_correctness_tests` in `crates/tpt-gpu-vendor-cert/src/tests.rs`:
+`run_correctness_tests` — for each supported primitive, runs the backend operation against a small
+CPU reference implementation (in `tests.rs`) and compares outputs within a tolerance. The CPU
+references are included so a backend cannot pass by doing nothing: a backend that fabricates success
+fails the numerical comparison.
 
-- `test_gemm_correctness.rs` - GEMM numerical correctness
-- `test_attention_correctness.rs` - Attention numerical correctness
-- `test_conv2d_correctness.rs` - Conv2D numerical correctness
+> Note: certificates awarded from this suite reflect the backend's actual behavior on the
+> submitting vendor's hardware. No backend is certified by default — the tests only pass when a real
+> `tpt-gpu-primitives` vendor backend is detected (`--features cuda` / `rocm` / `metal` / `sim` are
+> passed through to the primitives crate).
 
 ## Vendor Profile Format
 

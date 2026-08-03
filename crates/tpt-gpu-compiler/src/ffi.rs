@@ -19,6 +19,7 @@ pub struct TptirVersion {
     pub patch: u32,
 }
 extern "C" {
+    #[allow(dead_code)]
     fn tptir_get_version() -> TptirVersion;
     fn tptir_compile(
         source: *const c_char,

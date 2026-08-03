@@ -126,7 +126,9 @@ impl FusedGemmParams {
 
 /// Fused GEMM kernel: C = activation(A * B + bias)
 pub struct FusedGemmKernel {
+    #[allow(dead_code)]
     config: KernelConfig,
+    #[allow(dead_code)]
     vendor: VendorBackend,
     pub params: FusedGemmParams,
     pub activation: FusedActivation,
@@ -353,6 +355,7 @@ impl FusedGemmKernel {
     /// Host-side scalar reference for fused GEMM + bias + activation.
     /// `VendorLibrary` has no fused-GEMM entry point, so this crate-local
     /// compute is the only implementation regardless of detected hardware.
+    #[allow(clippy::too_many_arguments)]
     fn tptir_fused_gemm_with_bias(
         &self,
         a: &GpuBuffer<f32>,
@@ -400,6 +403,7 @@ impl FusedGemmKernel {
     }
 
     /// Host-side scalar reference for fused GEMM + activation (no bias).
+    #[allow(clippy::too_many_arguments)]
     fn tptir_fused_gemm(
         &self,
         a: &GpuBuffer<f32>,
@@ -545,11 +549,14 @@ mod tests {
     fn test_fused_gemm_returns_computed_buffer() {
         // A=[[1,0],[0,1]] (identity), B=[[3,4],[5,6]], alpha=1.0, act=None
         // A@B = [[3,4],[5,6]] — verifies the caller-supplied C is returned (computed into).
-        let mut a = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut a =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         a.copy_from_host(&[1.0, 0.0, 0.0, 1.0]).unwrap();
-        let mut b = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut b =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         b.copy_from_host(&[3.0, 4.0, 5.0, 6.0]).unwrap();
-        let mut c = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut c =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         let kernel = FusedGemmKernel::new(FusedActivation::None);
         let out = kernel.execute(&a, &b, Some(&mut c), 1.0).unwrap();
         let mut data = [0f32; 4];
@@ -561,15 +568,21 @@ mod tests {
     fn test_fused_gemm_with_bias_returns_computed_buffer() {
         // A=[[1,0],[0,1]], B=[[2,3],[4,5]], bias=[1,2], alpha=1.0, act=None
         // A@B = [[2,3],[4,5]], + bias = [[3,5],[5,7]]
-        let mut a = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut a =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         a.copy_from_host(&[1.0, 0.0, 0.0, 1.0]).unwrap();
-        let mut b = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut b =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         b.copy_from_host(&[2.0, 3.0, 4.0, 5.0]).unwrap();
-        let mut bias = GpuBuffer::<f32>::new(Shape::dim2(2, 1), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut bias =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 1), DType::F32, BufferFlags::STORAGE).unwrap();
         bias.copy_from_host(&[1.0, 2.0]).unwrap();
-        let mut c = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut c =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         let kernel = FusedGemmKernel::new(FusedActivation::None);
-        let out = kernel.execute_with_bias(&a, &b, &bias, Some(&mut c), 1.0).unwrap();
+        let out = kernel
+            .execute_with_bias(&a, &b, &bias, Some(&mut c), 1.0)
+            .unwrap();
         let mut data = [0f32; 4];
         out.copy_to_host(&mut data).unwrap();
         assert_eq!(data, [3.0, 5.0, 5.0, 7.0]);
@@ -588,9 +601,11 @@ mod tests {
     fn test_fused_gemm_computes_real_product_no_activation() {
         // A = [[1,2],[3,4]], B = [[5,6],[7,8]], alpha=1.0, act=None
         // A@B = [[19,22],[43,50]]
-        let mut a = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut a =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         a.copy_from_host(&[1.0, 2.0, 3.0, 4.0]).unwrap();
-        let mut b = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut b =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         b.copy_from_host(&[5.0, 6.0, 7.0, 8.0]).unwrap();
         let kernel = FusedGemmKernel::new(FusedActivation::None);
         let out = kernel.execute(&a, &b, None, 1.0).unwrap();
@@ -603,9 +618,11 @@ mod tests {
     fn test_fused_gemm_relu_zeros_negatives() {
         // A = [[1,-1],[-1,1]], B = [[1,0],[0,1]] (identity), alpha=1.0, act=Relu
         // A@B = [[1,-1],[-1,1]] → relu → [[1,0],[0,1]]
-        let mut a = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut a =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         a.copy_from_host(&[1.0, -1.0, -1.0, 1.0]).unwrap();
-        let mut b = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut b =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         b.copy_from_host(&[1.0, 0.0, 0.0, 1.0]).unwrap();
         let kernel = FusedGemmKernel::new(FusedActivation::Relu);
         let out = kernel.execute(&a, &b, None, 1.0).unwrap();
@@ -618,11 +635,14 @@ mod tests {
     fn test_fused_gemm_with_bias_computes_real_product() {
         // A = [[1,0],[0,1]], B = [[2,3],[4,5]], bias = [1, 2], alpha=1.0, act=None
         // A@B = [[2,3],[4,5]], + bias = [[3,5],[5,7]]
-        let mut a = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut a =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         a.copy_from_host(&[1.0, 0.0, 0.0, 1.0]).unwrap();
-        let mut b = GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut b =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 2), DType::F32, BufferFlags::STORAGE).unwrap();
         b.copy_from_host(&[2.0, 3.0, 4.0, 5.0]).unwrap();
-        let mut bias = GpuBuffer::<f32>::new(Shape::dim2(2, 1), DType::F32, BufferFlags::STORAGE).unwrap();
+        let mut bias =
+            GpuBuffer::<f32>::new(Shape::dim2(2, 1), DType::F32, BufferFlags::STORAGE).unwrap();
         bias.copy_from_host(&[1.0, 2.0]).unwrap();
         let kernel = FusedGemmKernel::new(FusedActivation::None);
         let out = kernel.execute_with_bias(&a, &b, &bias, None, 1.0).unwrap();

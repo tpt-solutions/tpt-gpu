@@ -145,6 +145,7 @@ The TPTIR text format uses `^label:` blocks. TPTIR emitted by layer7 feeds direc
 - **`arch.rs`** — Architecture template dispatch: maps GGUF `general.architecture` → `ArchTemplate` (sequence of `ForwardOp`s); add new model support by adding one function + one match arm
 - **`inference.rs`** — `LlmInference` trait + `GpuInferenceEngine` implementation; routes forward-pass ops through layer5 kernel handles; vendor selection (`VendorBackend::detect()`: CUDA → ROCm → Metal → TPTIR) is resolved at the `layer5_tptp::vendor` level — `Device::new_cuda()` exists at `layer4_tptr` but `Device::new_rocm()`/`Device::new_metal()` do not
 - **`kv_cache.rs`** — `KvCache`: sliding-window host-side K/V cache per transformer layer; drops oldest token on overflow for indefinite-length decoding
+- **`rope.rs`** — `RopeConfig` per-architecture presets (`llama`, `llama3`, `mistral`, `qwen2`, `phi3`, `gemma2`: head_dim/base/max_seq_len) plus the rotary position embedding application used by `inference.rs`
 
 Python bindings (`crates/tpt-gpu-runtime-py`) wrap these via PyO3: `Device`, `Memory`, `Queue`, `Kernel`.
 
@@ -157,9 +158,11 @@ Python bindings (`crates/tpt-gpu-runtime-py`) wrap these via PyO3: `Device`, `Me
 | `tpt-gpu-bench` | `crates/tpt-gpu-bench` | Benchmark harness for primitives and kernels |
 | `tpt-gpu-kernelgen` | `crates/tpt-gpu-kernelgen` | AI-assisted kernel generation (spec → TPTIR → validate → bench) |
 | `tpt-gpu-kernel-optimizer` | `crates/tpt-gpu-kernel-optimizer` | Auto-tuning: grid search → hill-climb → AI-guided |
+| `tpt-gpu-model-optimizer` | `crates/tpt-gpu-model-optimizer` | GGUF→TPTF import/conversion (`GgufImporter`), pruning, quantization allocation, calibration |
 | `tpt-gpu-model-registry` | `crates/tpt-gpu-model-registry` | Shared GGUF model registry (`~/.tpt/models/`); `ModelRegistry::open()`, HuggingFace download via `hf.rs` |
 | `tpt-gpu-playground` | `crates/tpt-gpu-playground` | Interactive TPT Script playground |
 | `tpt-gpu-vendor-cert` | `crates/tpt-gpu-vendor-cert` | Vendor certification harness |
+| `tpt-gpu-doctor` | `crates/tpt-gpu-doctor` | Environment health check — mirrors CI's Rust toolchain/fmt/clippy gates plus optional vendor SDK + Python detection; `--pre-commit`/`--fast` flags |
 
 The `tpt-gpu-model-registry` crate is shared across tpt-gpu, tpt-spark, and tpt-crucible. Models are downloaded once to `~/.tpt/models/` and never duplicated. See `MODELS_REGISTRY.md` for the manifest format.
 
@@ -167,13 +170,14 @@ The `tpt-gpu-model-registry` crate is shared across tpt-gpu, tpt-spark, and tpt-
 
 ## Crates
 
-All 21 crates live in `crates/<package-name>/` as members of the single root workspace:
+All 22 crates live in `crates/<package-name>/` as members of the single root workspace:
 
 | Crate | Location |
 |-------|----------|
 | `tpt-gpu-bench` | `crates/tpt-gpu-bench` |
 | `tpt-gpu-compiler` (TPTIR Rust port) | `crates/tpt-gpu-compiler` |
 | `tpt-gpu-dispatch` | `crates/tpt-gpu-dispatch` |
+| `tpt-gpu-doctor` | `crates/tpt-gpu-doctor` |
 | `tpt-gpu-driver-daemon` | `crates/tpt-gpu-driver-daemon` |
 | `tpt-gpu-ir-spec` | `crates/tpt-gpu-ir-spec` |
 | `tpt-gpu-kernel-optimizer` | `crates/tpt-gpu-kernel-optimizer` |

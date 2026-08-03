@@ -1,8 +1,8 @@
 [package]
 name = "tpt-gpu-script-core"
-version = "1.0.0"
+version.workspace = true
 edition.workspace = true
-authors = ["TPT GPU Contributors"]
+authors.workspace = true
 description = "TPT Script compiler frontend -- lexer, AST, and parser"
 license.workspace = true
 repository.workspace = true

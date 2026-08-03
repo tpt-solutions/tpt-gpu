@@ -24,7 +24,7 @@ TPT GPU is an open-source, hardware-agnostic GPU compute platform designed from 
 2. **AI-Native Language**: TPT Script is designed for LLMs to reason about easily
 3. **Hardware Agnostic**: Works across vendors (NVIDIA, AMD, Intel, custom silicon)
 4. **Rust Core**: Memory-safe runtime and compiler
-5. **Python Ecosystem**: Seamless PyTorch and JAX integration
+5. **Python Ecosystem**: Seamless PyTorch integration (JAX planned)
 
 ### Architecture Overview
 
@@ -32,7 +32,7 @@ TPT GPU is an open-source, hardware-agnostic GPU compute platform designed from 
 ┌─────────────────────────────────────────────────────────────────┐
 │  Layer 7: TPT Script — AI-native GPU language (Rust)           │
 ├─────────────────────────────────────────────────────────────────┤
-│  Layer 6: Framework Backends — PyTorch, JAX (Python + Rust)     │
+│  Layer 6: Framework Backends — PyTorch (JAX planned) (Python + Rust) │
 ├─────────────────────────────────────────────────────────────────┤
 │  Layer 5: TPT Primitives — GEMM, Attention, Conv2D             │
 ├─────────────────────────────────────────────────────────────────┤

@@ -12,9 +12,21 @@ Runnable, end-to-end starting points, organized by what you're trying to do. Eac
 | Full supervised training loop | [`layer7_tptb/examples/04_training_loop.tpts`](../layer7_tptb/examples/04_training_loop.tpts) |
 | FSDP across 8 GPUs | [`layer7_tptb/examples/distributed/fsdp_8gpu.tpts`](../layer7_tptb/examples/distributed/fsdp_8gpu.tpts) |
 | Pipeline parallelism (4 stages) | [`layer7_tptb/examples/distributed/pipeline_parallel.tpts`](../layer7_tptb/examples/distributed/pipeline_parallel.tpts) |
-| Try it live in the browser, no install | [`crates/tpt-gpu-playground/`](../crates/tpt-gpu-playground/) |
+| Try it in the browser | Hosted at [`tpt-solutions.github.io/tpt-gpu/playground/`](https://tpt-solutions.github.io/tpt-gpu/playground/), or run a local WASM build from [`crates/tpt-gpu-playground/`](../crates/tpt-gpu-playground/) |
 
 Run any `.tpts` example with `tpt check <file>` then `tpt compile <file> -o out/` — see [`layer7_tptb/examples/README.md`](../layer7_tptb/examples/README.md).
+
+## No GPU? CPU fallback works
+
+All layers run without GPU hardware, so you can develop, test, and validate before bringing up silicon:
+
+| Need | How |
+|---|---|
+| Run every primitive kernel on CPU | `cargo build -p tpt-gpu-primitives --features sim` — scalar fallbacks for GEMM, Attention, Conv2D/3D, norm layers, verified by the same correctness tests as the accelerated paths |
+| Check that the fallback path is correct | `cargo test -p tpt-gpu-primitives --features sim` |
+| Run LLM inference without a GPU | `GpuInferenceEngine` routes CUDA → ROCm → Metal → TPTIR/CPU fallback automatically; the full pipeline (arch templates, KV cache, RoPE) runs on the fallback kernels |
+| Check your environment is ready | `cargo run -p tpt-gpu-doctor` — reports PASS/FAIL/WARN for toolchain, fmt/clippy gates, and vendor SDKs |
+| Try the Python API on CPU | `tptr` imports without a GPU; the layer6 suite (122 passing) exercises the CPU path |
 
 ## Call TPT GPU from Python / PyTorch / JAX
 
@@ -22,7 +34,7 @@ Run any `.tpts` example with `tpt check <file>` then `tpt compile <file> -o out/
 |---|---|
 | Basic Python API usage (`tptr` package) | [`layer6_framework/examples/basic_usage.py`](../layer6_framework/examples/basic_usage.py) |
 | Interop with existing PyTorch code | [`layer6_framework/examples/pytorch_interop.py`](../layer6_framework/examples/pytorch_interop.py) |
-| Interop with JAX | [`layer6_framework/examples/jax_interop.py`](../layer6_framework/examples/jax_interop.py) |
+| JAX interop (planned — prints a not-implemented notice) | [`layer6_framework/examples/jax_interop.py`](../layer6_framework/examples/jax_interop.py) |
 
 See also tutorials [9 (Python API)](tutorials/09_python_api.md) and [10 (PyTorch Integration)](tutorials/10_pytorch_integration.md).
 

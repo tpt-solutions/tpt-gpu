@@ -7,7 +7,7 @@
 //! - Block terminators are valid
 //! - Operations have correct operand counts
 
-use crate::ir::{AddressSpace, Block, OpKind, Operation, Region, Type, Value};
+use crate::ir::{OpKind, Region};
 
 /// Validation error type.
 #[derive(Debug, Clone, PartialEq)]

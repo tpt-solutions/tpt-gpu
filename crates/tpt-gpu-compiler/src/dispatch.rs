@@ -3,7 +3,7 @@
 //! Manages multiple kernel variants and selects the best one based on
 //! the dispatch table (`tuning/dispatch_table.json`).
 
-use crate::ir::{ElemType, GeneratedKernel, KernelVariant, KERNEL_TEMPLATES};
+use crate::ir::{ElemType, KernelVariant, KERNEL_TEMPLATES};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -26,6 +26,12 @@ pub struct DispatchEntry {
 pub struct DispatchTable {
     pub entries: HashMap<String, DispatchEntry>,
     pub version: String,
+}
+
+impl Default for DispatchTable {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DispatchTable {

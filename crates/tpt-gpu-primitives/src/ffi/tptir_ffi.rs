@@ -4,8 +4,6 @@
 //! Without it (default / `sim` mode) a stub implementation is used so the
 //! crate links and tests run without a built tptc C library.
 
-use crate::error::{TptpError, TptpResult};
-
 // ---------------------------------------------------------------------------
 // Real FFI — only compiled when the tptc C library is available
 // ---------------------------------------------------------------------------

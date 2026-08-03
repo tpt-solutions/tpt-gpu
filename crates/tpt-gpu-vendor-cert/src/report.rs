@@ -90,7 +90,7 @@ pub fn generate_report(
                 && correct_summary.success_rate >= 0.95
                 && perf_summary
                     .as_ref()
-                    .map_or(false, |p| p.success_rate >= 0.8)
+                    .is_some_and(|p| p.success_rate >= 0.8)
         }
         3 => {
             // Tier 3: 95% compatibility, 99% correctness, 90% performance
@@ -98,7 +98,7 @@ pub fn generate_report(
                 && correct_summary.success_rate >= 0.99
                 && perf_summary
                     .as_ref()
-                    .map_or(false, |p| p.success_rate >= 0.9)
+                    .is_some_and(|p| p.success_rate >= 0.9)
         }
         _ => false,
     };

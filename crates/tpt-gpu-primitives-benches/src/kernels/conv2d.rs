@@ -75,11 +75,11 @@ impl KernelBench for Conv2DBench {
         let c_out = shape[3];
         let k = shape[4];
         // Input (NCHW) + Filter (KCRS) + Output
-        let input_size = 1 * c_in * h * w;
+        let input_size = c_in * h * w;
         let filter_size = c_out * c_in * k * k;
         let h_out = h - k + 1;
         let w_out = w - k + 1;
-        let output_size = 1 * c_out * h_out * w_out;
+        let output_size = c_out * h_out * w_out;
         (input_size + filter_size + output_size) * std::mem::size_of::<f32>()
     }
 

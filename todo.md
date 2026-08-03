@@ -48,7 +48,7 @@
 ### Layer 6 — Framework Backends (Python + Rust)
 - [x] Python thin wrapper over Rust runtime (tptr)
 - [x] PyTorch dispatch layer (Python)
-- [x] JAX integration (Python)
+- [ ] JAX integration (Python) — NOT IMPLEMENTED; `layer6_framework/tptr/jax/__init__.py` is honest stubs (`is_available()` → `False`, other calls raise `NotImplementedError`); tests marked skip
 - [x] Performance-critical dispatch paths (Rust)
 
 ---
@@ -102,7 +102,7 @@
 ## Phase 3 (Months 4–6): Framework Integration & TPT Script Beta
 
 - [x] Complete PyTorch backend integration
-- [x] Complete JAX backend integration
+- [ ] Complete JAX backend integration — NOT IMPLEMENTED (see Layer 6 note); PyTorch only
 - [x] Hugging Face integration (model loading / inference)
 - [x] TPT Script beta release (advanced external users)
 - [x] Distributed training examples (FSDP strategy, 8-GPU)
@@ -342,7 +342,7 @@
 ### Further ideas (not scheduled — for future consideration)
 - [x] Add a CI job for Python/pytest (`layer6_framework`) — would have caught the JAX gap (Priority 2) automatically; also consider RTL sim (layer1) and driver build (layer2) CI jobs
 - [x] Clean up stale duplicate `layer2_driver/` tree and stray root files (`fix_claude.py`, `fix_lib.py`, `fix_ops.py`, `harness.rs`, `tpt_bench_quick_output.txt`); todo backup files preserved as history
-- [ ] Consider a hosted (zero-install) version of `tpt-gpu-playground` (currently requires a local `wasm-pack` build + static server)
+- [x] Consider a hosted (zero-install) version of `tpt-gpu-playground` (currently requires a local `wasm-pack` build + static server) — `docs.yml` now builds the WASM and deploys it to `https://tpt-solutions.github.io/tpt-gpu/playground/`
 - [x] `PrimitiveKernel::output_shape()`/`input_shapes()` removed from trait and all implementations (never called; shapes are dynamic)
 
 ---
@@ -413,12 +413,12 @@
 - [x] `README.md` still says "Pull requests are not accepted at this time" while `.github/PULL_REQUEST_TEMPLATE.md` exists and CI runs on `pull_request`; still no `CONTRIBUTING.md`
 - [x] No docs-deployment workflow (mkdocs/GitHub Pages) despite 17+ tutorials and multiple specs
 - [x] No lint/type-check (ruff/mypy) or coverage reporting for `layer6_framework` Python package
-- [ ] `crates/tpt-gpu-playground` still requires local `wasm-pack build` + manual static server despite root `README.md` marketing it as "no install required" — no hosted/`gh-pages` WASM build exists
+- [x] `crates/tpt-gpu-playground` still requires local `wasm-pack build` + manual static server despite root `README.md` marketing it as "no install required" — no hosted/`gh-pages` WASM build exists (root README claim fixed; hosted build added in `docs.yml`)
 - [x] No pre-commit hooks, devcontainer, or `tpt-gpu doctor`-style health-check command mirroring CI's `fmt --check` + `clippy -D warnings` locally
 - [x] Docs/tutorials all invoke the CLI as `tpt`, but the compiled binary is `tpt-gpu-script` — no doc mentions creating an alias
 
 ### Further ideas (not scheduled — for future consideration)
-- [ ] Once Priority 1 lands, promote the CPU fallback as a genuine "try TPT GPU with zero GPU required" story in docs/marketing
+- [x] Once Priority 1 lands, promote the CPU fallback as a genuine "try TPT GPU with zero GPU required" story in docs/marketing (done: README "No GPU? CPU Fallback Works" + `docs/use-cases.md` section)
 - [x] GGUF→TPTF importer would make `model-optimizer` end-to-end usable from a fresh HF download — the tool's core value proposition
-- [ ] `tpt-gpu doctor` command: checks Rust version, optional CUDA/ROCm SDK presence, Python venv state, and runs the same fmt/clippy checks CI does; doubles as a pre-commit hook
-- [ ] Wire `cargo-deny`/`cargo-audit` into CI plus Dependabot for cheap dependency-hygiene coverage
+- [x] `tpt-gpu doctor` command: checks Rust version, optional CUDA/ROCm SDK presence, Python venv state, and runs the same fmt/clippy checks CI does; doubles as a pre-commit hook (implemented as `crates/tpt-gpu-doctor`; `--pre-commit`/`--fast` flags; README tools entry)
+- [x] Wire `cargo-deny`/`cargo-audit` into CI plus Dependabot for cheap dependency-hygiene coverage (done: `security.yml` runs both; `dependabot.yml` watches cargo + github-actions)

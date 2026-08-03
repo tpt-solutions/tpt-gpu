@@ -124,6 +124,7 @@ impl<'a> Reader<'a> {
         Ok(slice)
     }
 
+    #[allow(dead_code)]
     fn read_u8(&mut self) -> Result<u8> {
         Ok(self.read_bytes(1)?[0])
     }
@@ -181,17 +182,17 @@ fn ggml_tensor_bytes(ty: u32, n_elements: u64) -> u64 {
         ggml_type::F32 => n_elements * 4,
         ggml_type::F16 => n_elements * 2,
         // Q4_0 — 32 elements / block, 18 bytes / block
-        ggml_type::Q4_0 => ((n_elements + 31) / 32) * 18,
+        ggml_type::Q4_0 => n_elements.div_ceil(32) * 18,
         // Q4_1 — 32 elements / block, 20 bytes / block
-        ggml_type::Q4_1 => ((n_elements + 31) / 32) * 20,
+        ggml_type::Q4_1 => n_elements.div_ceil(32) * 20,
         // Q8_0 — 32 elements / block, 34 bytes / block
-        ggml_type::Q8_0 => ((n_elements + 31) / 32) * 34,
+        ggml_type::Q8_0 => n_elements.div_ceil(32) * 34,
         // K-quants — 256 elements / block
-        ggml_type::Q2_K => ((n_elements + 255) / 256) * 84,
-        ggml_type::Q3_K => ((n_elements + 255) / 256) * 110,
-        ggml_type::Q4_K => ((n_elements + 255) / 256) * 144,
-        ggml_type::Q5_K => ((n_elements + 255) / 256) * 176,
-        ggml_type::Q6_K => ((n_elements + 255) / 256) * 210,
+        ggml_type::Q2_K => n_elements.div_ceil(256) * 84,
+        ggml_type::Q3_K => n_elements.div_ceil(256) * 110,
+        ggml_type::Q4_K => n_elements.div_ceil(256) * 144,
+        ggml_type::Q5_K => n_elements.div_ceil(256) * 176,
+        ggml_type::Q6_K => n_elements.div_ceil(256) * 210,
         _ => n_elements * 4, // conservative fallback: treat as F32
     }
 }
@@ -281,12 +282,10 @@ impl GgufImporter {
     /// unknown KV types are skipped with a warning so that future GGUF
     /// extensions do not break import.
     pub fn import(path: &Path) -> Result<GgufModel> {
-        let file =
-            File::open(path).with_context(|| format!("cannot open GGUF file {path:?}"))?;
+        let file = File::open(path).with_context(|| format!("cannot open GGUF file {path:?}"))?;
         // SAFETY: we hold the File open for the lifetime of `mmap`, the mapping
         // is read-only, and we never mutate the underlying bytes.
-        let mmap =
-            unsafe { Mmap::map(&file) }.with_context(|| format!("cannot mmap {path:?}"))?;
+        let mmap = unsafe { Mmap::map(&file) }.with_context(|| format!("cannot mmap {path:?}"))?;
         let data: &[u8] = &mmap;
 
         let mut r = Reader::new(data);
@@ -298,7 +297,7 @@ impl GgufImporter {
         }
 
         let version = r.read_u32_le()?;
-        if version < 2 || version > 3 {
+        if !(2..=3).contains(&version) {
             bail!("unsupported GGUF version {version} — only v2 and v3 are supported");
         }
 
@@ -431,11 +430,9 @@ impl GgufImporter {
 
         // --- Tensor data section start (alignment-padded) ---
         let after_info = r.pos as u64;
-        let data_start: u64 = if alignment > 0 {
-            (after_info + alignment - 1) / alignment * alignment
-        } else {
-            after_info
-        };
+        let data_start: u64 = (after_info + alignment - 1)
+            .checked_div(alignment)
+            .map_or(after_info, |blocks| blocks * alignment);
 
         // --- Derive per_layer_bits from the dominant dtype per block ---
         let mut per_layer_bits = [0u8; 128];
@@ -447,9 +444,9 @@ impl GgufImporter {
             }
         }
         // Fill any layers that had no weight tensors with a 4-bit default.
-        for i in 0..(num_layers as usize).min(128) {
-            if per_layer_bits[i] == 0 {
-                per_layer_bits[i] = 4;
+        for bits in per_layer_bits.iter_mut().take((num_layers as usize).min(128)) {
+            if *bits == 0 {
+                *bits = 4;
             }
         }
 
@@ -558,12 +555,7 @@ mod tests {
     ///
     /// Each tensor has shape `[4, 2]` (8 elements = 32 bytes of F32 data).
     /// Tensor names follow the "blk.<i>.ffn_gate" convention.
-    fn build_gguf(
-        version: u32,
-        arch: &str,
-        num_layers: u32,
-        tensor_count: u64,
-    ) -> Vec<u8> {
+    fn build_gguf(version: u32, arch: &str, num_layers: u32, tensor_count: u64) -> Vec<u8> {
         let mut buf: Vec<u8> = Vec::new();
 
         // Magic + version
@@ -595,12 +587,12 @@ mod tests {
         let alignment: usize = 32;
         let rem = buf.len() % alignment;
         if rem != 0 {
-            buf.extend(std::iter::repeat(0u8).take(alignment - rem));
+            buf.extend(std::iter::repeat_n(0u8, alignment - rem));
         }
 
         // Tensor data — all zeros, one block of `tensor_bytes_each` per tensor.
         for _ in 0..tensor_count {
-            buf.extend(std::iter::repeat(0u8).take(tensor_bytes_each as usize));
+            buf.extend(std::iter::repeat_n(0u8, tensor_bytes_each as usize));
         }
 
         buf
@@ -693,7 +685,10 @@ mod tests {
         // write_tptf must succeed
         let mut out = Cursor::new(Vec::<u8>::new());
         model.write_tptf(&mut out).unwrap();
-        assert!(out.into_inner().len() >= 512, "TPTF output must be at least 512 bytes");
+        assert!(
+            out.into_inner().len() >= 512,
+            "TPTF output must be at least 512 bytes"
+        );
 
         let _ = std::fs::remove_file(p);
     }

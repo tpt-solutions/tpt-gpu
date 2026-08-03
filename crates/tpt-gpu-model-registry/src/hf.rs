@@ -34,8 +34,8 @@ pub struct HfDownload {
 
 /// Compute the SHA-256 hex digest of a file on disk.
 fn sha256_of(path: &std::path::Path) -> Result<String> {
-    let mut file = File::open(path)
-        .with_context(|| format!("cannot open {} for hashing", path.display()))?;
+    let mut file =
+        File::open(path).with_context(|| format!("cannot open {} for hashing", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
@@ -81,7 +81,7 @@ pub fn download(registry: &mut ModelRegistry, params: HfDownload) -> Result<Path
     let filename = params
         .url
         .split('/')
-        .last()
+        .next_back()
         .unwrap_or("model.gguf")
         .to_string();
 
@@ -92,8 +92,8 @@ pub fn download(registry: &mut ModelRegistry, params: HfDownload) -> Result<Path
         .with_context(|| format!("GET {} failed", params.url))?;
     let mut reader = resp.into_reader();
 
-    let mut file = File::create(&dest)
-        .with_context(|| format!("cannot create {}", dest.display()))?;
+    let mut file =
+        File::create(&dest).with_context(|| format!("cannot create {}", dest.display()))?;
     copy(&mut reader, &mut file)
         .with_context(|| format!("failed while streaming to {}", dest.display()))?;
     drop(file);

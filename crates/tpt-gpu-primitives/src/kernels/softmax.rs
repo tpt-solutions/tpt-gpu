@@ -3,7 +3,7 @@
 //! Numerically stable; softmax is applied over the specified axis (default: last).
 use crate::error::{TptpError, TptpResult};
 use crate::kernel::{KernelConfig, KernelResult, PrimitiveKernel};
-use crate::memory::{BufferFlags, DType, GpuBuffer, Shape};
+use crate::memory::{BufferFlags, DType, GpuBuffer};
 use crate::vendor::VendorBackend;
 use std::time::Instant;
 
@@ -27,9 +27,17 @@ impl Default for SoftmaxParams {
 
 /// Softmax kernel handle
 pub struct SoftmaxKernel {
+    #[allow(dead_code)]
     config: KernelConfig,
+    #[allow(dead_code)]
     vendor: VendorBackend,
     pub params: SoftmaxParams,
+}
+
+impl Default for SoftmaxKernel {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SoftmaxKernel {
@@ -172,6 +180,7 @@ pub fn softmax_dim(input: &GpuBuffer<f32>, dim: i32) -> TptpResult<GpuBuffer<f32
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::Shape;
 
     #[test]
     fn test_softmax_valid_2d() {

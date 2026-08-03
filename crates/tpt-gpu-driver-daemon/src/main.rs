@@ -7,9 +7,12 @@
 //   sudo tptd [--device <PCI DBDF>] [--socket /run/tptd.sock]
 //   e.g.: sudo tptd --device 0000:03:00.0
 
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::sync::Arc;
 
+#[cfg(unix)]
 use anyhow::{Context, Result};
 
 #[cfg(unix)]
@@ -90,7 +93,7 @@ async fn main() -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn main() -> Result<()> {
+fn main() {
     eprintln!("tpt-gpu-driver-daemon is only supported on Linux");
     std::process::exit(1)
 }

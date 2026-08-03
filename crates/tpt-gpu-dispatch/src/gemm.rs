@@ -1,6 +1,7 @@
 // GEMM dispatch — routes to hardware or pure-Rust fallback.
 
 /// Compute alpha * A @ B + beta * C and return the (M×N) result.
+#[allow(clippy::too_many_arguments)]
 pub fn dispatch(
     a: &[f32],
     b: &[f32],
@@ -21,6 +22,7 @@ pub fn dispatch(
 }
 
 /// Pure-Rust GEMM (row-major, no SIMD — correctness reference).
+#[allow(clippy::too_many_arguments)]
 pub fn fallback_gemm(
     a: &[f32],
     b: &[f32],

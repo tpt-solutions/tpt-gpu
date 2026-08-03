@@ -10,7 +10,7 @@
 use crate::tptf_format::{read_header, read_tensor_blocks, TensorBlock, TptfHeader};
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Seek, Write};
 use std::path::Path;
 
 /// Configuration for EXL2 export.
@@ -178,17 +178,6 @@ fn arch_to_class(arch: &str) -> &'static str {
         "gemma" => "GemmaForCausalLM",
         "phi3" => "Phi3ForCausalLM",
         _ => "LlamaForCausalLM",
-    }
-}
-
-/// Helper extension for alignment
-trait AlignExt {
-    fn next_multiple_of(self, align: usize) -> usize;
-}
-
-impl AlignExt for usize {
-    fn next_multiple_of(self, align: usize) -> usize {
-        ((self + align - 1) / align) * align
     }
 }
 

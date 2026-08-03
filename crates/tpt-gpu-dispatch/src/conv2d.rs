@@ -1,6 +1,7 @@
 // Conv2d dispatch — 2-D convolution (NCHW layout).
 
 /// Dispatch conv2d — NCHW × OIHW → NCHW
+#[allow(clippy::too_many_arguments)]
 pub fn dispatch(
     x: &[f32],
     weight: &[f32],
@@ -25,6 +26,7 @@ pub fn dispatch(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn fallback_conv2d(
     x: &[f32],
     weight: &[f32],

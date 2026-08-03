@@ -8,23 +8,34 @@
 use super::VendorLibrary;
 use crate::error::{TptpError, TptpResult};
 use crate::memory::GpuBuffer;
-use crate::sym;
 use crate::vendor::dynlink::Library;
 use std::sync::Arc;
 
+#[allow(non_camel_case_types)]
 type hipError_t = i32;
+#[allow(non_camel_case_types)]
 type hipDevice_t = i32;
+#[allow(non_camel_case_types)]
+#[allow(dead_code)]
 type hipStream_t = *mut std::ffi::c_void;
+#[allow(non_camel_case_types)]
 type hipDeviceptr_t = u64;
+#[allow(non_camel_case_types)]
 type rocblas_handle = *mut std::ffi::c_void;
+#[allow(non_camel_case_types)]
 type rocblas_status = i32;
+#[allow(non_camel_case_types)]
 type rocblas_operation = i32;
 
+#[allow(dead_code)]
 const HIP_SUCCESS: hipError_t = 0;
+#[allow(dead_code)]
 const ROCBLAS_STATUS_SUCCESS: rocblas_status = 0;
+#[allow(dead_code)]
 const ROCBLAS_OPERATION_NONE: rocblas_operation = 0;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct RocmSymbols {
     lib_hip: Arc<Library>,
     lib_rocblas: Arc<Library>,
@@ -204,6 +215,7 @@ impl RocmBackend {
         &self.device_name
     }
 
+    #[allow(dead_code)]
     fn stage_in(&self, data: &[f32], ptr: &mut hipDeviceptr_t) -> TptpResult<()> {
         let bytes = bytemuck::cast_slice::<f32, u8>(data);
         if unsafe { (self.syms.hip_malloc)(ptr, bytes.len()) } != HIP_SUCCESS {
@@ -222,6 +234,7 @@ impl RocmBackend {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn stage_out(&self, ptr: hipDeviceptr_t, data: &mut [f32]) -> TptpResult<()> {
         let bytes = bytemuck::cast_slice_mut::<f32, u8>(data);
         if unsafe {
@@ -249,6 +262,7 @@ impl Drop for RocmBackend {
     }
 }
 
+#[allow(dead_code)]
 fn read_f32(buf: &GpuBuffer<f32>) -> TptpResult<Vec<f32>> {
     let mut data = vec![0f32; buf.num_elements()];
     buf.copy_to_host(&mut data)?;

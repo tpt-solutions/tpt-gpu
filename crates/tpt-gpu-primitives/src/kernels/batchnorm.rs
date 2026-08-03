@@ -30,9 +30,17 @@ impl Default for BatchNormParams {
 
 /// Batch normalization kernel handle
 pub struct BatchNormKernel {
+    #[allow(dead_code)]
     config: KernelConfig,
+    #[allow(dead_code)]
     vendor: VendorBackend,
     pub params: BatchNormParams,
+}
+
+impl Default for BatchNormKernel {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BatchNormKernel {

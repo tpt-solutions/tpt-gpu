@@ -100,12 +100,8 @@ impl QuantGemmKernel {
             .ok_or_else(|| TptpError::shape_error("B has no dim 1"))?;
 
         let pack_factor = (8usize / self.params.bits.max(1) as usize).max(1);
-        let packed_cols = (k + pack_factor - 1) / pack_factor;
-        let m = if packed_cols > 0 {
-            a_packed.num_elements() / packed_cols
-        } else {
-            0
-        };
+        let packed_cols = k.div_ceil(pack_factor);
+        let m = a_packed.num_elements() / packed_cols;
 
         if m == 0 {
             return Err(TptpError::shape_error(
@@ -136,6 +132,7 @@ impl QuantGemmKernel {
     }
 
     /// Host-side fallback: unpack weights to f32, then scalar GEMM.
+    #[allow(clippy::too_many_arguments)]
     fn tptir_fallback(
         &self,
         a_packed: &GpuBuffer<i8>,
@@ -159,8 +156,8 @@ impl QuantGemmKernel {
         let mut zp_raw = vec![0i8; zpoints.num_elements()];
         let _ = zpoints.copy_to_host(&mut zp_raw);
 
-        let packed_cols = (k + pack_factor - 1) / pack_factor;
-        let groups_per_row = (k + group_size - 1) / group_size;
+        let packed_cols = k.div_ceil(pack_factor);
+        let groups_per_row = k.div_ceil(group_size);
 
         // Unpack A weights and dequantize to f32
         let mut a_f32 = vec![0.0f32; m * k];

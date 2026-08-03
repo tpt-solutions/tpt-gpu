@@ -78,8 +78,11 @@ impl Command {
 struct CommandEntry {
     id: u64,
     command: Command,
+    #[allow(dead_code)]
     priority: QueuePriority,
+    #[allow(dead_code)]
     submit_time: Instant,
+    #[allow(dead_code)]
     status: CommandStatus,
 }
 
@@ -191,6 +194,12 @@ impl CommandQueue {
 pub struct CommandScheduler {
     queues: HashMap<QueueHandle, CommandQueue>,
     next_queue_id: AtomicU64,
+}
+
+impl Default for CommandScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CommandScheduler {

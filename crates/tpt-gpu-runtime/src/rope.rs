@@ -30,32 +30,56 @@ pub struct RopeConfig {
 impl RopeConfig {
     /// LLaMA 1/2 defaults (7B–65B family).
     pub fn llama() -> Self {
-        Self { head_dim: 128, base: 10_000.0, max_seq_len: 4096 }
+        Self {
+            head_dim: 128,
+            base: 10_000.0,
+            max_seq_len: 4096,
+        }
     }
 
     /// LLaMA 3 defaults (extended context with higher base frequency).
     pub fn llama3() -> Self {
-        Self { head_dim: 128, base: 500_000.0, max_seq_len: 8192 }
+        Self {
+            head_dim: 128,
+            base: 500_000.0,
+            max_seq_len: 8192,
+        }
     }
 
     /// Mistral 7B defaults.
     pub fn mistral() -> Self {
-        Self { head_dim: 128, base: 10_000.0, max_seq_len: 32768 }
+        Self {
+            head_dim: 128,
+            base: 10_000.0,
+            max_seq_len: 32768,
+        }
     }
 
     /// Qwen2 defaults (very high base for extended context).
     pub fn qwen2() -> Self {
-        Self { head_dim: 128, base: 1_000_000.0, max_seq_len: 32768 }
+        Self {
+            head_dim: 128,
+            base: 1_000_000.0,
+            max_seq_len: 32768,
+        }
     }
 
     /// Phi-3 defaults (smaller head_dim than the LLaMA family).
     pub fn phi3() -> Self {
-        Self { head_dim: 96, base: 10_000.0, max_seq_len: 4096 }
+        Self {
+            head_dim: 96,
+            base: 10_000.0,
+            max_seq_len: 4096,
+        }
     }
 
     /// Gemma 2 defaults.
     pub fn gemma2() -> Self {
-        Self { head_dim: 256, base: 10_000.0, max_seq_len: 8192 }
+        Self {
+            head_dim: 256,
+            base: 10_000.0,
+            max_seq_len: 8192,
+        }
     }
 }
 
@@ -150,7 +174,11 @@ mod tests {
     ///   `k' = [−sin(1), cos(1)]`
     #[test]
     fn test_rope_rotates_pos_1() {
-        let cfg = RopeConfig { head_dim: 2, base: 10_000.0, max_seq_len: 4096 };
+        let cfg = RopeConfig {
+            head_dim: 2,
+            base: 10_000.0,
+            max_seq_len: 4096,
+        };
         let mut q = vec![1.0f32, 0.0];
         let mut k = vec![0.0f32, 1.0];
 
@@ -188,7 +216,11 @@ mod tests {
     /// We use the `pub(crate)` `rotate_slice` helper to pass a negative position.
     #[test]
     fn test_rope_round_trip() {
-        let cfg = RopeConfig { head_dim: 4, base: 10_000.0, max_seq_len: 4096 };
+        let cfg = RopeConfig {
+            head_dim: 4,
+            base: 10_000.0,
+            max_seq_len: 4096,
+        };
         let original = vec![1.0f32, 2.0, 3.0, 4.0];
         let mut q = original.clone();
         let mut k = original.clone();

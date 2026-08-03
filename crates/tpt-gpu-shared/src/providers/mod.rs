@@ -129,7 +129,7 @@ impl ProviderFactory {
     }
 
     /// Create a provider with explicit configuration
-    pub fn Claude(api_key: impl Into<String>) -> ClaudeProvider {
+    pub fn claude(api_key: impl Into<String>) -> ClaudeProvider {
         ClaudeProvider::new(api_key)
     }
 

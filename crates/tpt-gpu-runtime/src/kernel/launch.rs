@@ -165,6 +165,7 @@ impl KernelHandle {
             std::hint::spin_loop();
         }
     }
+    #[allow(dead_code)]
     pub(crate) fn set_running(&self) {
         self.state.store(1, Ordering::Release);
     }

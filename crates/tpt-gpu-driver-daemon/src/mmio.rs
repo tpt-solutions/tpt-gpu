@@ -9,7 +9,6 @@
 
 use std::fs::OpenOptions;
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
 
 use anyhow::{Context, Result};
 use memmap2::MmapMut;

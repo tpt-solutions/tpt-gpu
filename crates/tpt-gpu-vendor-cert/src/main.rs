@@ -9,7 +9,7 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod report;
 mod tests;
@@ -171,33 +171,27 @@ impl VendorProfile {
             issues.push("Certification tier must be 1, 2, or 3".to_string());
         }
 
-        if self.certification_tier >= 1 {
-            if self.hardware_specs.memory_gb == 0 {
-                issues.push("Memory size is required for Tier 1+ certification".to_string());
-            }
+        if self.certification_tier >= 1 && self.hardware_specs.memory_gb == 0 {
+            issues.push("Memory size is required for Tier 1+ certification".to_string());
         }
 
-        if self.certification_tier >= 2 {
-            if !self.supported_operations.gemm
-                && !self.supported_operations.attention
-                && !self.supported_operations.conv2d
-            {
-                issues.push(
-                    "At least one operation must be supported for Tier 2+ certification"
-                        .to_string(),
-                );
-            }
+        if self.certification_tier >= 2
+            && !self.supported_operations.gemm
+            && !self.supported_operations.attention
+            && !self.supported_operations.conv2d
+        {
+            issues.push(
+                "At least one operation must be supported for Tier 2+ certification".to_string(),
+            );
         }
 
-        if self.certification_tier >= 3 {
-            if !self.supported_operations.gemm
+        if self.certification_tier >= 3
+            && (!self.supported_operations.gemm
                 || !self.supported_operations.attention
                 || !self.supported_operations.conv2d
-                || !self.supported_operations.conv3d
-            {
-                issues
-                    .push("All operations must be supported for Tier 3 certification".to_string());
-            }
+                || !self.supported_operations.conv3d)
+        {
+            issues.push("All operations must be supported for Tier 3 certification".to_string());
         }
 
         Ok(issues)
@@ -443,7 +437,7 @@ fn generate_template(vendor: &str, output: &PathBuf) -> Result<()> {
 }
 
 /// Compare vendor performance
-fn compare_vendors(vendors: &[String], dir: &PathBuf) -> Result<()> {
+fn compare_vendors(vendors: &[String], dir: &Path) -> Result<()> {
     let mut profiles = Vec::new();
 
     for vendor in vendors {

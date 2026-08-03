@@ -29,9 +29,17 @@ impl Default for Conv3DParams {
 
 /// Conv3D kernel handle
 pub struct Conv3DKernel {
+    #[allow(dead_code)]
     config: KernelConfig,
+    #[allow(dead_code)]
     vendor: VendorBackend,
     pub params: Conv3DParams,
+}
+
+impl Default for Conv3DKernel {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Conv3DKernel {
@@ -345,16 +353,20 @@ mod tests {
             Shape::new(&[1, 1, 2, 2, 2]),
             DType::F32,
             BufferFlags::STORAGE,
-        ).unwrap();
+        )
+        .unwrap();
         input.copy_from_host(&[1.0; 8]).unwrap();
         let mut filter = GpuBuffer::<f32>::new(
             Shape::new(&[1, 1, 1, 1, 1]),
             DType::F32,
             BufferFlags::STORAGE,
-        ).unwrap();
+        )
+        .unwrap();
         filter.copy_from_host(&[3.0]).unwrap();
         let kernel = Conv3DKernel::new();
-        let out = kernel.execute(&input, &filter, [1, 1, 1], [0, 0, 0], None).unwrap();
+        let out = kernel
+            .execute(&input, &filter, [1, 1, 1], [0, 0, 0], None)
+            .unwrap();
         let mut data = [0f32; 8];
         out.copy_to_host(&mut data).unwrap();
         for (i, &v) in data.iter().enumerate() {
@@ -370,16 +382,20 @@ mod tests {
             Shape::new(&[1, 1, 2, 2, 2]),
             DType::F32,
             BufferFlags::STORAGE,
-        ).unwrap();
+        )
+        .unwrap();
         input.copy_from_host(&[1.0; 8]).unwrap();
         let mut filter = GpuBuffer::<f32>::new(
             Shape::new(&[1, 1, 2, 2, 2]),
             DType::F32,
             BufferFlags::STORAGE,
-        ).unwrap();
+        )
+        .unwrap();
         filter.copy_from_host(&[1.0; 8]).unwrap();
         let kernel = Conv3DKernel::new();
-        let out = kernel.execute(&input, &filter, [1, 1, 1], [0, 0, 0], None).unwrap();
+        let out = kernel
+            .execute(&input, &filter, [1, 1, 1], [0, 0, 0], None)
+            .unwrap();
         let mut data = [0f32; 1];
         out.copy_to_host(&mut data).unwrap();
         assert!((data[0] - 8.0).abs() < 1e-5, "expected 8.0 got {}", data[0]);

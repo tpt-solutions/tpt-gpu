@@ -126,7 +126,9 @@ struct RegressionEntry {
     base_eff: f64,
     cur_eff: f64,
     drop: f64,
+    #[allow(dead_code)]
     base_time_ms: f64,
+    #[allow(dead_code)]
     cur_time_ms: f64,
     time_delta_pct: f64,
 }

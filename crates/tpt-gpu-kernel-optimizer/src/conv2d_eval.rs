@@ -18,6 +18,7 @@ pub struct Conv2dProblemConfig {
 }
 
 impl Conv2dProblemConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         batch: usize,
         in_channels: usize,
@@ -123,7 +124,7 @@ impl RealConv2dEvaluator {
         let smem_per_block = smem_input + smem_kernel;
         let max_smem = 100_000.0;
         let occupancy = ((max_smem / smem_per_block).floor().max(1.0) / 32.0).min(1.0);
-        let unroll_eff = (unroll / 4.0).min(1.0).max(0.5);
+        let unroll_eff = (unroll / 4.0).clamp(0.5, 1.0);
         let kernel_eff = oc_eff * ic_eff * oh_eff * ow_eff * occupancy * unroll_eff;
         let tptir_vs_cudnn = 0.60 + 0.35 * kernel_eff;
         let cudnn_tflops = 15.0 * 0.80;
@@ -142,7 +143,7 @@ impl KernelEvaluator for RealConv2dEvaluator {
             return 0.0;
         }
         let efficiency = (baseline_ms / estimated_ms) * 100.0;
-        efficiency.max(0.0).min(200.0)
+        efficiency.clamp(0.0, 200.0)
     }
 }
 

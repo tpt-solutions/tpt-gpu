@@ -82,7 +82,7 @@ impl GpuAllocator for SlabAllocator {
         access: MemAccess,
     ) -> TptrResult<MemoryAllocation> {
         let bs = self.slabs[0].block_size;
-        let needed = (size + bs - 1) / bs;
+        let needed = size.div_ceil(bs);
         for slab in &mut self.slabs {
             if slab.free_list.len() >= needed as usize {
                 let dp = slab.free_list.pop().unwrap_or(0);

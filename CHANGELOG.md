@@ -72,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Framework Integration
 - PyTorch dispatch backend
-- JAX integration with XLA-compatible primitives
+- JAX integration planned (not yet implemented — `tptr.jax` exposes not-implemented stubs)
 - HuggingFace model loading and inference support
 - Distributed training examples (8-GPU FSDP)
 
@@ -138,7 +138,7 @@ This is the first production-ready release of TPT GPU. It includes:
 - **Complete Standard Library** — All planned operations implemented
 - **Stable API** — Language surface is now stable and backwards-compatible
 - **Production Tooling** — Full IDE support, formatter, linter
-- **Framework Integration** — PyTorch and JAX backends ready for use
+- **Framework Integration** — PyTorch backend ready; JAX planned
 - **Comprehensive Documentation** — Complete user guide and tutorials
 
 ### Migration from v0.1.0-beta

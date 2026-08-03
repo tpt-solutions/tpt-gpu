@@ -45,7 +45,7 @@ The language surface is intentionally small (~200 orthogonal operations vs PyTor
 
 ### Framework Integration
 - **PyTorch Backend** — Seamless dispatch integration
-- **JAX Integration** — XLA-compatible primitives
+- **JAX Integration** — Planned (not yet implemented; `tptr.jax` exposes not-implemented stubs)
 - **HuggingFace Support** — Model loading and inference
 - **Distributed Training** — 8-GPU FSDP examples
 

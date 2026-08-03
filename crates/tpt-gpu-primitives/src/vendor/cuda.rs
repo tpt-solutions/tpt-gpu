@@ -8,8 +8,8 @@
 use super::VendorLibrary;
 use crate::error::{TptpError, TptpResult};
 use crate::memory::GpuBuffer;
-use crate::sym;
 use crate::vendor::dynlink::Library;
+#[cfg(feature = "cuda")]
 use std::sync::Arc;
 
 // Opaque CUDA / cuBLAS handles.
@@ -17,17 +17,25 @@ type CUresult = i32;
 type CUdevice = i32;
 type CUcontext = *mut std::ffi::c_void;
 type CUdeviceptr = u64;
+#[allow(non_camel_case_types)]
 type cublasHandle_t = *mut std::ffi::c_void;
+#[allow(non_camel_case_types)]
 type cublasStatus_t = i32;
+#[allow(non_camel_case_types)]
 type cublasOperation_t = i32;
 
+#[allow(dead_code)]
 const CUBLAS_OP_N: cublasOperation_t = 0;
+#[allow(dead_code)]
 const CUBLAS_OP_T: cublasOperation_t = 1;
+#[allow(dead_code)]
 const CUDA_SUCCESS: CUresult = 0;
+#[allow(dead_code)]
 const CUBLAS_STATUS_SUCCESS: cublasStatus_t = 0;
 
 /// Resolved CUDA + cuBLAS entry points held for the lifetime of the backend.
 #[derive(Clone)]
+#[allow(dead_code)]
 struct CudaSymbols {
     lib_cuda: std::sync::Arc<Library>,
     lib_cublas: std::sync::Arc<Library>,
@@ -229,6 +237,7 @@ impl CudaBackend {
         &self.device_name
     }
 
+    #[allow(dead_code)]
     fn stage_in(&self, data: &[f32], ptr: &mut CUdeviceptr) -> TptpResult<()> {
         let bytes = bytemuck::cast_slice::<f32, u8>(data);
         if unsafe { (self.syms.cu_mem_alloc)(ptr, bytes.len()) } != CUDA_SUCCESS {
@@ -243,6 +252,7 @@ impl CudaBackend {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn stage_out(&self, ptr: CUdeviceptr, data: &mut [f32]) -> TptpResult<()> {
         let bytes = bytemuck::cast_slice_mut::<f32, u8>(data);
         if unsafe {
@@ -275,6 +285,7 @@ impl Drop for CudaBackend {
 }
 
 /// Host-side staging helper for `GpuBuffer<f32>`.
+#[allow(dead_code)]
 fn read_f32(buf: &GpuBuffer<f32>) -> TptpResult<Vec<f32>> {
     let mut data = vec![0f32; buf.num_elements()];
     buf.copy_to_host(&mut data)?;
@@ -878,9 +889,12 @@ impl VendorLibrary for CudaBackend {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "cuda")]
     use super::*;
+    #[cfg(feature = "cuda")]
     use crate::memory::{BufferFlags, DType, GpuBuffer, Shape};
 
+    #[cfg(feature = "cuda")]
     fn make(shape: &[usize]) -> GpuBuffer<f32> {
         GpuBuffer::new(Shape::new(shape), DType::F32, BufferFlags::empty()).unwrap()
     }

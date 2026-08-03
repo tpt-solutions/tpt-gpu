@@ -82,7 +82,7 @@ impl<const N: usize> From<[(&'static str, u32); N]> for TuningParams {
 pub type ParamVal = u32;
 
 /// A concrete point in the tuning parameter space.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct TuningParams(pub HashMap<String, ParamVal>);
 
 impl TuningParams {
@@ -314,9 +314,9 @@ impl SimulatedEvaluator {
         let unroll = params.get("unroll").unwrap_or(2) as f64;
         let bq_score = (1.0 - (block_q - 64.0).abs() / 128.0).max(0.2);
         let bkv_score = (1.0 - (block_kv - 64.0).abs() / 128.0).max(0.2);
-        let heads_score = (num_heads / 8.0).min(1.0).max(0.25);
+        let heads_score = (num_heads / 8.0).clamp(0.25, 1.0);
         let dim_score = (1.0 - (head_dim - 64.0).abs() / 128.0).max(0.3);
-        let unroll_score = (unroll / 4.0).min(1.0).max(0.5);
+        let unroll_score = (unroll / 4.0).clamp(0.5, 1.0);
         200.0 * bq_score * bkv_score * heads_score * dim_score * unroll_score
     }
 
@@ -336,7 +336,7 @@ impl SimulatedEvaluator {
         let kw_score = (1.0 - (kernel_w - 3.0).abs() / 8.0).max(0.3);
         let kh_score = (1.0 - (kernel_h - 3.0).abs() / 8.0).max(0.3);
         let stride_score = if stride <= 1.0 { 1.0 } else { 0.7 };
-        let unroll_score = (unroll / 4.0).min(1.0).max(0.5);
+        let unroll_score = (unroll / 4.0).clamp(0.5, 1.0);
         150.0
             * oc_score
             * ic_score
@@ -353,8 +353,8 @@ impl SimulatedEvaluator {
         let vec_width = params.get("vec_width").unwrap_or(2) as f64;
         let grid_size = params.get("grid_size").unwrap_or(16) as f64;
         let bs_score = (1.0 - (block_size - 256.0).abs() / 512.0).max(0.2);
-        let vw_score = (vec_width / 4.0).min(1.0).max(0.25);
-        let gs_score = (grid_size / 32.0).min(1.0).max(0.25);
+        let vw_score = (vec_width / 4.0).clamp(0.25, 1.0);
+        let gs_score = (grid_size / 32.0).clamp(0.25, 1.0);
         16.0 * bs_score * vw_score * gs_score
     }
 
@@ -364,8 +364,8 @@ impl SimulatedEvaluator {
         let unroll = params.get("unroll").unwrap_or(2) as f64;
         let warp_reduce = params.get("warp_reduce").unwrap_or(1) as f64;
         let bs_score = (1.0 - (block_size - 256.0).abs() / 512.0).max(0.2);
-        let vw_score = (vec_width / 4.0).min(1.0).max(0.25);
-        let ur_score = (unroll / 4.0).min(1.0).max(0.5);
+        let vw_score = (vec_width / 4.0).clamp(0.25, 1.0);
+        let ur_score = (unroll / 4.0).clamp(0.5, 1.0);
         let wr_score = if warp_reduce >= 1.0 { 1.0 } else { 0.6 };
         32.0 * bs_score * vw_score * ur_score * wr_score
     }

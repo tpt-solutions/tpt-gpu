@@ -26,9 +26,17 @@ impl Default for EmbeddingParams {
 
 /// Embedding lookup kernel handle
 pub struct EmbeddingKernel {
+    #[allow(dead_code)]
     config: KernelConfig,
+    #[allow(dead_code)]
     vendor: VendorBackend,
     pub params: EmbeddingParams,
+}
+
+impl Default for EmbeddingKernel {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EmbeddingKernel {

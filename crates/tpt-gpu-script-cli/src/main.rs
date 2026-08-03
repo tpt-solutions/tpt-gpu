@@ -105,7 +105,7 @@ fn cmd_new(args: &[String]) -> i32 {
         name,
         path.display()
     );
-    println!("");
+    println!();
     println!("To get started:");
     println!("  cd {}", name);
     println!("  tpt check src/main.tpts");
@@ -155,7 +155,7 @@ fn cmd_init() -> i32 {
         "Initialized TPT Script project `{}` in current directory",
         name
     );
-    println!("");
+    println!();
     println!("To get started:");
     println!("  tpt check src/main.tpts");
     println!("  tpt compile src/main.tpts -o output.rs");
@@ -537,10 +537,17 @@ fn cmd_doctor() -> i32 {
                     (true, ver)
                 }
             }
-            Ok(out) => (false, String::from_utf8_lossy(&out.stderr).trim().to_string()),
+            Ok(out) => (
+                false,
+                String::from_utf8_lossy(&out.stderr).trim().to_string(),
+            ),
             Err(e) => (false, format!("not found: {e}")),
         };
-        checks.push(Check { name: "rustc", passed, detail });
+        checks.push(Check {
+            name: "rustc",
+            passed,
+            detail,
+        });
     }
 
     // 2. cargo available
@@ -550,10 +557,17 @@ fn cmd_doctor() -> i32 {
                 let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 (true, ver)
             }
-            Ok(out) => (false, String::from_utf8_lossy(&out.stderr).trim().to_string()),
+            Ok(out) => (
+                false,
+                String::from_utf8_lossy(&out.stderr).trim().to_string(),
+            ),
             Err(e) => (false, format!("not found: {e}")),
         };
-        checks.push(Check { name: "cargo", passed, detail });
+        checks.push(Check {
+            name: "cargo",
+            passed,
+            detail,
+        });
     }
 
     // 3. CUDA — nvcc or nvidia-smi
@@ -572,33 +586,56 @@ fn cmd_doctor() -> i32 {
                 (true, format!("found (nvcc {ver})"))
             } else {
                 // fall back to nvidia-smi
-                match Command::new("nvidia-smi").arg("--query-gpu=name").arg("--format=csv,noheader").output() {
+                match Command::new("nvidia-smi")
+                    .arg("--query-gpu=name")
+                    .arg("--format=csv,noheader")
+                    .output()
+                {
                     Ok(smi) if smi.status.success() => {
                         let gpu = String::from_utf8_lossy(&smi.stdout).trim().to_string();
                         (true, format!("found via nvidia-smi ({gpu})"))
                     }
-                    _ => (false, "not found (simulation mode will be used)".to_string()),
+                    _ => (
+                        false,
+                        "not found (simulation mode will be used)".to_string(),
+                    ),
                 }
             }
         } else {
             match Command::new("nvidia-smi").output() {
                 Ok(smi) if smi.status.success() => (true, "found via nvidia-smi".to_string()),
-                _ => (false, "not found (simulation mode will be used)".to_string()),
+                _ => (
+                    false,
+                    "not found (simulation mode will be used)".to_string(),
+                ),
             }
         };
-        checks.push(Check { name: "CUDA", passed, detail });
+        checks.push(Check {
+            name: "CUDA",
+            passed,
+            detail,
+        });
     }
 
     // 4. ROCm — hipcc
     {
         let (passed, detail) = match Command::new("hipcc").arg("--version").output() {
             Ok(out) if out.status.success() => {
-                let ver = String::from_utf8_lossy(&out.stdout).trim().lines().next().unwrap_or("").to_string();
+                let ver = String::from_utf8_lossy(&out.stdout)
+                    .trim()
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
                 (true, format!("found ({ver})"))
             }
             _ => (false, "not found".to_string()),
         };
-        checks.push(Check { name: "ROCm", passed, detail });
+        checks.push(Check {
+            name: "ROCm",
+            passed,
+            detail,
+        });
     }
 
     // 5. Python
@@ -616,12 +653,19 @@ fn cmd_doctor() -> i32 {
                         let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
                         (true, ver)
                     }
-                    Ok(out) => (false, String::from_utf8_lossy(&out.stderr).trim().to_string()),
+                    Ok(out) => (
+                        false,
+                        String::from_utf8_lossy(&out.stderr).trim().to_string(),
+                    ),
                     Err(_) => (false, "not found".to_string()),
                 }
             }
         };
-        checks.push(Check { name: "Python", passed, detail });
+        checks.push(Check {
+            name: "Python",
+            passed,
+            detail,
+        });
     }
 
     // 6. ruff
@@ -633,16 +677,17 @@ fn cmd_doctor() -> i32 {
             }
             _ => (false, "not found (run: pip install ruff)".to_string()),
         };
-        checks.push(Check { name: "ruff", passed, detail });
+        checks.push(Check {
+            name: "ruff",
+            passed,
+            detail,
+        });
     }
 
     // 7. cargo fmt --check (only when inside a tpt-gpu checkout)
     {
         let in_workspace = env::current_dir()
-            .map(|cwd| {
-                cwd.join("Cargo.toml").exists()
-                    && cwd.join("crates").exists()
-            })
+            .map(|cwd| cwd.join("Cargo.toml").exists() && cwd.join("crates").exists())
             .unwrap_or(false);
 
         let (passed, detail) = if in_workspace {
@@ -663,9 +708,16 @@ fn cmd_doctor() -> i32 {
                 Err(e) => (false, format!("could not run cargo fmt: {e}")),
             }
         } else {
-            (true, "skipped (not in a tpt-gpu workspace root)".to_string())
+            (
+                true,
+                "skipped (not in a tpt-gpu workspace root)".to_string(),
+            )
         };
-        checks.push(Check { name: "cargo fmt", passed, detail });
+        checks.push(Check {
+            name: "cargo fmt",
+            passed,
+            detail,
+        });
     }
 
     // Print results

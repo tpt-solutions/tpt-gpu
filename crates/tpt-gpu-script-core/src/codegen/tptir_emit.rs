@@ -34,6 +34,12 @@ pub struct TptIrEmitter {
     errors: Vec<String>,
 }
 
+impl Default for TptIrEmitter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TptIrEmitter {
     pub fn new() -> Self {
         Self {
@@ -254,10 +260,7 @@ impl TptIrEmitter {
 
             // Complex sub-expressions that cannot be lowered inline.
             _ => {
-                let msg = format!(
-                    "unsupported sub-expression in GPU kernel at {}",
-                    expr.span
-                );
+                let msg = format!("unsupported sub-expression in GPU kernel at {}", expr.span);
                 self.errors.push(msg.clone());
                 format!("; ERROR: {msg}")
             }
@@ -433,6 +436,7 @@ impl TptIrEmitter {
     // Helpers
     // -----------------------------------------------------------------------
 
+    #[allow(dead_code)]
     fn fresh(&mut self) -> String {
         let n = self.counter;
         self.counter += 1;

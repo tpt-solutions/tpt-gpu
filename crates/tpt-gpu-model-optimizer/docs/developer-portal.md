@@ -244,7 +244,7 @@ use tpt_shared::{AiProvider, ProviderFactory};
 let provider = ProviderFactory::from_env()?;
 
 // Or create explicitly
-let claude = ProviderFactory::Claude("sk-ant-...");
+let claude = ProviderFactory::claude("sk-ant-...");
 let openrouter = ProviderFactory::openrouter("sk-or-...");
 let ollama = ProviderFactory::ollama();
 ```

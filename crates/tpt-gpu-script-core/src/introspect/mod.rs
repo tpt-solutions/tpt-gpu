@@ -106,6 +106,7 @@ fn registry() -> &'static Vec<OperationSchema> {
 }
 
 // Compact builder helpers.
+#[allow(clippy::too_many_arguments)]
 fn op(
     name: &'static str,
     description: &'static str,

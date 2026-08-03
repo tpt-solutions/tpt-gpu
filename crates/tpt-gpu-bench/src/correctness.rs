@@ -103,7 +103,7 @@ fn identity_matrix(rows: usize, cols: usize) -> Vec<f64> {
     m
 }
 
-fn matmul(a: &[f64], m: usize, k: usize, b: &[f64], _k: usize, n: usize) -> Vec<f64> {
+fn matmul(a: &[f64], m: usize, k: usize, b: &[f64], _: usize, n: usize) -> Vec<f64> {
     let mut c = vec![0.0f64; m * n];
     for i in 0..m {
         for j in 0..n {
