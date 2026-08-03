@@ -74,7 +74,7 @@ jobs:
       run: cargo build --release --workspace
     
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v7
       with:
         name: release-${{ matrix.os }}
         path: |
