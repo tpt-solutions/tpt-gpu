@@ -9,7 +9,7 @@ repository.workspace = true
 documentation = "https://docs.rs/tpt-gpu-model-optimizer"
 readme = "README.md"
 keywords = ["gpu", "llm", "quantization", "inference", "optimization"]
-categories = ["command-line-utilities", "science::ml"]
+categories = ["command-line-utilities", "artificial-intelligence"]
 
 [lib]
 name = "tpt_gpu_model_optimizer"

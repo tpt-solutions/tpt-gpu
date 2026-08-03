@@ -9,7 +9,7 @@ repository.workspace = true
 documentation = "https://docs.rs/tpt-gpu-primitives"
 readme = "README.md"
 keywords = ["gpu", "compute", "kernels", "simt", "hpc"]
-categories = ["hardware-support", "science::ml"]
+categories = ["hardware-support", "artificial-intelligence"]
 
 [lib]
 name = "tpt_gpu_primitives"

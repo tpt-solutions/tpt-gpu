@@ -9,7 +9,7 @@ description = "Shared AI provider abstraction for TPT GPU tools"
 documentation = "https://docs.rs/tpt-gpu-shared"
 readme = "README.md"
 keywords = ["gpu", "ai", "llm", "compiler", "tooling"]
-categories = ["development-tools", "science::ml"]
+categories = ["development-tools", "artificial-intelligence"]
 
 [lib]
 name = "tpt_gpu_shared"

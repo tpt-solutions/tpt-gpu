@@ -9,7 +9,7 @@ repository = "https://github.com/tpt-solutions/tpt-gpu"
 documentation = "https://docs.rs/tpt-gpu-runtime"
 readme = "README.md"
 keywords = ["gpu", "runtime", "compute", "inference", "hpc"]
-categories = ["hardware-support", "science::ml"]
+categories = ["hardware-support", "artificial-intelligence"]
 
 [dependencies]
 bytemuck = "1.21"
