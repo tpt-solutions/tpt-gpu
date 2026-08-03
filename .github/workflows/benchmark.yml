@@ -1,4 +1,4 @@
-﻿name: Kernel Benchmark
+name: Kernel Benchmark
 
 on:
   pull_request:
@@ -46,7 +46,7 @@ jobs:
         working-directory: .
 
       - name: Compare results and post comment
-        uses: actions/github-script@v6
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
