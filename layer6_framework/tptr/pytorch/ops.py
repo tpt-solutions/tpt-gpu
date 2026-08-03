@@ -5,14 +5,12 @@ Maps PyTorch ATen operations to TPT kernel launches.
 Provides both simulation fallback and real TPT execution paths.
 """
 from __future__ import annotations
-from typing import Any, Dict, Optional, Tuple, Union, List
+
 import warnings
-
-from tptr._ffi import TptrError
-
+from typing import Any
 
 # Mapping from PyTorch op names to TPT kernel names
-_OP_MAP: Dict[str, str] = {
+_OP_MAP: dict[str, str] = {
     "aten.add.Tensor": "add",
     "aten.add.Scalar": "add",
     "aten.mul.Tensor": "mul",
@@ -43,7 +41,7 @@ _INPLACE_OPS = {
 }
 
 # Mapping from PyTorch dtypes to TPT dtype names
-_DTYPE_MAP: Dict[str, str] = {
+_DTYPE_MAP: dict[str, str] = {
     "float32": "float32",
     "float64": "float64",
     "float16": "float16",
@@ -114,7 +112,7 @@ def _execute_tpt_op(tpt_op: str, full_op: str, args: tuple, kwargs: dict) -> Any
 
 def _torch_to_tptr(tensor: Any) -> Any:
     """Convert a PyTorch tensor to a TPT tensor."""
-    from tptr.tensor import TptrTensor, TptrDType
+    from tptr.tensor import TptrDType, TptrTensor
     
     # Map PyTorch dtype to TPT dtype
     dtype_map = {
@@ -137,10 +135,10 @@ def _torch_to_tptr(tensor: Any) -> Any:
     return TptrTensor(tuple(tensor.shape), tpt_dtype, data=data)
 
 
-def _tptr_to_torch(tptr_tensor: Any, shape: Tuple[int, ...]) -> Any:
+def _tptr_to_torch(tptr_tensor: Any, shape: tuple[int, ...]) -> Any:
     """Convert a TPT tensor to a PyTorch tensor."""
-    import torch
     import numpy as np
+    import torch
     
     # Get data from TPT tensor
     data = tptr_tensor.copy_to_host()
@@ -167,7 +165,8 @@ def _tptr_to_torch(tptr_tensor: Any, shape: Tuple[int, ...]) -> Any:
 def _tptr_to_torch_inplace(tptr_tensor: Any, torch_tensor: Any) -> None:
     """Copy TPT tensor data back to PyTorch tensor in-place."""
     import numpy as np
-    
+    import torch
+
     data = tptr_tensor.copy_to_host()
     np_dtype = _torch_dtype_to_numpy(torch_tensor.dtype)
     np_array = np.frombuffer(data, dtype=np_dtype).reshape(torch_tensor.shape)
@@ -220,7 +219,7 @@ def _launch_tpt_kernel_inplace(tpt_op: str, args: list) -> Any:
     return None
 
 
-def _infer_output_shape(tpt_op: str, args: list) -> Tuple[int, ...]:
+def _infer_output_shape(tpt_op: str, args: list) -> tuple[int, ...]:
     """Infer the output shape for an operation."""
     if not args:
         return (1,)
@@ -242,7 +241,7 @@ def is_supported(op: str) -> bool:
     return op in _OP_MAP
 
 
-def get_tpt_op_name(op: str) -> Optional[str]:
+def get_tpt_op_name(op: str) -> str | None:
     """Get the TPT kernel name for a PyTorch op."""
     return _OP_MAP.get(op)
 

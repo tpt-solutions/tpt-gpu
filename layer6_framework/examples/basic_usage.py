@@ -8,15 +8,15 @@ Demonstrates:
 - High-level context management
 - Tensor operations
 """
-import sys
 import os
+import sys
 
 # Add parent directory to path for development
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import tptr
-from tptr.core import TptrDevice, TptrContext, get_context, device_context
-from tptr.tensor import zeros, ones, TptrTensor, float32
+from tptr.core import TptrContext, TptrDevice, device_context
+from tptr.tensor import TptrTensor, float32, zeros
 
 
 def main():
@@ -75,7 +75,7 @@ def main():
 
     # 8. Device context
     print("\n8. Device Context Manager")
-    with device_context(0) as dev:
+    with device_context(0):
         t = TptrTensor((10, 10), float32)
         print(f"   Tensor in context: {t}")
 

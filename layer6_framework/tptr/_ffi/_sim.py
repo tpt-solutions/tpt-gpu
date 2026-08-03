@@ -4,14 +4,15 @@ Provides Python-based simulation of the TPT runtime for development
 and testing when the native Rust extension is not available.
 """
 from __future__ import annotations
+
 import threading
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, Tuple
+from dataclasses import dataclass
+from typing import Any, ClassVar
 
 
 class TptrError(Exception):
     """Simulated TPT runtime error."""
-    def __init__(self, code: str, message: str, source: str = "", context: Optional[list] = None):
+    def __init__(self, code: str, message: str, source: str = "", context: list | None = None):
         self.code = code
         self.message = message
         self.source = source
@@ -23,7 +24,7 @@ class TptrError(Exception):
 class DeviceInfo:
     name: str = "TPT Simulated Device"
     total_memory: int = 16 * (1 << 30)
-    compute_capability: Tuple[int, int] = (1, 0)
+    compute_capability: tuple[int, int] = (1, 0)
     backend: str = "Simulated"
     max_threads_per_block: int = 1024
     warp_size: int = 32
@@ -32,60 +33,60 @@ class DeviceInfo:
 
 class Device:
     """Simulated TPT GPU device."""
-    _instances: Dict[int, "Device"] = {}
+    _instances: ClassVar[dict[int, Device]] = {}
     _lock = threading.Lock()
 
     def __init__(self, index: int = 0):
         self._index = index
         self._info = DeviceInfo(name=f"TPT Device {index} (Simulated)", total_memory=16 << 30)
-        self._allocations: Dict[int, "MemoryAllocation"] = {}
+        self._allocations: dict[int, MemoryAllocation] = {}
         self._next_handle = 1
         self._next_kernel_id = 1
         self._next_queue_id = 1
-        self._queues: Dict[int, "CommandQueue"] = {}
-        self._kernels: Dict[str, "Kernel"] = {}
+        self._queues: dict[int, CommandQueue] = {}
+        self._kernels: dict[str, Kernel] = {}
 
     @classmethod
-    def get_default(cls) -> "Device":
+    def get_default(cls) -> Device:
         return cls(0)
 
     @classmethod
     def enumerate(cls):
         return [f"TPT Device {i} (Simulated)" for i in range(1)]
 
-    def allocate(self, size: int, mem_type: str = "device", access: str = "read_write") -> "MemoryAllocation":
+    def allocate(self, size: int, mem_type: str = "device", access: str = "read_write") -> MemoryAllocation:
         handle = self._next_handle
         self._next_handle += 1
         alloc = MemoryAllocation(handle, size, 0x1000_0000 + handle * 256, device=self)
         self._allocations[handle] = alloc
         return alloc
 
-    def free(self, alloc: "MemoryAllocation") -> None:
+    def free(self, alloc: MemoryAllocation) -> None:
         alloc._freed = True
         self._allocations.pop(alloc._handle, None)
 
-    def memcpy_htod(self, dst: "MemoryAllocation", src: bytes, size: int, dst_offset: int = 0) -> None:
+    def memcpy_htod(self, dst: MemoryAllocation, src: bytes, size: int, dst_offset: int = 0) -> None:
         if dst.is_freed():
             raise TptrError("E0003", "Invalid address: destination is freed")
 
-    def memcpy_dtoh(self, src: "MemoryAllocation", size: int, src_offset: int = 0) -> bytes:
+    def memcpy_dtoh(self, src: MemoryAllocation, size: int, src_offset: int = 0) -> bytes:
         if src.is_freed():
             raise TptrError("E0003", "Invalid address: source is freed")
         return b'\x00' * size
 
-    def create_queue(self, priority: str = "normal") -> "CommandQueue":
+    def create_queue(self, priority: str = "normal") -> CommandQueue:
         handle = self._next_queue_id
         self._next_queue_id += 1
         queue = CommandQueue(handle, priority, device=self)
         self._queues[handle] = queue
         return queue
 
-    def create_kernel(self, name: str) -> "Kernel":
+    def create_kernel(self, name: str) -> Kernel:
         kernel = Kernel(name)
         self._kernels[name] = kernel
         return kernel
 
-    def info(self) -> Dict[str, Any]:
+    def info(self) -> dict[str, Any]:
         return {"name": self._info.name, "total_memory": str(self._info.total_memory),
                 "backend": self._info.backend, "warp_size": str(self._info.warp_size)}
 
@@ -102,7 +103,7 @@ class MemoryAllocation:
     _handle: int
     _size: int
     _device_ptr: int
-    device: Optional[Device] = None
+    device: Device | None = None
     _freed: bool = False
 
     @property
@@ -118,7 +119,7 @@ class MemoryAllocation:
 
 class CommandQueue:
     """Simulated command queue."""
-    def __init__(self, handle: int, priority: str = "normal", device: Optional[Device] = None):
+    def __init__(self, handle: int, priority: str = "normal", device: Device | None = None):
         self._handle = handle
         self._priority = priority
         self._device = device
@@ -144,15 +145,15 @@ class Kernel:
 
 class KernelConfig:
     """Simulated kernel launch configuration."""
-    def __init__(self, grid: Tuple[int, int, int] = (1, 1, 1),
-                 block: Tuple[int, int, int] = (1, 1, 1), shared_mem: int = 0):
+    def __init__(self, grid: tuple[int, int, int] = (1, 1, 1),
+                 block: tuple[int, int, int] = (1, 1, 1), shared_mem: int = 0):
         self._grid = grid
         self._block = block
         self._shared_mem = shared_mem
     @property
-    def grid_size(self) -> Tuple[int, int, int]: return self._grid
+    def grid_size(self) -> tuple[int, int, int]: return self._grid
     @property
-    def block_size(self) -> Tuple[int, int, int]: return self._block
+    def block_size(self) -> tuple[int, int, int]: return self._block
     @property
     def shared_mem_bytes(self) -> int: return self._shared_mem
     def __repr__(self) -> str: return f"KernelConfig(grid={self._grid}, block={self._block})"

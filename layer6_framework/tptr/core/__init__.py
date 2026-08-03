@@ -3,16 +3,24 @@ High-level Python wrappers over the tptr runtime.
 Provides a Pythonic, context-managed API over the low-level Rust bindings.
 """
 from __future__ import annotations
-from typing import Optional, Dict, Any, Tuple
+
 from contextlib import contextmanager
+from typing import Any
+
+from .._ffi import (
+    CommandQueue as _NativeCommandQueue,
+)
 from .._ffi import (
     Device as _NativeDevice,
-    MemoryAllocation as _NativeMemoryAllocation,
-    CommandQueue as _NativeCommandQueue,
-    Kernel as _NativeKernel,
+)
+from .._ffi import (
     KernelConfig as _NativeKernelConfig,
+)
+from .._ffi import (
     KernelHandle as _NativeKernelHandle,
-    TptrError,
+)
+from .._ffi import (
+    MemoryAllocation as _NativeMemoryAllocation,
 )
 
 
@@ -26,39 +34,39 @@ class TptrDevice:
     @property
     def index(self) -> int: return self._device._index
     @property
-    def info(self) -> Dict[str, Any]: return self._device.info()
+    def info(self) -> dict[str, Any]: return self._device.info()
     @property
     def name(self) -> str: return self.info.get("name", "Unknown")
     @property
     def total_memory(self) -> int: return int(self.info.get("total_memory", 0))
 
-    def allocate(self, size: int, name: str = "device", access: str = "read_write") -> "TptrMemory":
+    def allocate(self, size: int, name: str = "device", access: str = "read_write") -> TptrMemory:
         alloc = self._device.allocate(size, name, access)
         return TptrMemory(alloc)
 
-    def free(self, memory: "TptrMemory") -> None:
+    def free(self, memory: TptrMemory) -> None:
         self._device.free(memory._alloc)
 
-    def memcpy_htod(self, dst: "TptrMemory", src: bytes, size: Optional[int] = None, dst_offset: int = 0) -> None:
+    def memcpy_htod(self, dst: TptrMemory, src: bytes, size: int | None = None, dst_offset: int = 0) -> None:
         size = size or len(src)
         self._device.memcpy_htod(dst._alloc, src, size, dst_offset)
 
-    def memcpy_dtoh(self, src: "TptrMemory", size: int, src_offset: int = 0) -> bytes:
+    def memcpy_dtoh(self, src: TptrMemory, size: int, src_offset: int = 0) -> bytes:
         return self._device.memcpy_dtoh(src._alloc, size, src_offset)
 
-    def create_stream(self, priority: str = "normal") -> "TptrStream":
+    def create_stream(self, priority: str = "normal") -> TptrStream:
         queue = self._device.create_queue(priority)
         stream = TptrStream(queue, self)
         self._streams.append(stream)
         return stream
 
-    def create_kernel(self, name: str) -> "TptrKernel":
+    def create_kernel(self, name: str) -> TptrKernel:
         kernel = TptrKernel(name, self)
         self._kernels[name] = kernel
         return kernel
 
     def synchronize(self) -> None: self._device.synchronize()
-    def __enter__(self) -> "TptrDevice": return self
+    def __enter__(self) -> TptrDevice: return self  # noqa: PYI034 (Self requires typing_extensions on py<3.11, not a declared dep)
     def __exit__(self, *args) -> None: self.synchronize()
     def __repr__(self) -> str: return f"TptrDevice(index={self.index}, name='{self.name}')"
 
@@ -100,20 +108,20 @@ class TptrKernel:
         self._native = device._device.create_kernel(name)
     @property
     def name(self) -> str: return self._name
-    def launch(self, config: "_NativeKernelConfig", args: Optional[list] = None) -> _NativeKernelHandle:
+    def launch(self, config: _NativeKernelConfig, args: list | None = None) -> _NativeKernelHandle:
         return _NativeKernelHandle()
     def __repr__(self) -> str: return f"TptrKernel(name='{self._name}')"
 
 
 class TptrKernelConfig:
     """High-level kernel configuration wrapper."""
-    def __init__(self, grid: Tuple[int, int, int] = (1, 1, 1),
-                 block: Tuple[int, int, int] = (1, 1, 1), shared_mem: int = 0):
+    def __init__(self, grid: tuple[int, int, int] = (1, 1, 1),
+                 block: tuple[int, int, int] = (1, 1, 1), shared_mem: int = 0):
         self._config = _NativeKernelConfig(grid, block, shared_mem)
     @property
-    def grid_size(self) -> Tuple[int, int, int]: return self._config.grid_size
+    def grid_size(self) -> tuple[int, int, int]: return self._config.grid_size
     @property
-    def block_size(self) -> Tuple[int, int, int]: return self._config.block_size
+    def block_size(self) -> tuple[int, int, int]: return self._config.block_size
     @property
     def shared_mem_bytes(self) -> int: return self._config.shared_mem_bytes
     def __repr__(self) -> str: return f"TptrKernelConfig(grid={self.grid_size}, block={self.block_size})"
@@ -128,13 +136,13 @@ class TptrContext:
     def device(self) -> TptrDevice: return self._device
     @property
     def stream(self) -> TptrStream: return self._stream
-    def __enter__(self) -> "TptrContext": return self
+    def __enter__(self) -> TptrContext: return self  # noqa: PYI034 (Self requires typing_extensions on py<3.11, not a declared dep)
     def __exit__(self, *args) -> None:
         self._stream.synchronize()
         self._device.synchronize()
 
 
-_default_device: Optional[TptrDevice] = None
+_default_device: TptrDevice | None = None
 
 
 def get_device(index: int = 0) -> TptrDevice:

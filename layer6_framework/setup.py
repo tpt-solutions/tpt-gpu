@@ -1,11 +1,11 @@
 """Setup script for tptr framework backends package."""
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
     name="tptr",
     version="0.1.0",
     description="TPT Framework Backends - Python thin wrapper over Rust GPU runtime",
-    long_description=open("README.md").read() if False else "",
+    long_description="",
     long_description_content_type="text/markdown",
     license="Apache-2.0",
     packages=find_packages(),

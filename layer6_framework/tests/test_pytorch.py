@@ -1,6 +1,4 @@
 """Tests for tptr PyTorch integration."""
-import pytest
-from tptr._ffi import TptrError
 
 
 class TestPyTorchOps:
@@ -26,7 +24,7 @@ class TestPyTorchOps:
         assert get_tpt_op_name("aten.mm.default") == "matmul"
 
     def test_register_custom_op(self):
-        from tptr.pytorch.ops import register_custom_op, is_supported, get_tpt_op_name
+        from tptr.pytorch.ops import get_tpt_op_name, is_supported, register_custom_op
         register_custom_op("aten.custom.op", "custom_kernel")
         assert is_supported("aten.custom.op")
         assert get_tpt_op_name("aten.custom.op") == "custom_kernel"

@@ -5,10 +5,9 @@ This module provides direct access to the PyO3-backed tptr extension.
 When the native extension is not available, a simulation fallback is provided.
 """
 
-import os
-import sys
-import warnings
 import importlib.util
+import os
+import warnings
 
 # Try to import the native Rust extension (not the local tptr package)
 _native_ext = None
@@ -40,7 +39,7 @@ def _find_native_extension():
                         module = importlib.util.module_from_spec(spec)
                         spec.loader.exec_module(module)
                         return module
-                except Exception:
+                except (ImportError, AttributeError, OSError):
                     pass
 
     return None
@@ -76,13 +75,23 @@ else:
         RuntimeWarning,
     )
     from ._sim import (
-        Device,
-        MemoryAllocation,
         CommandQueue,
+        Device,
         Kernel,
         KernelConfig,
         KernelHandle,
+        MemoryAllocation,
         TptrError,
     )
     Queue = CommandQueue
-    Queue = CommandQueue
+
+__all__ = [
+    "CommandQueue",
+    "Device",
+    "Kernel",
+    "KernelConfig",
+    "KernelHandle",
+    "MemoryAllocation",
+    "Queue",
+    "TptrError",
+]

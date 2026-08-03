@@ -10,51 +10,71 @@ __license__ = "Apache-2.0"
 
 # Re-export core types from the Rust-backed tptr module
 from ._ffi import (
-    Device,
-    MemoryAllocation,
     CommandQueue,
-    Queue,
+    Device,
     Kernel,
     KernelConfig,
     KernelHandle,
+    MemoryAllocation,
+    Queue,
     TptrError,
 )
 
 # Re-export high-level wrappers
 from .core import (
-    TptrDevice,
     TptrContext,
-    TptrStream,
+    TptrDevice,
     TptrKernel,
     TptrMemory,
-    get_device,
+    TptrStream,
     get_context,
+    get_device,
     synchronize,
-)
-
-# Re-export tensor utilities
-from .tensor import (
-    TptrTensor,
-    TptrDType,
-    dtype,
-    zeros,
-    ones,
-    empty,
-    full,
 )
 
 # Re-export dispatch utilities
 from .dispatch import (
     DispatchRegistry,
-    register_op,
     get_dispatch_table,
+    register_op,
+)
+
+# Re-export tensor utilities
+from .tensor import (
+    TptrDType,
+    TptrTensor,
+    dtype,
+    empty,
+    full,
+    ones,
+    zeros,
 )
 
 __all__ = [
-    "Device", "MemoryAllocation", "CommandQueue", "Queue", "Kernel",
-    "KernelConfig", "KernelHandle", "TptrError",
-    "TptrDevice", "TptrContext", "TptrStream", "TptrKernel",
-    "TptrMemory", "get_device", "get_context", "synchronize",
-    "TptrTensor", "TptrDType", "dtype", "zeros", "ones", "empty", "full",
-    "DispatchRegistry", "register_op", "get_dispatch_table",
+    "CommandQueue",
+    "Device",
+    "DispatchRegistry",
+    "Kernel",
+    "KernelConfig",
+    "KernelHandle",
+    "MemoryAllocation",
+    "Queue",
+    "TptrContext",
+    "TptrDType",
+    "TptrDevice",
+    "TptrError",
+    "TptrKernel",
+    "TptrMemory",
+    "TptrStream",
+    "TptrTensor",
+    "dtype",
+    "empty",
+    "full",
+    "get_context",
+    "get_device",
+    "get_dispatch_table",
+    "ones",
+    "register_op",
+    "synchronize",
+    "zeros",
 ]

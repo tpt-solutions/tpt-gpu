@@ -2,10 +2,12 @@
 TPT Tensor - GPU tensor abstraction backed by tptr runtime.
 """
 from __future__ import annotations
-from typing import Optional, Tuple, Union
-from enum import IntEnum
+
 import math
-from .._ffi import Device as _NativeDevice, TptrError
+from enum import IntEnum
+
+from .._ffi import Device as _NativeDevice
+from .._ffi import TptrError
 
 
 class TptrDType(IntEnum):
@@ -115,14 +117,19 @@ class TptrTensor:
         return f"TptrTensor(shape={self._shape}, dtype={self._dtype.name})"
 
     def __del__(self) -> None:
+        # Broad + silent: exceptions in __del__ can't propagate usefully, and
+        # interpreter shutdown may have already torn down module globals.
         try:
-            if hasattr(self, '_native_device') and hasattr(self, '_native_alloc'):
-                if not self._native_alloc.is_freed():
-                    self._native_device.free(self._native_alloc)
-        except Exception:
+            if (
+                hasattr(self, "_native_device")
+                and hasattr(self, "_native_alloc")
+                and not self._native_alloc.is_freed()
+            ):
+                self._native_device.free(self._native_alloc)
+        except Exception:  # noqa: BLE001, S110
             pass
 
-def _binary_op(op: str, a: TptrTensor, b: Union[TptrTensor, float, int]) -> TptrTensor:
+def _binary_op(op: str, a: TptrTensor, b: TptrTensor | float) -> TptrTensor:
     """Execute a binary operation, returning a new tensor."""
     if isinstance(b, TptrTensor):
         out_shape = _broadcast_shapes(a.shape, b.shape)

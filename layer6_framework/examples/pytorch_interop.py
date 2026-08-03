@@ -9,8 +9,8 @@ Demonstrates:
 - Stream management
 - Hugging Face integration (if available)
 """
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -75,7 +75,7 @@ def main():
     print("\n7. Autograd Operations")
     try:
         import torch
-        from tptr.pytorch.autograd import tpt_add, tpt_mul, tpt_matmul, tpt_relu
+        from tptr.pytorch.autograd import tpt_add, tpt_matmul, tpt_mul, tpt_relu
 
         a = torch.randn(3, 4)
         b = torch.randn(3, 4)
@@ -89,7 +89,7 @@ def main():
 
     # 8. Stream management
     print("\n8. Stream Management")
-    from tptr.pytorch.stream import TptStream, StreamContext, get_stream
+    from tptr.pytorch.stream import get_stream
 
     stream = get_stream(0, "normal")
     print(f"   Stream: {stream}")

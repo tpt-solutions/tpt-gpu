@@ -2,7 +2,8 @@
 TPT Dispatch - Operation dispatch registry for framework integration.
 """
 from __future__ import annotations
-from typing import Callable, Dict, Optional, Any, List
+
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
@@ -27,7 +28,7 @@ class OpMetadata:
     input_count: int
     output_count: int
     supports_inplace: bool = False
-    kernel_name: Optional[str] = None
+    kernel_name: str | None = None
     description: str = ""
 
 
@@ -48,7 +49,7 @@ def _default_factory(name: str) -> Callable:
 class DispatchRegistry:
     """Registry for tensor operations mapping high-level ops to TPT kernels."""
     def __init__(self):
-        self._ops: Dict[str, OpEntry] = {}
+        self._ops: dict[str, OpEntry] = {}
 
     def register(self, name, op_type=OpType.CUSTOM, input_count=2, output_count=1,
                  supports_inplace=False, kernel_name=None, description="",
@@ -94,7 +95,7 @@ class DispatchRegistry:
     def __contains__(self, name: str) -> bool:
         return name in self._ops
 
-    def list_by_type(self, op_type: OpType) -> List[str]:
+    def list_by_type(self, op_type: OpType) -> list[str]:
         return [name for name, entry in self._ops.items() if entry.metadata.op_type == op_type]
 
 

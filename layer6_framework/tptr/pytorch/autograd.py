@@ -1,7 +1,5 @@
 # TPT PyTorch Autograd Integration
 from __future__ import annotations
-from typing import Any, Tuple, Optional
-import warnings
 
 
 class TptFunction:
@@ -99,8 +97,9 @@ class TptReluFunction(TptFunction):
     @staticmethod
     def forward(ctx, a):
         try:
-            from tptr.pytorch.tensor import TptrTorchTensor
             import torch as _torch
+
+            from tptr.pytorch.tensor import TptrTorchTensor
             tpt_a = TptrTorchTensor.from_torch_tensor(a) if not isinstance(a, TptrTorchTensor) else a
             result = tpt_a.clone()
             return result.to_torch()

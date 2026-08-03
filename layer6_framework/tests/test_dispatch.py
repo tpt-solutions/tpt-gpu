@@ -1,8 +1,10 @@
 """Tests for tptr dispatch module."""
 import pytest
 from tptr.dispatch import (
-    DispatchRegistry, OpType, OpMetadata, OpEntry,
-    register_op, get_dispatch_table, dispatch_op,
+    DispatchRegistry,
+    OpType,
+    get_dispatch_table,
+    register_op,
 )
 
 

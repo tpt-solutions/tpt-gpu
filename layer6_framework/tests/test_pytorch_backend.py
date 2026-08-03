@@ -1,7 +1,8 @@
 """Tests for TPT PyTorch backend integration."""
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -83,7 +84,6 @@ class TestTptrTorchTensor:
         assert t.shape == (3, 4)
 
     def test_tensor_to_numpy(self):
-        import numpy as np
         from tptr.pytorch.tensor import TptrTorchTensor
         from tptr.tensor import float32
         t = TptrTorchTensor((3, 4), float32)
@@ -116,7 +116,7 @@ class TestTptrTorchTensor:
         assert t.shape == (3, 4)
 
     def test_to_torch(self):
-        torch = pytest.importorskip("torch")
+        pytest.importorskip("torch")
         from tptr.pytorch.tensor import TptrTorchTensor
         from tptr.tensor import float32
         t = TptrTorchTensor((3, 4), float32)
@@ -131,7 +131,7 @@ class TestTptrTorchTensor:
         assert t.shape == (3, 4)
 
     def test_to_torch_function(self):
-        torch = pytest.importorskip("torch")
+        pytest.importorskip("torch")
         from tptr.pytorch.tensor import TptrTorchTensor, to_torch
         from tptr.tensor import float32
         t = TptrTorchTensor((3, 4), float32)
@@ -297,7 +297,7 @@ class TestStreams:
         assert event.is_complete()
 
     def test_stream_context(self):
-        from tptr.pytorch.stream import TptStream, StreamContext
+        from tptr.pytorch.stream import StreamContext, TptStream
         stream = TptStream(0)
         with StreamContext(stream) as s:
             assert s.handle > 0

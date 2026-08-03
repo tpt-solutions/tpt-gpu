@@ -1,8 +1,10 @@
 # TPT PyTorch Stream Management
 from __future__ import annotations
-from typing import Optional, Callable
+
 import threading
-import tptr._ffi as _ffi
+from collections.abc import Callable
+
+from tptr import _ffi
 
 
 class TptStream:
@@ -42,7 +44,7 @@ class TptStream:
     def add_callback(self, callback: Callable) -> None:
         self._callbacks.append(callback)
 
-    def wait_stream(self, other: "TptStream") -> None:
+    def wait_stream(self, other: TptStream) -> None:
         self.submit("wait_stream", other_handle=other.handle)
 
     def __repr__(self):
@@ -52,11 +54,11 @@ class TptStream:
 class TptEvent:
     """Synchronization event for TPT streams."""
 
-    def __init__(self, stream: Optional[TptStream] = None):
+    def __init__(self, stream: TptStream | None = None):
         self._stream = stream
         self._completed = False
 
-    def record(self, stream: Optional[TptStream] = None) -> None:
+    def record(self, stream: TptStream | None = None) -> None:
         self._stream = stream or self._stream
         self._completed = False
 
@@ -68,7 +70,7 @@ class TptEvent:
     def is_complete(self) -> bool:
         return self._completed
 
-    def wait(self, stream: Optional[TptStream] = None) -> None:
+    def wait(self, stream: TptStream | None = None) -> None:
         if stream is not None:
             stream.synchronize()
         self._completed = True

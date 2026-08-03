@@ -6,8 +6,8 @@ NOTE: JAX integration is not yet implemented. This example will print a
 not-implemented notice and exit. See layer6_framework/examples/basic_usage.py
 for a working example using the PyTorch backend or the raw tptr Python API.
 """
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

@@ -1,8 +1,14 @@
 """Tests for tptr tensor module."""
-import pytest
 from tptr.tensor import (
-    TptrTensor, TptrDType, dtype, float32, float64, int32,
-    zeros, ones, empty, full,
+    TptrDType,
+    TptrTensor,
+    empty,
+    float32,
+    float64,
+    full,
+    int32,
+    ones,
+    zeros,
 )
 
 

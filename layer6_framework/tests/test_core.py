@@ -1,9 +1,12 @@
 """Tests for tptr core module."""
-import pytest
 from tptr.core import (
-    TptrDevice, TptrMemory, TptrStream, TptrKernel,
-    TptrKernelConfig, TptrContext, get_device, get_context,
-    synchronize, device_context,
+    TptrContext,
+    TptrDevice,
+    TptrKernelConfig,
+    device_context,
+    get_context,
+    get_device,
+    synchronize,
 )
 
 
@@ -96,7 +99,6 @@ class TestTptrKernel:
 
 class TestTptrKernelConfig:
     def test_config_creation(self):
-        from tptr._ffi import KernelConfig as NativeConfig
         config = TptrKernelConfig(grid=(16, 1, 1), block=(256, 1, 1))
         assert config.grid_size == (16, 1, 1)
         assert config.block_size == (256, 1, 1)

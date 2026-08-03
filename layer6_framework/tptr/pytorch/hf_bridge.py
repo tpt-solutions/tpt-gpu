@@ -1,7 +1,7 @@
 # Hugging Face Integration Bridge for TPT
 from __future__ import annotations
-from typing import Optional, Dict, Any
-import warnings
+
+from typing import Any
 
 
 def is_hf_available() -> bool:
@@ -29,6 +29,7 @@ def load_model(model_name: str, device: str = "tpt:0", **kwargs) -> Any:
         raise RuntimeError("Hugging Face transformers not installed.")
     
     import transformers
+
     from tptr.pytorch import register_backend
     
     register_backend()
@@ -61,7 +62,7 @@ def load_tokenizer(model_name: str, **kwargs) -> Any:
     return transformers.AutoTokenizer.from_pretrained(model_name, **kwargs)
 
 
-def run_inference(model, tokenizer, text: str, max_length: int = 128) -> Dict[str, Any]:
+def run_inference(model, tokenizer, text: str, max_length: int = 128) -> dict[str, Any]:
     """
     Run inference on a model with TPT backend.
     
@@ -100,7 +101,7 @@ class TptHFModel:
         self.tokenizer = load_tokenizer(model_name, **kwargs)
         self.device = device
 
-    def predict(self, text: str, **kwargs) -> Dict[str, Any]:
+    def predict(self, text: str, **kwargs) -> dict[str, Any]:
         return run_inference(self.model, self.tokenizer, text, **kwargs)
 
     def embed(self, text: str) -> Any:

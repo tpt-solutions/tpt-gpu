@@ -1,6 +1,5 @@
 """Tests for tptr JAX integration — skipped until JAX is implemented."""
 import pytest
-from tptr._ffi import TptrError
 
 pytestmark = pytest.mark.skip(reason="JAX integration not yet implemented (tptr.jax stubs only)")
 
@@ -108,7 +107,7 @@ class TestJaxConversion:
 
     def test_jax_to_tptr(self):
         import numpy as np
-        from tptr.jax import jax_to_tptr, TptrJaxArray
+        from tptr.jax import TptrJaxArray, jax_to_tptr
         np_array = np.ones((4, 4), dtype=np.float32)
         tptr_arr = jax_to_tptr(np_array)
         assert isinstance(tptr_arr, TptrJaxArray)

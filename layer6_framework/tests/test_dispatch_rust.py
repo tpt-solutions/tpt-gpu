@@ -2,9 +2,10 @@
 
 These tests run via cargo test on the tpt-gpu-runtime crate.
 """
-import subprocess
 import os
 import shutil
+import subprocess
+
 import pytest
 
 
@@ -21,6 +22,7 @@ def run_cargo_test(package=None, test_name=None):
         capture_output=True,
         text=True,
         cwd=os.path.join(os.path.dirname(__file__), "..", ".."),
+        check=False,
     )
     return result
 

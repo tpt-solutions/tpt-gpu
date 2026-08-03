@@ -20,11 +20,9 @@ Usage:
     z = torch.relu(y) # activation via TPT
 """
 from __future__ import annotations
-from typing import Optional, Dict, Any, Tuple, List, Union
-import os
-import warnings
 
-from tptr._ffi import TptrError
+import importlib.util
+import warnings
 
 # TPT device type string for PyTorch
 TPT_DEVICE_TYPE = "tpt"
@@ -32,11 +30,7 @@ TPT_DEVICE_TYPE = "tpt"
 
 def is_available() -> bool:
     """Check if TPT backend is available."""
-    try:
-        import tptr._ffi
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("tptr._ffi") is not None
 
 
 def register_backend() -> bool:
@@ -53,7 +47,7 @@ def register_backend() -> bool:
         if hasattr(torch, "_register_device_backend"):
             torch._register_device_backend(TPT_DEVICE_TYPE, _dispatch_impl)
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 (private torch API; failure modes vary by torch version)
         warnings.warn(f"Failed to register TPT backend: {e}")
         return False
 
@@ -64,7 +58,7 @@ def _dispatch_impl(op, args, kwargs):
     return dispatch_op(op, args, kwargs)
 
 
-def get_tpt_device(device_str: str) -> "TptrTorchDevice":
+def get_tpt_device(device_str: str) -> TptrTorchDevice:
     """Parse a TPT device string like 'tpt:0' and return a device object."""
     if ":" in device_str:
         _, idx = device_str.split(":", 1)
@@ -96,7 +90,7 @@ class TptrTorchDevice:
         info = self._device.info()
         return int(info.get("total_memory", 0))
 
-    def allocate(self, size: int) -> "TptrNativeTensor":
+    def allocate(self, size: int) -> TptrNativeTensor:
         alloc = self._device.allocate(size)
         return TptrNativeTensor(alloc)
 
@@ -137,22 +131,59 @@ class TptrNativeTensor:
 
 
 # Re-exports from sub-modules
-from tptr.pytorch.tensor import TptrTorchTensor, from_torch, to_torch
 from tptr.pytorch.autograd import (
-    TptFunction, TptAddFunction, TptMulFunction,
-    TptMatmulFunction, TptReluFunction,
-    tpt_add, tpt_mul, tpt_matmul, tpt_relu,
+    TptAddFunction,
+    TptFunction,
+    TptMatmulFunction,
+    TptMulFunction,
+    TptReluFunction,
+    tpt_add,
+    tpt_matmul,
+    tpt_mul,
+    tpt_relu,
 )
-from tptr.pytorch.stream import TptStream, TptEvent, StreamContext, get_stream, default_stream
-from tptr.pytorch.hf_bridge import is_hf_available, load_model, load_tokenizer, run_inference, TptHFModel
+from tptr.pytorch.hf_bridge import (
+    TptHFModel,
+    is_hf_available,
+    load_model,
+    load_tokenizer,
+    run_inference,
+)
+from tptr.pytorch.stream import (
+    StreamContext,
+    TptEvent,
+    TptStream,
+    default_stream,
+    get_stream,
+)
+from tptr.pytorch.tensor import TptrTorchTensor, from_torch, to_torch
 
 __all__ = [
-    "is_available", "register_backend", "get_tpt_device",
-    "TptrTorchDevice", "TptrNativeTensor",
-    "TptrTorchTensor", "from_torch", "to_torch",
-    "TptFunction", "TptAddFunction", "TptMulFunction",
-    "TptMatmulFunction", "TptReluFunction",
-    "tpt_add", "tpt_mul", "tpt_matmul", "tpt_relu",
-    "TptStream", "TptEvent", "StreamContext", "get_stream", "default_stream",
-    "is_hf_available", "load_model", "load_tokenizer", "run_inference", "TptHFModel",
+    "StreamContext",
+    "TptAddFunction",
+    "TptEvent",
+    "TptFunction",
+    "TptHFModel",
+    "TptMatmulFunction",
+    "TptMulFunction",
+    "TptReluFunction",
+    "TptStream",
+    "TptrNativeTensor",
+    "TptrTorchDevice",
+    "TptrTorchTensor",
+    "default_stream",
+    "from_torch",
+    "get_stream",
+    "get_tpt_device",
+    "is_available",
+    "is_hf_available",
+    "load_model",
+    "load_tokenizer",
+    "register_backend",
+    "run_inference",
+    "to_torch",
+    "tpt_add",
+    "tpt_matmul",
+    "tpt_mul",
+    "tpt_relu",
 ]

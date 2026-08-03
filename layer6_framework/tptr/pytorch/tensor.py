@@ -1,7 +1,7 @@
 # TPT PyTorch Tensor Wrapper
 from __future__ import annotations
-from typing import Optional, Tuple, Union
-import tptr._ffi as _ffi
+
+from tptr import _ffi
 
 
 class TptrTorchTensor:
@@ -129,10 +129,12 @@ class TptrTorchTensor:
         return f"TptrTorchTensor(shape={self._shape}, dtype={dtype_name}, device={self._device_index})"
 
     def __del__(self):
+        # Broad + silent: exceptions in __del__ can't propagate usefully, and
+        # interpreter shutdown may have already torn down module globals.
         try:
             if hasattr(self, "_native_alloc") and not self._native_alloc.is_freed():
                 _ffi.Device(self._device_index).free(self._native_alloc)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
 
