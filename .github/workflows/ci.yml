@@ -19,7 +19,7 @@ jobs:
         rust: [stable]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -65,7 +65,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -89,7 +89,7 @@ jobs:
     name: Python / pytest (layer6_framework)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
@@ -103,7 +103,7 @@ jobs:
     name: Vendor backend builds (cuda / rocm)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
     - name: Build with CUDA feature
@@ -121,7 +121,7 @@ jobs:
     name: RTL sim (layer1 ISA)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Install iverilog
       run: sudo apt-get update && sudo apt-get install -y iverilog
     - name: Run core simulation (make sim)
