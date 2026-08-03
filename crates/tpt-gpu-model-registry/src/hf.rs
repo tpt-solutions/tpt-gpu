@@ -90,7 +90,7 @@ pub fn download(registry: &mut ModelRegistry, params: HfDownload) -> Result<Path
     let resp = ureq::get(&params.url)
         .call()
         .with_context(|| format!("GET {} failed", params.url))?;
-    let mut reader = resp.into_reader();
+    let mut reader = resp.into_body().into_reader();
 
     let mut file =
         File::create(&dest).with_context(|| format!("cannot create {}", dest.display()))?;

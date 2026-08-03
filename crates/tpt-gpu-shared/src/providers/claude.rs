@@ -20,11 +20,14 @@ pub struct ClaudeProvider {
 impl ClaudeProvider {
     /// Create a new Claude provider from an API key
     pub fn new(api_key: impl Into<String>) -> Self {
+        let config = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build();
         ClaudeProvider {
             api_key: api_key.into(),
             base_url: "https://api.anthropic.com/v1".to_string(),
             default_model: "claude-sonnet-4-20250514".to_string(),
-            client: ureq::Agent::new(),
+            client: ureq::Agent::new_with_config(config),
         }
     }
 
@@ -87,10 +90,11 @@ impl ClaudeProvider {
     }
 
     /// Parse Anthropic response into our AiResponse
-    fn parse_response(&self, resp: ureq::Response) -> AiResult<AiResponse> {
-        let status = resp.status();
+    fn parse_response(&self, mut resp: ureq::http::Response<ureq::Body>) -> AiResult<AiResponse> {
+        let status = resp.status().as_u16();
         let body = resp
-            .into_string()
+            .body_mut()
+            .read_to_string()
             .map_err(|e| AiError::serialization(e.to_string()))?;
         if status != 200 {
             return Err(self.map_error(status, &body));
@@ -258,20 +262,14 @@ impl AiProvider for ClaudeProvider {
         let response = self
             .client
             .post(&url)
-            .set("x-api-key", &self.api_key)
-            .set("anthropic-version", "2023-06-01")
-            .set("content-type", "application/json")
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
             .send_json(body);
 
         match response {
             Ok(resp) => self.parse_response(resp),
-            Err(ureq::Error::Status(status, resp)) => {
-                let body = resp.into_string().unwrap_or_default();
-                Err(self.map_error(status, &body))
-            }
-            Err(ureq::Error::Transport(e)) => {
-                Err(AiError::provider_unavailable("claude", e.to_string()))
-            }
+            Err(e) => Err(AiError::provider_unavailable("claude", e.to_string())),
         }
     }
 }

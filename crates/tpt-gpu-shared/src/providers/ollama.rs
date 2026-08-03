@@ -19,10 +19,13 @@ pub struct OllamaProvider {
 impl OllamaProvider {
     /// Create with default localhost URL
     pub fn new() -> Self {
+        let config = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build();
         OllamaProvider {
             base_url: "http://localhost:11434".to_string(),
             default_model: "llama3.1".to_string(),
-            client: ureq::Agent::new(),
+            client: ureq::Agent::new_with_config(config),
             timeout_secs: 60,
         }
     }
@@ -59,13 +62,14 @@ impl OllamaProvider {
 
     /// List locally available models
     pub fn list_local_models(&self) -> AiResult<Vec<String>> {
-        let resp = self
+        let mut resp = self
             .client
             .get(&format!("{}/api/tags", self.base_url))
             .call()
             .map_err(|e| AiError::provider_unavailable("ollama", e.to_string()))?;
         let body: serde_json::Value = resp
-            .into_json()
+            .body_mut()
+            .read_json()
             .map_err(|e| AiError::serialization(e.to_string()))?;
         let models: Vec<String> = body
             .pointer("/models")
@@ -109,10 +113,11 @@ impl OllamaProvider {
         }
     }
 
-    fn parse_response(&self, resp: ureq::Response) -> AiResult<AiResponse> {
-        let status = resp.status();
+    fn parse_response(&self, mut resp: ureq::http::Response<ureq::Body>) -> AiResult<AiResponse> {
+        let status = resp.status().as_u16();
         let body = resp
-            .into_string()
+            .body_mut()
+            .read_to_string()
             .map_err(|e| AiError::serialization(e.to_string()))?;
         if status != 200 {
             return Err(self.map_error(status, &body));
@@ -214,18 +219,14 @@ impl AiProvider for OllamaProvider {
         let response = self
             .client
             .post(&url)
-            .set("content-type", "application/json")
-            .timeout(std::time::Duration::from_secs(self.timeout_secs))
+            .header("content-type", "application/json")
+            .config()
+            .timeout_global(Some(std::time::Duration::from_secs(self.timeout_secs)))
+            .build()
             .send_json(body);
         match response {
             Ok(resp) => self.parse_response(resp),
-            Err(ureq::Error::Status(status, resp)) => {
-                let body = resp.into_string().unwrap_or_default();
-                Err(self.map_error(status, &body))
-            }
-            Err(ureq::Error::Transport(e)) => {
-                Err(AiError::provider_unavailable("ollama", e.to_string()))
-            }
+            Err(e) => Err(AiError::provider_unavailable("ollama", e.to_string())),
         }
     }
 }
