@@ -17,7 +17,7 @@
 - **Shared Model Registry** — GGUF models stored once in `~/.tpt/models/` and shared across all TPT tools
 - **IDE Support** — Full LSP server, VS Code extension, formatter, and linter
 - **Browser Playground** — Try TPT Script live in your browser, no install required: [`crates/tpt-gpu-playground/`](crates/tpt-gpu-playground/)
-- **Framework Integration** — PyTorch and JAX backends with seamless dispatch
+- **Framework Integration** — PyTorch dispatch backend; JAX backend planned, not yet implemented
 - **AI-Assisted Kernel Generation** — Automated kernel optimization and generation tools
 - **Comprehensive Documentation** — 17 tutorials, complete language spec, and API reference
 
@@ -129,7 +129,7 @@ cargo build -p tpt-gpu-primitives --features sim
 
 ### Framework Integration
 - **PyTorch dispatch** — Seamless backend integration
-- **JAX integration** — XLA-compatible primitives
+- **JAX integration** — Planned, not yet implemented (`tptr.jax` exposes honest not-implemented stubs)
 - **HuggingFace support** — Model loading and inference
 - **Distributed training** — FSDP and pipeline parallelism
 
@@ -145,7 +145,7 @@ layer2_tptd/     Kernel drivers — Linux DRM, Windows WDM, macOS DriverKit
 layer3_tptc/     TPTIR compiler — MLIR-compatible dialect (C++ + Rust)
 layer4_tptr/     GPU runtime — allocator, scheduler, kernel launch, LLM inference (Rust)
 layer5_tptp/     GPU primitives — GEMM, Attention, Conv2D (TPTIR + Rust)
-layer6_tptf/     Framework backends — PyTorch, JAX integration (Python + Rust)
+layer6_tptf/     Framework backends — PyTorch dispatch, JAX planned (Python + Rust)
 layer7_tptb/     TPT Script compiler — lexer → parser → type checker → codegen (Rust)
 ```
 
@@ -195,7 +195,7 @@ cd crates/tpt-gpu-runtime && cargo publish
 - LLM inference runtime with KV cache
 - Shared GGUF model registry
 - IDE support (LSP, VS Code extension)
-- Framework integration (PyTorch, JAX)
+- Framework integration (PyTorch; JAX planned)
 - AI-assisted kernel generation
 
 ### v1.1 (Next)
