@@ -43,7 +43,7 @@ log = "0.4"
 thiserror = "2"
 bytemuck = "1.21"
 chrono = { version = "0.4", features = ["serde"] }
-rand = "0.8"
+rand = "0.10"
 memmap2 = "0.9"
 tokio = { version = "1", features = ["full"] }
 tower-lsp = "0.20"
