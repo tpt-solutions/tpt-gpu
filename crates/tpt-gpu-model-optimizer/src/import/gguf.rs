@@ -444,7 +444,10 @@ impl GgufImporter {
             }
         }
         // Fill any layers that had no weight tensors with a 4-bit default.
-        for bits in per_layer_bits.iter_mut().take((num_layers as usize).min(128)) {
+        for bits in per_layer_bits
+            .iter_mut()
+            .take((num_layers as usize).min(128))
+        {
             if *bits == 0 {
                 *bits = 4;
             }

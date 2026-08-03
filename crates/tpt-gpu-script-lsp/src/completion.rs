@@ -96,8 +96,6 @@ pub fn provide_completions(
     let db = doc.completion_db();
     let offset = position_to_offset(&doc.source, pos);
 
-    // Determine context from the token just before cursor
-    let token = doc.token_at(pos);
     let mut items = Vec::new();
 
     // If we're inside an annotation context (after @), suggest annotations

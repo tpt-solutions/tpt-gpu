@@ -1,6 +1,5 @@
 use crate::document::DocumentStore;
 use dashmap::DashMap;
-use std::sync::Arc;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, ClientSocket, LanguageServer, LspService};

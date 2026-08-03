@@ -183,9 +183,10 @@ pub fn parse_assembly(source: &str) -> Result<Region, String> {
             continue;
         }
         if line.starts_with('^') && !block.operations.is_empty() {
-            region
-                .blocks
-                .push(std::mem::replace(&mut block, Block::new(line.strip_prefix('^').unwrap())));
+            region.blocks.push(std::mem::replace(
+                &mut block,
+                Block::new(line.strip_prefix('^').unwrap()),
+            ));
         }
     }
     if !block.operations.is_empty() || region.blocks.is_empty() {

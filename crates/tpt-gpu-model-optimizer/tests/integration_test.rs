@@ -24,7 +24,11 @@ fn create_test_tptf(dir: &std::path::Path, num_layers: usize, ffn_dim: usize) ->
 
     // Build header
     let mut per_layer_bits = [0u8; 128];
-    for (i, bits) in per_layer_bits.iter_mut().enumerate().take(num_layers.min(128)) {
+    for (i, bits) in per_layer_bits
+        .iter_mut()
+        .enumerate()
+        .take(num_layers.min(128))
+    {
         *bits = if i == 0 || i == num_layers - 1 { 16 } else { 4 };
     }
 

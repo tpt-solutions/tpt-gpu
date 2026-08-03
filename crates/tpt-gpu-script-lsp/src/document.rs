@@ -1,5 +1,5 @@
 use tower_lsp::lsp_types::*;
-use tpt_gpu_script_core::{compile_str, tokenize, CompileError, Program, Token, TokenKind};
+use tpt_gpu_script_core::{compile_str, tokenize, Program, Token};
 
 use crate::completion::CompletionDatabase;
 

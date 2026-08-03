@@ -1,6 +1,5 @@
 use crate::document::DocumentStore;
 use tower_lsp::lsp_types::*;
-use tpt_gpu_script_core;
 
 fn lex_error_to_position(e: &tpt_gpu_script_core::LexError) -> (u32, u32) {
     match e {
@@ -14,29 +13,26 @@ fn lex_error_to_position(e: &tpt_gpu_script_core::LexError) -> (u32, u32) {
 
 pub fn compute_diagnostics(doc: &DocumentStore) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    match tpt_gpu_script_core::tokenize(&doc.source) {
-        Err(e) => {
-            let (line, col) = lex_error_to_position(&e);
-            diagnostics.push(Diagnostic {
-                range: Range {
-                    start: Position {
-                        line: line - 1,
-                        character: col - 1,
-                    },
-                    end: Position {
-                        line: line - 1,
-                        character: col,
-                    },
+    if let Err(e) = tpt_gpu_script_core::tokenize(&doc.source) {
+        let (line, col) = lex_error_to_position(&e);
+        diagnostics.push(Diagnostic {
+            range: Range {
+                start: Position {
+                    line: line - 1,
+                    character: col - 1,
                 },
-                severity: Some(DiagnosticSeverity::ERROR),
-                code: Some(NumberOrString::String("LEX_ERROR".to_string())),
-                source: Some("tpt-gpu-lsp".to_string()),
-                message: e.to_string(),
-                ..Default::default()
-            });
-            return diagnostics;
-        }
-        Ok(_) => {}
+                end: Position {
+                    line: line - 1,
+                    character: col,
+                },
+            },
+            severity: Some(DiagnosticSeverity::ERROR),
+            code: Some(NumberOrString::String("LEX_ERROR".to_string())),
+            source: Some("tpt-gpu-lsp".to_string()),
+            message: e.to_string(),
+            ..Default::default()
+        });
+        return diagnostics;
     }
     let program = match tpt_gpu_script_core::compile_str(&doc.source) {
         Err(e) => {

@@ -3,6 +3,7 @@
 //! Stable C interface over `tpt-gpu-runtime`. Generated header:
 //! `include/tptr/tptr_capi.h` (see `cbindgen.toml`).
 #![allow(non_camel_case_types)]
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 use std::sync::Mutex;
 use tpt_gpu_runtime::device::DeviceProperties;
 use tpt_gpu_runtime::{
@@ -59,9 +60,10 @@ fn map_err(err: &TptrError) -> tptr_status_t {
     }
 }
 
-/// Last error message storage (thread-local for safety).
 thread_local! {
-    static LAST_ERROR: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
+    /// Last error message storage (thread-local for safety).
+    static LAST_ERROR: std::cell::RefCell<String> =
+        const { std::cell::RefCell::new(String::new()) };
 }
 
 fn store_err(err: &TptrError) -> tptr_status_t {
@@ -93,7 +95,7 @@ pub extern "C" fn tptr_device_create(
 /// otherwise it falls back to the simulated device. Mirrors the Rust
 /// `Device::open()` entry point used by external integrations.
 #[no_mangle]
-pub extern "C" fn tptr_device_open(index: u32, out: *mut *mut tptr_device_t) -> tptr_status_t {
+pub extern "C" fn tptr_device_open(_index: u32, out: *mut *mut tptr_device_t) -> tptr_status_t {
     if out.is_null() {
         return tptr_status_t::ErrorNullPointer;
     }

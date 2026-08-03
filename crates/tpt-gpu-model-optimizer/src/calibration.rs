@@ -81,7 +81,9 @@ impl CalibrationGenerator {
 
         // Try to generate using AI provider, fall back to heuristic
         let samples = match &self.ai_provider {
-            Some(provider) if provider.is_available() => self.generate_with_ai(provider.as_ref())?,
+            Some(provider) if provider.is_available() => {
+                self.generate_with_ai(provider.as_ref())?
+            }
             _ => self.generate_heuristic(),
         };
 

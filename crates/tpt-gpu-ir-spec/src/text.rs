@@ -523,9 +523,7 @@ fn parse_instruction(s: &str, line: usize) -> Result<Instruction, ParseError> {
     let mut operands: Vec<String> = Vec::new();
     if remaining.starts_with('%') {
         // Collect operand tokens until we hit `{` or `:`
-        let operand_end = remaining
-            .find(['{', ':'])
-            .unwrap_or(remaining.len());
+        let operand_end = remaining.find(['{', ':']).unwrap_or(remaining.len());
         let operand_str = remaining[..operand_end].trim();
         remaining = remaining[operand_end..].trim();
         for tok in split_comma_aware(operand_str) {

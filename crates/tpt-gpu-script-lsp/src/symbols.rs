@@ -1,7 +1,7 @@
 use crate::document::DocumentStore;
 use tower_lsp::lsp_types::*;
-use tpt_gpu_script_core;
 
+#[allow(deprecated)]
 pub fn provide_symbols(doc: &DocumentStore) -> Option<DocumentSymbolResponse> {
     let program = doc.ast.as_ref()?;
     let mut symbols = Vec::new();

@@ -1,5 +1,4 @@
 use tower_lsp::lsp_types::*;
-use tpt_gpu_script_core;
 use tpt_gpu_script_core::TokenKind;
 
 use crate::document::DocumentStore;
