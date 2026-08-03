@@ -13,33 +13,29 @@ This tutorial covers profiling and optimization strategies for TPT GPU kernels.
 
 ## Profiling Tools
 
-### Kernel Profiling
+There is no `tpt profile` subcommand — the `tpt-gpu-script` CLI's subcommands are
+`new, init, check, compile, inspect, run, ops, modules, docs, compat, doctor`
+(`crates/tpt-gpu-script-cli/src/main.rs`). Profiling data comes from two other places:
+
+### Hardware Performance Counters
+
+The driver ABI (`layer2_tptd/include/tpt_driver.h`, `TPT_IOC_QUERY_PERF`) exposes raw counters
+— instructions retired, core cycles, L1D/L2 misses, branch mispredictions, warp stalls — via
+the `tptd` daemon (see [Tutorial 3](03_kernel_drivers.md)).
+
+### `tpt-gpu-bench`
+
+`crates/tpt-gpu-bench` is the benchmark harness for primitives and kernels:
 
 ```bash
-# Profile kernel execution
-tpt profile kernel.tpts --iterations=100
-
-# Output:
-# Kernel: vector_add
-#   Cycles: 12345
-#   Instructions: 6789
-#   Memory accesses: 1024
-#   Cache hit rate: 98.5%
-#   Occupancy: 75%
+cargo run -p tpt-gpu-bench -- --help
 ```
 
-### Memory Profiling
+### `tpt-gpu-kernel-optimizer`
 
-```bash
-# Profile memory usage
-tpt profile memory.tpts --track-allocations
-
-# Output:
-# Peak memory: 1.5 GB
-# Allocations: 1234
-# Deallocations: 1234
-# Leaks: 0
-```
+`crates/tpt-gpu-kernel-optimizer` auto-tunes kernel parameters (grid search → hill-climb →
+AI-guided) using real evaluators per kernel category — see its `real_evaluator.rs` and
+`*_eval.rs` modules.
 
 ---
 
@@ -75,7 +71,6 @@ fn good_access(x: Tensor[f32, N, M]) -> Tensor[f32, N, M] {
 
 ```tpts
 @requires_gpu(true)
-@shared_mem(16384)
 fn tiled_matmul(
     a: Tensor[f32, M, K],
     b: Tensor[f32, K, N],
@@ -128,7 +123,6 @@ fn fused_relu_bias(x: Tensor[f32, *], bias: Tensor[f32, *]) -> Tensor[f32, *] {
 
 ```tpts
 @requires_gpu(true)
-@block_size(256)
 fn vectorized_add(a: Tensor[f32, *], b: Tensor[f32, *]) -> Tensor[f32, *] {
     let tid = tpt.thread_idx_x()
     let stride = tpt.block_dim_x()
@@ -177,7 +171,7 @@ fn vectorized_add(a: Tensor[f32, *], b: Tensor[f32, *]) -> Tensor[f32, *] {
 
 ## Summary
 
-- ✅ Profiling tools for kernels and memory
+- ✅ Hardware perf counters via the driver ABI; `tpt-gpu-bench`/`tpt-gpu-kernel-optimizer` for benchmarking and auto-tuning
 - ✅ Memory coalescing for efficient access
 - ✅ Shared memory tiling for data reuse
 - ✅ Kernel fusion to reduce launch overhead

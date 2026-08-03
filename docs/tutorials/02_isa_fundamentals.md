@@ -194,7 +194,9 @@ done:
 
 ```bash
 cd layer1_isa/sim
-python tpt_assemble.py add.asm -o add.hex
+# tpt_assemble.py takes positional args (input, then optional output) — no -o flag.
+# With no second argument it defaults to replacing the .asm extension with .hex.
+python tpt_assemble.py add.asm add.hex
 iverilog -g2012 -o sim.vvp ../rtl/*.sv tpt_tb.sv
 vvp sim.vvp
 ```

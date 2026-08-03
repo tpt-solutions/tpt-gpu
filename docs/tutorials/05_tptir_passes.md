@@ -7,157 +7,117 @@
 
 ## Introduction
 
-TPTIR passes are optimization and transformation passes that operate on TPTIR to improve code quality, enable vectorization, and prepare for backend code generation.
+TPTIR passes are transformation passes that operate on the IR defined in
+`crates/tpt-gpu-compiler/src/ir.rs`. Each pass implements the `Pass` trait
+(`crates/tpt-gpu-compiler/src/passes.rs`) and is run over a `Region`.
 
 ### Pass Pipeline
+
+`passes::default_pipeline()` builds this fixed sequence:
 
 ```
 Input TPTIR
     │
     ▼
 ┌─────────────────┐
-│ Canonicalize    │  Normalize IR form
+│ Canonicalize    │  (currently a no-op stub — see below)
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ DCE             │  Dead Code Elimination
+│ DCE             │  (currently a no-op stub — see below)
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ Constant Fold   │  Evaluate constant expressions
+│ Validate        │  Semantic correctness checks
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ Vectorize       │  Convert scalar to vector ops
+│ Fusion          │  Pattern-match and merge op sequences
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ TensorLower     │  Lower tensor ops to loops
+│ Quantization    │  Count/prepare Quantize→Gemm→Dequantize sequences
 └────────┬────────┘
          │
          ▼
 Output TPTIR
 ```
 
+There is no separate constant-folding, vectorization, or tensor-lowering pass in the
+current implementation — those are aspirational and not yet built.
+
 ---
 
-## Pass Reference
+## The `Pass` Trait
 
-### Canonicalize Pass
-
-Normalizes IR to a standard form for downstream passes.
-
-**Before:**
-```tptir
-%a = tptir.addi(%x, %c0)    // Add zero
-%b = tptir.muli(%a, %c1)    // Multiply by one
-```
-
-**After:**
-```tptir
-// Operations with identity operands are eliminated
-// %a is replaced with %x, %b is replaced with %a
-```
-
-### Dead Code Elimination (DCE)
-
-Removes operations whose results are never used.
-
-**Before:**
-```tptir
-%unused = tptir.load(%ptr, %idx)  // Result never used
-%used = tptir.addi(%x, %y)
-tptir.return %used
-```
-
-**After:**
-```tptir
-%used = tptir.addi(%x, %y)
-tptir.return %used
-```
-
-### Constant Folding
-
-Evaluates constant expressions at compile time.
-
-**Before:**
-```tptir
-%c4 = tptir.constant 4 : i32
-%c5 = tptir.constant 5 : i32
-%sum = tptir.addi(%c4, %c5)
-```
-
-**After:**
-```tptir
-%c9 = tptir.constant 9 : i32
-```
-
-### Vectorize Pass
-
-Converts scalar operations to vector operations for SIMD execution.
-
-**Before:**
-```tptir
-%a0 = tptir.load(%base, %i0)
-%b0 = tptir.load(%base, %i1)
-%c0 = tptir.addf(%a0, %b0)
-```
-
-**After:**
-```tptir
-%va = tptir.vector_load(%base, %idx) : vector<32xf32>
-%vb = tptir.vector_load(%base2, %idx) : vector<32xf32>
-%vc = tptir.vector_add(%va, %vb) : vector<32xf32>
-```
-
-### Tensor Lowering Pass
-
-Lowers high-level tensor operations to explicit loops and memory operations.
-
-**Before:**
-```tptir
-%C = tptir.contraction(%A, %B) : tensor<16x16xf32>
-```
-
-**After:**
-```tptir
-// Lowered to nested loops with load/store
-for %i in 0..16 {
-  for %j in 0..16 {
-    for %k in 0..16 {
-      %a = tptir.tensor_load(%A, [%i, %k])
-      %b = tptir.tensor_load(%B, [%k, %j])
-      %c = tptir.tensor_load(%C, [%i, %j])
-      %prod = tptir.mulf(%a, %b)
-      %sum = tptir.addf(%c, %prod)
-      tptir.tensor_store(%sum, %C, [%i, %j])
-    }
-  }
+```rust
+// crates/tpt-gpu-compiler/src/passes.rs
+pub trait Pass {
+    fn name(&self) -> &str;
+    fn run(&self, region: &Region) -> usize; // returns number of changes/findings
 }
 ```
 
+## Pass Reference
+
+### `CanonicalizePass` / `DeadCodeEliminationPass`
+
+Both are registered in the default pipeline but currently stub implementations —
+`run()` always returns `0` and performs no transformation. They are placeholders for
+future normalization/dead-code-elimination logic.
+
+### `ValidatePass`
+
+Runs `validate_region()` (`validate.rs`) and returns the number of validation errors found
+(`0` if valid). Checks include:
+- Use-before-def
+- Type mismatches between operands and results
+- Missing block terminators
+- Wrong operand counts
+- Cyclic control flow
+
+### `FusionPass`
+
+Detects fusible operation sequences (`fusion.rs::detect_patterns`) and merges them:
+
+- **`ElementwiseChain`** — runs of `Addf`/`Subf`/`Mulf` collapsed into one fused op
+- **`FlashAttention`** — matmul → softmax → matmul pattern
+- **`ConvBnRelu`** — conv + batchnorm + relu fusion
+- **`QuantGemmFuse`** — `Dequantize → Gemm` collapsed into a single `QuantGemm`
+
+### `QuantizationPass`
+
+Counts `QuantGemm`/`Quantize`/`Dequantize`/`QuantAttention` ops already present in the
+region (e.g. emitted by codegen) and reports that count as its change total. It does not
+itself rewrite `Gemm` ops — see the doc comment in `passes.rs` for the intended relationship
+with `FusionPass`.
+
 ---
 
-## Pass Manager
-
-Passes are registered and executed by the pass manager:
+## Running the Pipeline
 
 ```rust
-// From crates/tpt-gpu-compiler/src/passes.rs
-use tptir_passes::{Canonicalize, DCE, ConstantFold, Vectorize, TensorLower};
+use tpt_gpu_compiler::passes::{PassPipeline, default_pipeline};
 
-let mut pm = PassManager::new();
-pm.add_pass(Canonicalize::new());
-pm.add_pass(DCE::new());
-pm.add_pass(ConstantFold::new());
-pm.add_pass(Vectorize::new());
-pm.add_pass(TensorLower::new());
+let pipeline = default_pipeline(); // canonicalize -> dce -> validate -> fusion -> quantization
+let total_changes = pipeline.run(&region);
+println!("{total_changes} changes/findings across the pipeline");
+```
 
-pm.run(&mut ir)?;
+Or build a custom pipeline:
+
+```rust
+use tpt_gpu_compiler::passes::{PassPipeline, ValidatePass};
+use tpt_gpu_compiler::fusion::FusionPass;
+
+let mut pipeline = PassPipeline::new();
+pipeline.add(Box::new(ValidatePass));
+pipeline.add(Box::new(FusionPass));
+let changes = pipeline.run(&region);
 ```
 
 ---
@@ -165,91 +125,60 @@ pm.run(&mut ir)?;
 ## Writing Custom Passes
 
 ```rust
-use tptir_passes::{Pass, PassResult};
-use tptir::{Operation, Block};
+use tpt_gpu_compiler::passes::Pass;
+use tpt_gpu_compiler::ir::Region;
 
-struct MyCustomPass;
+struct CountOpsPass;
 
-impl Pass for MyCustomPass {
+impl Pass for CountOpsPass {
     fn name(&self) -> &str {
-        "my-custom-pass"
+        "count-ops"
     }
-    
-    fn run_on_block(&self, block: &mut Block) -> PassResult {
-        for op in block.operations() {
-            // Transform operations
-            if let Some(new_op) = try_optimize(op) {
-                block.replace(op, new_op);
-            }
-        }
-        Ok(())
+
+    fn run(&self, region: &Region) -> usize {
+        region.blocks.iter().map(|b| b.operations.len()).sum()
     }
 }
 ```
+
+`Pass::run` takes a shared `&Region` and returns a `usize` count — passes that need to
+mutate the IR (like a future canonicalizer) will need the region to expose mutable access,
+which `FusionPass`/`QuantizationPass` do not currently do (they only count/report).
 
 ---
 
-## Pass Verification
+## Fusion Pattern Example
 
-Each pass includes verification to ensure IR validity:
+**Input block** (three chained multiplications, detected as `FlashAttention` by the
+current simplified heuristic in `detect_patterns`):
 
-```rust
-impl Pass for DCE {
-    fn verify(&self, block: &Block) -> Result<(), String> {
-        // Ensure no dangling references
-        for op in block.operations() {
-            for result in op.results() {
-                if !result.is_used() && !op.has_side_effects() {
-                    return Err(format!("Dead operation: {}", op.name()));
-                }
-            }
-        }
-        Ok(())
-    }
-}
-```
-
----
-
-## Example: Optimization Pipeline
-
-**Input:**
 ```tptir
-func.func @example(%a: f32, %b: f32) -> f32 {
-  %c0 = tptir.constant 0.0 : f32
-  %c1 = tptir.constant 1.0 : f32
-  %x = tptir.addf(%a, %c0)    // Identity add
-  %y = tptir.mulf(%x, %c1)    // Identity mul
-  %unused = tptir.addf(%b, %c0) // Dead code
-  tptir.return %y
-}
+%a = tptir.mulf(%q, %k)
+%b = tptir.mulf(%a, %scale)
+%c = tptir.mulf(%b, %v)
 ```
 
-**After Canonicalize + DCE + Constant Fold:**
-```tptir
-func.func @example(%a: f32, %b: f32) -> f32 {
-  tptir.return %a
-}
-```
+`detect_patterns` returns a `FusionResult { pattern: FusedPattern::FlashAttention, start_op: 0, end_op: 2 }`
+for this sequence.
 
 ---
 
 ## Exercises
 
-1. **DCE Pass**: Write a pass that removes redundant loads
-2. **Vectorize Pass**: Convert a scalar loop to vector operations
-3. **Custom Pass**: Implement a pass that fuses multiply-add patterns into FMA
+1. **Validate**: Feed `ValidatePass` a region with a use-before-def and confirm `run()` returns a nonzero error count
+2. **Fusion**: Write a block with an elementwise chain (`add`, `sub`, `mul` in sequence) and trace through `detect_patterns` by hand
+3. **Custom Pass**: Implement a pass that counts operations by `OpKind`
 
 ---
 
 ## Summary
 
-- ✅ Canonicalize: Normalize IR form
-- ✅ DCE: Remove dead code
-- ✅ Constant Fold: Evaluate constants at compile time
-- ✅ Vectorize: Convert scalar to vector ops
-- ✅ Tensor Lower: Lower tensor ops to loops
-- ✅ Pass manager for orchestration
+- ✅ `Pass` trait: `name()` + `run(&Region) -> usize`
+- ✅ `default_pipeline()`: canonicalize → dce → validate → fusion → quantization
+- ✅ `Canonicalize`/`DCE` are currently no-op stubs
+- ✅ `ValidatePass` checks semantic correctness
+- ✅ `FusionPass` detects elementwise/attention/conv/quant-gemm patterns
+- ✅ `QuantizationPass` counts quantization-related ops
 - ✅ Custom pass development
 
 **Next:** [Tutorial 6: Memory Management](06_memory_management.md)

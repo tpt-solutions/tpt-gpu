@@ -100,7 +100,16 @@ cargo run -p tpt-gpu-script-cli -- --help
 
 # Check Python bindings
 python -c "import tptr; print('TPT GPU loaded successfully')"
+
+# Or run the environment health check, which mirrors CI's toolchain/fmt/clippy
+# gates plus optional vendor SDK + Python detection in one command
+cargo run -p tpt-gpu-doctor            # full check
+cargo run -p tpt-gpu-doctor -- --fast  # skip slower checks
+cargo run -p tpt-gpu-doctor -- --pre-commit  # fmt + clippy only, for a pre-commit hook
 ```
+
+There's also a hosted, zero-install build of `tpt-gpu-playground` (no local `wasm-pack`
+required) deployed via `.github/workflows/docs.yml`.
 
 ---
 

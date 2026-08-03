@@ -57,8 +57,8 @@ Compile and check:
 # Type-check
 tpt check hello.tpts
 
-# Compile to Rust + TPTIR
-tpt compile hello.tpts -o output/
+# Compile to Rust + TPTIR (single combined output file, not a directory)
+tpt compile hello.tpts -o output.rs
 
 # List all available operations
 tpt ops
@@ -170,7 +170,7 @@ layer7_tptb/     TPT Script compiler — lexer → parser → type checker → c
 |------|-------------|---------|
 | `tpt-gpu-script` | CLI compiler | `tpt-gpu-script check`, `tpt-gpu-script compile`, `tpt-gpu-script run` |
 | `tpt-gpu-script-lsp` | Language Server | IDE integration |
-| `tpt-gpu-script-format` | Formatter/Linter | `tpt-gpu-script-format fmt`, `tpt-gpu-script-format lint` |
+| `tpt-gpu-script-format` | Formatter/Linter (library crate, no CLI binary) | `format()`/`lint()` from Rust |
 | `tpt-gpu-models` | Shared GGUF model registry | `tpt-gpu-models add/list/fetch` |
 | `tpt-gpu-kernelgen` | AI-assisted kernel gen | Spec → TPTIR → validate → benchmark |
 | `tpt-gpu-kernel-optimizer` | Auto-tuning | Grid → hill-climb → AI-guided search |

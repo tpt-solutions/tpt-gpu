@@ -54,15 +54,15 @@ print(tpt.is_available())
 import torch
 import tptr.pytorch as tpt
 
-# Check availability
+# Check availability and register TPT as a PyTorch backend device
 if tpt.is_available():
-    device = tpt.device(0)
+    tpt.register_backend()
+    device = tpt.get_tpt_device("tpt:0")  # not tpt.device(0)
     print(f"Device: {device.name}")
     print(f"Memory: {device.total_memory / 1024**3:.1f} GB")
 
-# Use with PyTorch
-with tpt.device_context(0):
-    tensor = torch.randn(1024, 1024, device='tpt')
+# There is no tpt.device_context() — pass the device string directly
+tensor = torch.randn(1024, 1024, device="tpt:0")
 ```
 
 ---
@@ -90,66 +90,73 @@ cpu_tensor = e.cpu()
 
 ## Custom Autograd Functions
 
+`tptr.pytorch` already ships `TptAddFunction`/`TptMulFunction`/`TptMatmulFunction`/`TptReluFunction`
+(subclasses of the lightweight `TptFunction` base, not `torch.autograd.Function`) plus their
+functional wrappers — there is no `tpt.add`/`tpt.matmul` on the top-level module:
+
 ```python
 import torch
 import tptr.pytorch as tpt
 
-class TptAddFunction(torch.autograd.Function):
+a = torch.randn(1024, 512, requires_grad=True)
+b = torch.randn(512, 768, requires_grad=True)
+
+# Functional wrappers re-exported from tptr.pytorch.autograd
+c = tpt.tpt_matmul(a, b)
+d = tpt.tpt_relu(c)
+```
+
+To write your own, subclass `tptr.pytorch.autograd.TptFunction`:
+
+```python
+from tptr.pytorch.autograd import TptFunction
+
+class MyCustomFunction(TptFunction):
     @staticmethod
     def forward(ctx, a, b):
         ctx.save_for_backward(a, b)
-        return tpt.add(a, b)
-    
+        return a + b
+
     @staticmethod
     def backward(ctx, grad_output):
-        a, b = ctx.saved_tensors
         return grad_output, grad_output
 
-class TptMatmulFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, a, b):
-        ctx.save_for_backward(a, b)
-        return tpt.matmul(a, b)
-    
-    @staticmethod
-    def backward(ctx, grad_output):
-        a, b = ctx.saved_tensors
-        grad_a = tpt.matmul(grad_output, b.t())
-        grad_b = tpt.matmul(a.t(), grad_output)
-        return grad_a, grad_b
-
-# Usage
-a = torch.randn(1024, 512, device='tpt', requires_grad=True)
-b = torch.randn(512, 768, device='tpt', requires_grad=True)
-c = TptMatmulFunction.apply(a, b)
-c.sum().backward()
+result = MyCustomFunction.apply(a, b)
 ```
+
+Note: `TptFunction.apply()` just calls `forward()` directly (`cls.forward(None, *args, **kwargs)`)
+— it does not register with PyTorch's autograd graph the way `torch.autograd.Function.apply` does,
+so `backward()` on subclasses is not wired into `.backward()` calls on the resulting tensor today.
 
 ---
 
 ## Stream Management
 
 ```python
-import tptr.pytorch.stream as tpt_stream
+from tptr.pytorch.stream import TptStream, TptEvent, StreamContext
 
-# Create stream
-stream = tpt_stream.Stream(device=0, priority='high')
+# Class is TptStream, constructor args are (device_index, priority)
+stream = TptStream(device_index=0, priority="high")
 
 # Use stream for operations
-with tpt_stream.StreamContext(stream):
-    a = torch.randn(1024, 1024, device='tpt')
-    b = torch.randn(1024, 1024, device='tpt')
+with StreamContext(stream):
+    a = torch.randn(1024, 1024, device="tpt:0")
+    b = torch.randn(1024, 1024, device="tpt:0")
     c = torch.matmul(a, b)
 
 # Synchronize
 stream.synchronize()
 
-# Events for cross-stream sync
-event = tpt_stream.Event()
-stream.record_event(event)
+# Events for cross-stream sync — record()/wait() take the stream as an argument;
+# there is no stream.record_event()/stream.wait_event()
+event = TptEvent()
+event.record(stream)
 
-other_stream = tpt_stream.Stream(device=0)
-other_stream.wait_event(event)
+other_stream = TptStream(device_index=0)
+event.wait(other_stream)
+
+# TptStream also has wait_stream() to block until another stream drains:
+other_stream.wait_stream(stream)
 ```
 
 ---
@@ -158,21 +165,21 @@ other_stream.wait_event(event)
 
 ```python
 from tptr.pytorch.hf_bridge import TptHFModel
-from transformers import AutoModel
 
-# Load model with TPT backend
-model = AutoModel.from_pretrained("bert-base-uncased")
-tpt_model = TptHFModel(model, device=0)
+# TptHFModel takes a model *name* (it loads the model and tokenizer itself),
+# not an already-constructed model instance.
+bridge = TptHFModel("bert-base-uncased", device="tpt:0")
 
-# Run inference
-import torch
-input_ids = torch.randint(0, 30000, (1, 128), device='tpt')
-attention_mask = torch.ones(1, 128, device='tpt')
+# predict()/embed() run tokenization + inference together — there is no
+# tpt_model(input_ids, attention_mask) call signature.
+result = bridge.predict("Hello world")
+print(result["logits"].shape)
 
-with torch.no_grad():
-    output = tpt_model(input_ids, attention_mask)
-    print(output.last_hidden_state.shape)
+embedding = bridge.embed("Hello world")
 ```
+
+Note: `load_model()` currently maps a `"tpt:*"` device string onto `"cuda:{idx}"` if CUDA is
+available, or `"cpu"` otherwise — there is no dedicated TPT `torch.device` backend used here yet.
 
 ---
 
@@ -195,7 +202,7 @@ class SimpleModel(nn.Module):
         return self.linear2(x)
 
 def train():
-    device = tpt.device(0)
+    device = "tpt:0"  # tpt.device(0) does not exist; use the device string directly
     model = SimpleModel().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     

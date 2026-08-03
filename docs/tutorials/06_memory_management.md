@@ -24,128 +24,83 @@ Layer 4 (TPT Runtime) provides GPU memory management through a three-tier alloca
 
 ### Architecture
 
+All three allocators implement the same trait (`crates/tpt-gpu-runtime/src/memory/allocator.rs`):
+
 ```rust
-pub enum Allocator {
-    Slab(SlabAllocator),      // Fast path: < 4 KB
-    Buddy(BuddyAllocator),    // Medium: 4 KB - 1 MB
-    Fallback(FallbackAllocator), // Large: > 1 MB
+pub trait GpuAllocator: Send + Sync {
+    fn allocate(
+        &mut self,
+        size: u64,
+        region: MemoryRegion,
+        mem_type: MemType,
+        access: MemAccess,
+    ) -> TptrResult<MemoryAllocation>;
+    fn free(&mut self, allocation: &MemoryAllocation) -> TptrResult<()>;
+    fn free_handle(&mut self, handle: u64) -> TptrResult<()>;
+    fn stats(&self) -> AllocatorStats;
+    fn reset(&mut self) -> TptrResult<()>;
+}
+
+pub enum AllocationStrategy {
+    Slab,
+    Buddy,
+    Fallback,
 }
 ```
+
+Allocations return a `u64` device-address handle (`device_ptr`), not a raw `*mut u8` — the
+runtime tracks device memory as an address space, not host-mapped pointers.
 
 ### Slab Allocator
 
-Fixed-size block allocator for small, frequent allocations.
+Fixed-size block allocator, backed by one or more `Slab`s of pre-carved free-list blocks.
 
 ```rust
 pub struct SlabAllocator {
-    block_size: usize,
-    free_list: Vec<*mut u8>,
-    slabs: Vec<Slab>,
+    slab_size: u64,
+    slabs: Vec<Slab>, // each Slab: { base_addr, free_list: Vec<u64>, block_size }
+    next_handle: AtomicU64,
+    stats: AllocatorStats,
 }
 
 impl SlabAllocator {
-    pub fn allocate(&mut self) -> Result<MemoryAllocation> {
-        if let Some(ptr) = self.free_list.pop() {
-            return Ok(MemoryAllocation::new(ptr, self.block_size));
-        }
-        let slab = Slab::new(self.block_size * 64)?;
-        let ptr = slab.first_block();
-        self.slabs.push(slab);
-        Ok(MemoryAllocation::new(ptr, self.block_size))
-    }
+    pub fn new(base_addr: u64, total_size: u64, block_size: u64) -> Self { /* ... */ }
 }
 ```
 
-**Characteristics:** O(1) allocation, no fragmentation, ideal for < 4 KB
+**Characteristics:** O(1) allocation from a free list, ideal for small/frequent allocations.
 
 ### Buddy Allocator
 
-Power-of-two block allocator for medium-sized allocations.
-
-```rust
-pub struct BuddyAllocator {
-    min_block_size: usize,
-    max_block_size: usize,
-    free_lists: Vec<Vec<*mut u8>>,
-}
-
-impl BuddyAllocator {
-    pub fn allocate(&mut self, size: usize) -> Result<MemoryAllocation> {
-        let order = size.next_power_of_two().trailing_zeros() as usize;
-        for i in order..self.free_lists.len() {
-            if let Some(block) = self.free_lists[i].pop() {
-                self.split_to_order(block, i, order);
-                return Ok(MemoryAllocation::new(block, size));
-            }
-        }
-        Err(AllocationError::OutOfMemory)
-    }
-}
-```
-
-**Characteristics:** O(log n), low external fragmentation, up to 2x internal fragmentation
+Power-of-two block allocator for medium-sized allocations, exposed via the same
+`GpuAllocator` trait — see `BuddyAllocator` in `allocator.rs`.
 
 ### Fallback Allocator
 
-Raw linear allocator for large allocations.
-
-```rust
-pub struct FallbackAllocator {
-    base: *mut u8,
-    size: usize,
-    offset: usize,
-}
-
-impl FallbackAllocator {
-    pub fn allocate(&mut self, size: usize) -> Result<MemoryAllocation> {
-        if self.offset + size > self.size {
-            return Err(AllocationError::OutOfMemory);
-        }
-        let ptr = unsafe { self.base.add(self.offset) };
-        self.offset += size;
-        Ok(MemoryAllocation::new(ptr, size))
-    }
-}
-```
-
-**Characteristics:** O(1) allocation, no deallocation, ideal for large allocations
+Linear/arena allocator for large allocations — see `FallbackAllocator` in `allocator.rs`.
 
 ---
 
 ## Memory Allocation API
 
 ```rust
-use tptr_core::memory::{MemoryAllocation, MemoryFlags};
+use tpt_gpu_runtime::device::DeviceProperties;
+use tpt_gpu_runtime::{Device, MemoryRegion, MemType, MemAccess};
 
-// Allocate GPU memory
-let alloc = device.allocate(4096)?;
+// Allocate GPU memory — region/type/access are explicit, not a bitflags mask
+let alloc = device.allocate(4096, MemoryRegion::Global, MemType::Device, MemAccess::ReadWrite)?;
 
-// Allocate with flags
-let alloc = device.allocate_with_flags(
-    4096,
-    MemoryFlags::READ_ONLY | MemoryFlags::COHERENT,
-)?;
-
-// Get device pointer
+// Get the device address
 let dev_ptr = alloc.device_ptr();
 
-// Memory is automatically freed when alloc goes out of scope
+// Memory must be freed explicitly — there is no Drop impl on MemoryAllocation
+device.free(&alloc)?;
 ```
 
-### Memory Flags
-
-```rust
-bitflags! {
-    pub struct MemoryFlags: u32 {
-        const READ_ONLY = 0x01;
-        const WRITE_ONLY = 0x02;
-        const READ_WRITE = 0x03;
-        const COHERENT = 0x04;
-        const UNCACHED = 0x08;
-        const COMBINED = 0x10;
-    }
-}
-```
+`MemoryRegion` (`Global`/`Shared`/`Local`/`Constant`), `MemType`
+(`Device`/`HostPinned`/`Managed`), and `MemAccess` (`ReadOnly`/`WriteOnly`/`ReadWrite`) are
+plain enums in `crates/tpt-gpu-runtime/src/memory/types.rs` — there is no `MemoryFlags`
+bitflags type, and the crate has no `bitflags` dependency at all.
 
 ---
 
@@ -153,52 +108,43 @@ bitflags! {
 
 ```rust
 // Host to device
-device.memcpy_h2d(device_ptr, host_ptr, size)?;
+device.memcpy_htod(&dst_alloc, &host_bytes, size, dst_offset)?;
 
 // Device to host
-device.memcpy_d2h(host_ptr, device_ptr, size)?;
-
-// Device to device
-device.memcpy_d2d(dest_ptr, src_ptr, size)?;
-
-// Fill memory
-device.memset(device_ptr, 0, size)?;
+device.memcpy_dtoh(&mut host_buf, &src_alloc, size, src_offset)?;
 ```
+
+There is currently no device-to-device copy or `memset` at the `Device` level — only
+`memcpy_htod`/`memcpy_dtoh`, each bounds-checked against the allocation's freed state and size.
 
 ---
 
-## RAII Memory Management
+## Freeing Memory
 
 ```rust
-pub struct MemoryAllocation {
-    ptr: *mut u8,
-    size: usize,
-    device: Arc<Device>,
-}
-
-impl Drop for MemoryAllocation {
-    fn drop(&mut self) {
-        self.device.free(self.ptr, self.size);
-    }
-}
-
-// Memory freed automatically when scope ends
-{
-    let alloc = device.allocate(4096)?;
-    // Use alloc...
-} // alloc is freed here
+let alloc = device.allocate(4096, MemoryRegion::Global, MemType::Device, MemAccess::ReadWrite)?;
+// ... use alloc ...
+device.free(&alloc)?; // marks the allocation freed; subsequent memcpys against it error
 ```
+
+`MemoryAllocation` is `Clone` (an `Arc`-backed handle) and tracks its own freed state via an
+atomic flag (`is_freed()`), but freeing the underlying device memory is not automatic — call
+`Device::free` explicitly rather than relying on scope exit.
 
 ---
 
 ## Example: Matrix Allocation
 
 ```rust
-fn allocate_matrices(m: usize, n: usize) -> Result<(MemoryAllocation, MemoryAllocation, MemoryAllocation)> {
-    let size = m * n * std::mem::size_of::<f32>();
-    let a = device.allocate(size)?;
-    let b = device.allocate(size)?;
-    let c = device.allocate(size)?;
+fn allocate_matrices(
+    device: &mut Device,
+    m: u64,
+    n: u64,
+) -> TptrResult<(MemoryAllocation, MemoryAllocation, MemoryAllocation)> {
+    let size = m * n * std::mem::size_of::<f32>() as u64;
+    let a = device.allocate(size, MemoryRegion::Global, MemType::Device, MemAccess::ReadWrite)?;
+    let b = device.allocate(size, MemoryRegion::Global, MemType::Device, MemAccess::ReadWrite)?;
+    let c = device.allocate(size, MemoryRegion::Global, MemType::Device, MemAccess::ReadWrite)?;
     Ok((a, b, c))
 }
 ```
@@ -227,7 +173,7 @@ fn allocate_matrices(m: usize, n: usize) -> Result<(MemoryAllocation, MemoryAllo
 
 - ✅ Three-tier allocator: Slab, Buddy, Fallback
 - ✅ Memory hierarchy: Global, Shared, Local, Constant
-- ✅ RAII-based memory management
-- ✅ Memory flags for access patterns
+- ✅ Explicit `Device::free` (no `Drop`-based auto-free)
+- ✅ `MemoryRegion`/`MemType`/`MemAccess` enums for allocation parameters
 
 **Next:** [Tutorial 7: Kernel Scheduling](07_kernel_scheduling.md)

@@ -15,7 +15,7 @@ Layer 2 provides the kernel driver interface between the TPT GPU hardware (Layer
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Userspace Applications                        │
 ├─────────────────────────────────────────────────────────────────┤
-│  Rust Userspace Library (tptd)  │  C API (libtptd.so)           │
+│  tptd daemon (Unix socket, JSON protocol) — crates/tpt-gpu-driver-daemon │
 ├─────────────────────────────────────────────────────────────────┤
 │                    Kernel Driver                                │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
@@ -25,6 +25,15 @@ Layer 2 provides the kernel driver interface between the TPT GPU hardware (Layer
 │                    Hardware (PCIe)                               │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+> **Current implementation status:** the shared ABI (`tpt_driver.h`) and its IOCTL codes are
+> defined and shared across all three kernel drivers plus the userspace daemon. Today, the
+> daemon (`tptd`, in `crates/tpt-gpu-driver-daemon`) talks to hardware directly via a
+> privileged BAR0 MMIO mapping (`/sys/bus/pci/devices/<DBDF>/resource0`) rather than through
+> the kernel driver's IOCTL path — that IOCTL path is what the Linux/Windows/macOS drivers
+> below implement, for a future layer4 runtime integration. There is no `tptd`/`libtptd.so`
+> client library to link against; userspace clients talk to the daemon over a Unix domain
+> socket (`/run/tptd.sock`) using the JSON protocol in `protocol.rs`.
 
 ---
 
@@ -40,15 +49,20 @@ sudo insmod tpt_gpu.ko
 
 ### IOCTL Interface
 
-| IOCTL | Description |
-|-------|-------------|
-| `TPT_IOCTL_GEM_CREATE` | Allocate GEM buffer (VRAM/GTT) |
-| `TPT_IOCTL_GEM_FREE` | Release GEM handle |
-| `TPT_IOCTL_GEM_INFO` | Query size and GPU address |
-| `TPT_IOCTL_GEM_MMAP` | Get mmap offset for CPU mapping |
-| `TPT_IOCTL_SUBMIT` | Submit command buffer |
-| `TPT_IOCTL_WAIT_FENCE` | Block until fence completes |
-| `TPT_IOCTL_QUERY_INFO` | Query device properties |
+Defined in `layer2_tptd/include/tpt_driver.h`, shared by all three kernel drivers:
+
+| IOCTL | Code | Description |
+|-------|------|-------------|
+| `TPT_IOC_GET_INFO` | `0x5401` | Get device info (VRAM size, SM count, caps) |
+| `TPT_IOC_ALLOC_MEM` | `0x5402` | Allocate VRAM buffer |
+| `TPT_IOC_FREE_MEM` | `0x5403` | Free VRAM buffer |
+| `TPT_IOC_MAP_MEM` | `0x5404` | Map VRAM to userspace VA |
+| `TPT_IOC_UNMAP_MEM` | `0x5405` | Unmap VRAM from userspace |
+| `TPT_IOC_SUBMIT_CMD` | `0x5406` | Submit kernel launch command |
+| `TPT_IOC_WAIT_COMPLETE` | `0x5407` | Wait for command completion |
+| `TPT_IOC_QUERY_PERF` | `0x5408` | Read hardware perf counters |
+| `TPT_IOC_RESET_GPU` | `0x5409` | Reset GPU (privileged) |
+| `TPT_IOC_SET_PAGE_TABLE` | `0x540A` | Install page table for context |
 
 ---
 
@@ -77,42 +91,63 @@ Open `tpt_gpu.xcodeproj` in Xcode 14+ and build for macOS 12+.
 
 ---
 
-## Rust Userspace Library (tptd)
+## Rust Userspace Daemon (tptd)
 
-### Building
+### Building & Running
 
 ```bash
 cargo build --release -p tpt-gpu-driver-daemon
+sudo target/release/tptd --device 0000:03:00.0 --socket /run/tptd.sock
 ```
 
-### Rust API
+The daemon (`crates/tpt-gpu-driver-daemon/src/main.rs`) maps BAR0 via sysfs, then accepts
+newline-delimited JSON requests on the Unix socket. Its library crate exposes the pieces a
+client or a future in-process integration would use:
+
+- `context::GpuContext` — per-process VRAM allocator (`alloc`, `free`, `get_buffer`) and
+  `ring: Arc<CommandRing>` for command submission (`context.rs`)
+- `mmio::Mmio` — safe BAR0 register access (`mmio.rs`)
+- `protocol::{Request, Response, OkPayload}` — the wire protocol types (`protocol.rs`)
+
+### Client Protocol
 
 ```rust
-use tptd::{Device, BufferFlags, CmdBuf};
-use std::time::Duration;
+use tpt_gpu_driver_daemon::protocol::{Request, Response};
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::net::UnixStream;
 
-let dev = Device::open("/dev/dri/card0")?;
-let mut buf = dev.alloc(4 * 1024 * 1024, BufferFlags::VRAM)?;
-println!("GPU addr: 0x{:016x}", buf.gpu_addr());
+let mut sock = UnixStream::connect("/run/tptd.sock")?;
+let req = Request::AllocMem { size: 4 * 1024 * 1024, flags: 0 };
+writeln!(sock, "{}", serde_json::to_string(&req)?)?;
 
-let mut cmdbuf = CmdBuf::new(dev.fd.clone(), 4096)?;
-cmdbuf.launch(buf.gpu_addr(), (64, 1, 1), (32, 1, 1))?;
-
-let fence = dev.submit(&cmdbuf)?;
-fence.wait(Duration::from_secs(5))?;
+let mut reader = BufReader::new(sock.try_clone()?);
+let mut line = String::new();
+reader.read_line(&mut line)?;
+let resp: Response = serde_json::from_str(&line)?;
+println!("{resp:?}");
 ```
 
-### C API
+### C ABI (`tpt_driver.h`)
+
+The header defines the raw IOCTL argument structs shared by the kernel drivers — there is no
+convenience wrapper library (`tpt_open`/`tpt_buffer_alloc` do not exist). A kernel-driver
+client issues the IOCTLs directly:
 
 ```c
 #include <tpt_driver.h>
+#include <sys/ioctl.h>
 
-tpt_device_t *dev = tpt_open("/dev/dri/card0");
-tpt_buffer_t *buf = tpt_buffer_alloc(dev, 4 * 1024 * 1024, TPT_BUF_FLAG_VRAM);
-void *ptr = tpt_buffer_map(buf);
+int fd = open("/dev/dri/card0", O_RDWR);
 
-tpt_fence_t *f = tpt_submit(dev, cmdbuf, 0, cmd_size);
-tpt_fence_wait(f, UINT64_MAX);
+tpt_alloc_mem_t alloc = { .size_bytes = 4 * 1024 * 1024, .flags = TPT_MEM_PINNED };
+ioctl(fd, TPT_IOC_ALLOC_MEM, &alloc);
+printf("phys addr: 0x%016llx\n", (unsigned long long)alloc.phys_addr);
+
+tpt_submit_cmd_t submit = { .desc = { .opcode = TPT_CMD_LAUNCH, /* ... */ } };
+ioctl(fd, TPT_IOC_SUBMIT_CMD, &submit);
+
+tpt_wait_complete_t wait = { .seq_no = submit.seq_no, .timeout_ms = 5000 };
+ioctl(fd, TPT_IOC_WAIT_COMPLETE, &wait);
 ```
 
 ---
@@ -131,9 +166,9 @@ tpt_fence_wait(f, UINT64_MAX);
 
 | Field | Value |
 |-------|-------|
-| Vendor | 0x1A2E |
-| Device | 0x0001 (rev A) |
-| Class | 0x030200 (3D display) |
+| Vendor | 0x1AC7 |
+| Device | 0x0100 |
+| Class | 0x030200 (3D controller) |
 
 ---
 
@@ -150,7 +185,7 @@ tpt_fence_wait(f, UINT64_MAX);
 - ✅ Linux DRM driver at `/dev/dri/card*`
 - ✅ Windows WDM driver at `\\\\.\\TPT_GPU0`
 - ✅ macOS DriverKit extension
-- ✅ Rust userspace library with C API
-- ✅ IOCTL interface for buffer management
+- ✅ Rust userspace daemon (`tptd`) with a Unix-socket JSON protocol
+- ✅ Shared IOCTL ABI (`tpt_driver.h`) for kernel-driver buffer management
 
 **Next:** [Tutorial 4: TPTIR Overview](04_tptir_overview.md)

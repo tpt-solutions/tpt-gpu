@@ -30,17 +30,27 @@ fn matmul_constrained(
 
 ## Introspection API
 
-```tpts
-// Get operation metadata
-let meta = tpt.introspect("matmul")
-print(meta.doc)           // "Matrix multiplication"
-print(meta.inputs)        // [("a: Tensor[f32, M, K]"), ...]
-print(meta.complexity)    // "O(M * N * K)"
+Introspection (`crates/tpt-gpu-script-core/src/introspect/mod.rs`) is a Rust-side API exposed
+through the CLI, not something called from within a `.tpts` program — there is no
+`tpt.introspect(...)` builtin.
 
-// List all operations
-let ops = tpt.ops()
-for op in ops {
-    print(f"{op.name}: {op.doc}")
+```bash
+# Inspect one operation's schema (doc, inputs, complexity, hardware requirements, ...)
+tpt inspect matmul
+
+# List all built-in operations
+tpt ops
+```
+
+Rust API surface backing those commands (`introspect::{list_operations, get_schema}`):
+
+```rust
+use tpt_gpu_script_core::introspect::{list_operations, get_schema};
+
+for name in list_operations() {
+    if let Some(schema) = get_schema(name) {
+        println!("{}: {}", schema.name, schema.description);
+    }
 }
 ```
 
@@ -76,12 +86,18 @@ for op in ops {
 
 ## Formatter and Linter
 
-```bash
-# Format a file
-cargo run -p tpt-gpu-script-format -- fmt file.tpts
+`tpt-gpu-script-format` is a library crate — it has no `[[bin]]` target, so
+`cargo run -p tpt-gpu-script-format` does not work. Use its functions from Rust:
 
-# Lint a file
-cargo run -p tpt-gpu-script-format -- lint file.tpts
+```rust
+use tpt_gpu_script_format::{format, lint};
+
+let source = std::fs::read_to_string("file.tpts")?;
+let formatted = format(&source)?;         // -> Result<String, CompileError>
+let warnings = lint(&source);             // -> Vec<LintWarning>
+for w in &warnings {
+    println!("{w:?}");
+}
 ```
 
 ---

@@ -22,25 +22,29 @@ TPT Script Source (.tpts)
 ├─────────────────┤
 │ Type Checker    │  Validate types
 ├─────────────────┤
-│ CodeGen         │  Generate Rust + TPTIR
+│ CodeGen         │  Generate Rust + TPTIR (one combined output)
 └────────┬────────┘
          │
     ┌────┴────┐
     ▼         ▼
-  Rust      TPTIR
+  Rust      TPTIR text
     │         │
     ▼         ▼
-  cargo     tptc
+  cargo   tpt_gpu_compiler::compile_native()  (runs default pass pipeline)
     │         │
     ▼         ▼
-  binary    TPT ISA
+  binary    TPT ISA text / LLVM IR
               │
               ▼
-           tptd driver
+           tptd daemon (BAR0 MMIO)
               │
               ▼
            GPU Hardware
 ```
+
+There is no `tptc` binary — `tpt-gpu-compiler` is a library crate; its `compile_native(source, target)`
+function (target `"tptisa"`/`"text"` or `"llvmir"`) is the entry point that steps 4–5 below
+actually use.
 
 ---
 
@@ -86,37 +90,36 @@ Output:
 ## Step 3: Compile
 
 ```bash
-tpt compile vector_add.tpts -o out/
+tpt compile vector_add.tpts -o out.rs
 ```
 
-Generated files:
-- `out/vector_add.rs` — Rust host code
-- `out/vector_add.tptir` — GPU kernel
+`-o` names a single output **file**, not a directory — `cmd_compile` writes one combined file
+containing the Rust source, a `// === TPTIR Output ===` separator, then the TPTIR source:
 
-### Generated Rust
+- `out.rs` — Rust host code, followed by the TPTIR text in the same file
+
+### Generated Rust (top portion of `out.rs`)
 
 ```rust
-// out/vector_add.rs
-use tptr::*;
-
 pub fn run_add(n: i64) -> f32 {
-    let a = randn(&[n as usize], DType::Float32);
-    let b = randn(&[n as usize], DType::Float32);
-    let c = vector_add(&a, &b);
-    sync();
-    sum(&c)
+    // Named args like `dtype=f32` have no Rust equivalent and are emitted as a
+    // positional value with a comment.
+    let a = tptr::randn([n], /*dtype=*/ f32);
+    let b = tptr::randn([n], /*dtype=*/ f32);
+    let c = vector_add(a, b);
+    tptr::sync();
+    tptr::sum(c)
 }
 ```
 
-### Generated TPTIR
+### Generated TPTIR (bottom portion of `out.rs`, after the `// === TPTIR Output ===` separator)
 
 ```tptir
-// out/vector_add.tptir
 module {
   func.func @vector_add(
     %a: memref<*xf32>,
     %b: memref<*xf32>
-  ) -> memref<*xf32> attributes {tptir.kernel, tptir.block_size = 256 : i32} {
+  ) -> memref<*xf32> attributes {tptir.kernel} {
     ^entry:
       %c0 = tptir.constant 0 : i32
       %tid = tptir.get_thread_id : i32
@@ -132,27 +135,28 @@ module {
 
 ---
 
-## Step 4: Optimize TPTIR
+## Step 4: Run the Optimization Pipeline and Lower to TPT ISA
 
-```bash
-tptc opt vector_add.tptir -o optimized.tptir \
-    --passes=canonicalize,dce,constfold,vectorize
-```
+There is no `tptc` CLI. Both optimization and target lowering happen through
+`tpt_gpu_compiler::compile_native`, which runs the default pass pipeline
+(canonicalize → dce → validate → fusion → quantization — see
+[Tutorial 5](05_tptir_passes.md)) internally before emitting the target:
 
----
+```rust
+use tpt_gpu_compiler::compile_native;
 
-## Step 5: Generate ISA
-
-```bash
-tptc compile optimized.tptir -o vector_add.isa --target=tptisa
+let tptisa_text = compile_native(&tptir_source, "tptisa")?; // or "llvmir"
 ```
 
 ---
 
 ## Step 6: Build Host Code
 
+`tpt compile` emits Rust source text — it does not scaffold a runnable crate. Copy the Rust
+portion of `out.rs` (everything before `// === TPTIR Output ===`) into your own Cargo project
+that depends on `tptr` (the layer4 runtime bindings), then:
+
 ```bash
-cd out/
 cargo build --release
 ```
 
@@ -161,29 +165,23 @@ cargo build --release
 ## Step 7: Execute
 
 ```bash
-./target/release/vector_add
+./target/release/your_binary
 ```
 
 ---
 
 ## Inspecting Intermediate Representations
 
-### AST
+There is no `tpt ast`, `tpt typed-ast`, or `tptc ir --debug` subcommand. To see both generated
+outputs together without writing a file, use `tpt run`, which type-checks and prints the Rust
+and TPTIR output to stdout:
 
 ```bash
-tpt ast vector_add.tpts
-```
-
-### Typed AST
-
-```bash
-tpt typed-ast vector_add.tpts
-```
-
-### TPTIR with Debug Info
-
-```bash
-tptc ir vector_add.tptir --debug
+tpt run vector_add.tpts
+# === Rust Output ===
+# ...
+# === TPTIR Output ===
+# ...
 ```
 
 ---
@@ -199,26 +197,16 @@ RUST_LOG=debug tpt check vector_add.tpts
 ### View Generated Code
 
 ```bash
-tpt compile vector_add.tpts -o out/ --emit-ir
-ls out/
-# vector_add.rs  vector_add.tptir  vector_add.isa
+tpt compile vector_add.tpts -o out.rs   # single combined file, not a directory or --emit-ir flag
 ```
 
 ---
 
 ## Performance Profiling
 
-```bash
-# Profile kernel execution
-tpt profile vector_add.tpts --iterations=100
-
-# Output:
-# Kernel: vector_add
-#   Cycles: 12345
-#   Instructions: 6789
-#   Memory accesses: 1024
-#   Cache hit rate: 98.5%
-```
+There is no `tpt profile` subcommand — see [Tutorial 16](16_performance_tuning.md) for the
+real profiling path (hardware perf counters via the driver ABI, plus `tpt-gpu-bench` /
+`tpt-gpu-kernel-optimizer`).
 
 ---
 
@@ -269,9 +257,8 @@ fn transformer_block(
 ## Summary
 
 - ✅ Lexer → Parser → Type Checker → CodeGen pipeline
-- ✅ Dual output: Rust (host) + TPTIR (device)
-- ✅ TPTIR optimization passes
-- ✅ ISA code generation
-- ✅ Profiling and debugging tools
+- ✅ Dual output: Rust (host) + TPTIR (device), combined into one file at the path passed to `-o`
+- ✅ `compile_native()` runs the default pass pipeline and lowers to `tptisa`/`llvmir` — no separate `tptc` tool
+- ✅ `tpt run` for a quick combined-output preview; `RUST_LOG=debug` for verbose `tpt check` output
 
 **Next:** [Tutorial 15: Building a Model](15_building_a_model.md)

@@ -7,7 +7,10 @@
 
 ## Introduction
 
-Layer 5 provides optimized GPU primitives: GEMM, Attention, Conv2D. These kernels are written in TPTIR and can dispatch to vendor libraries (cuBLAS, rocBLAS, Metal) when available.
+Layer 5 (`crates/tpt-gpu-primitives`, crate name `tpt-gpu-primitives`) provides optimized GPU
+primitives: GEMM, Attention, Conv2D. Each kernel struct (`GemmKernel`, `AttentionKernel`,
+`Conv2DKernel`) auto-detects a `VendorBackend` and dispatches to it, or falls back to its own
+TPTIR-based path when no vendor library is available.
 
 ### Architecture
 
@@ -16,9 +19,11 @@ Layer 5 provides optimized GPU primitives: GEMM, Attention, Conv2D. These kernel
 │                    Application                                   │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │              TptpDevice                                   │  │
+│  │   GemmKernel / AttentionKernel / Conv2DKernel               │  │
 │  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐    │  │
-│  │  │  cuBLAS │  │ rocBLAS │  │  Metal  │  │  TPTIR  │    │  │
+│  │  │  CUDA   │  │  ROCm   │  │  Metal  │  │  TPTIR  │    │  │
+│  │  │(cuBLAS/ │  │(rocBLAS/│  │  (MPS)  │  │fallback │    │  │
+│  │  │ cuDNN)  │  │ MIOpen) │  │         │  │         │    │  │
 │  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘    │  │
 │  └──────────────────────────────────────────────────────────┘  │
 ├─────────────────────────────────────────────────────────────────┤
@@ -44,10 +49,11 @@ Where:
 ### Rust API
 
 ```rust
-use tptp::Gemm;
+use tpt_gpu_primitives::kernels::gemm::GemmKernel;
 
-let gemm = Gemm::new(&device)?;
-let c = gemm.execute(&a, &b, M, N, K)?;
+// Shapes are read from the buffers themselves (2D GpuBuffer<f32>), not passed as M/N/K.
+let gemm = GemmKernel::new(); // vendor backend auto-detected via VendorBackend::detect()
+let c = gemm.execute(&a, &b, None, /* alpha */ 1.0, /* beta */ 0.0)?;
 ```
 
 ### TPTIR Implementation
@@ -97,11 +103,13 @@ Attention(Q, K, V) = softmax(Q * K^T / sqrt(d_k)) * V
 ### Rust API
 
 ```rust
-use tptp::Attention;
+use tpt_gpu_primitives::kernels::attention::AttentionKernel;
 
-let attention = Attention::new(&device)?;
-let output = attention.execute(&q, &k, &v, Some(&mask))?;
+let attention = AttentionKernel::new();
+let output = attention.execute(&q, &k, &v, Some(scale), mask.as_ref())?;
 ```
+
+Note: the `mask` parameter is currently accepted but unused (`_mask`) by the implementation.
 
 ### TPTIR Implementation Strategy
 
@@ -139,12 +147,12 @@ Output = conv2d(Input, Filter, strides, padding)
 ### Rust API
 
 ```rust
-use tptp::Conv2D;
+use tpt_gpu_primitives::kernels::conv2d::Conv2DKernel;
 
-let conv = Conv2d::new(&device)?
-    .strides(1, 1)
-    .padding(1, 1);
-let output = conv.execute(&input, &filter)?;
+let conv = Conv2DKernel::new();
+// strides/padding/dilation are passed to execute(), not builder methods on the kernel;
+// input/filter are 4D NCHW GpuBuffer<f32>.
+let output = conv.execute(&input, &filter, [1, 1], [1, 1], None)?;
 ```
 
 ### TPTIR Implementation Strategy
@@ -168,43 +176,60 @@ let output = conv.execute(&input, &filter)?;
 ### Dispatch
 
 ```rust
+// crates/tpt-gpu-primitives/src/vendor/mod.rs
 pub enum VendorBackend {
-    Cuda(CublasHandle),
-    Rocm(RocblasHandle),
-    Metal(MetalDevice),
-    Tptir(TptirCompiler),
+    Cuda(cuda::CudaBackend),
+    Rocm(rocm::RocmBackend),
+    Metal(metal::MetalBackend),
+    None, // no vendor library — TPTIR fallback path
 }
 
 impl VendorBackend {
-    pub fn gemm(&self, a: &Tensor, b: &Tensor) -> Result<Tensor> {
+    pub fn detect() -> Self { /* tries CUDA, then ROCm, then Metal (macOS only) */ }
+    pub fn supports_gemm(&self) -> bool { /* Cuda | Rocm | Metal */ }
+    pub fn supports_attention(&self) -> bool { /* Cuda | Rocm only */ }
+    pub fn supports_conv2d(&self) -> bool { /* Cuda | Rocm only */ }
+}
+
+// Dispatch is via the VendorLibrary trait, implemented for VendorBackend:
+impl VendorLibrary for VendorBackend {
+    fn gemm(&self, a: &GpuBuffer<f32>, b: &GpuBuffer<f32>, c: &mut GpuBuffer<f32>,
+            alpha: f32, beta: f32, m: usize, n: usize, k: usize) -> TptpResult<()> {
         match self {
-            VendorBackend::Cuda(handle) => handle.gemm(a, b),
-            VendorBackend::Rocm(handle) => handle.gemm(a, b),
-            VendorBackend::Metal(device) => device.gemm(a, b),
-            VendorBackend::Tptir(compiler) => compiler.compile_gemm(a, b),
+            VendorBackend::Cuda(backend) => backend.gemm(a, b, c, alpha, beta, m, n, k),
+            VendorBackend::Rocm(backend) => backend.gemm(a, b, c, alpha, beta, m, n, k),
+            VendorBackend::Metal(backend) => backend.gemm(a, b, c, alpha, beta, m, n, k),
+            VendorBackend::None => Err(TptpError::vendor_unavailable("no vendor backend")),
         }
     }
+    // attention()/conv2d()/conv3d() similarly, but Metal currently only implements gemm —
+    // those three return `unsupported` for anything other than Cuda/Rocm.
 }
 ```
+
+There is no `VendorBackend::Tptir` variant: when no vendor library is detected, `GemmKernel`/etc.
+fall back to their own TPTIR-based execution path directly, rather than routing through a
+`Tptir` enum arm.
 
 ---
 
 ## Example: Matrix Multiplication
 
 ```rust
-use tptp::{Gemm, DType};
+use tpt_gpu_primitives::kernels::gemm::GemmKernel;
+use tpt_gpu_primitives::memory::{BufferFlags, DType, GpuBuffer, Shape};
 
-fn main() -> Result<()> {
-    let device = TptpDevice::new(0)?;
-    
-    // Create matrices
-    let a = device.randn(&[1024, 512], DType::Float32)?;
-    let b = device.randn(&[512, 768], DType::Float32)?;
-    
-    // Execute GEMM
-    let gemm = Gemm::new(&device)?;
-    let c = gemm.execute(&a, &b, 1024, 512, 768)?;
-    
+fn main() -> TptpResult<()> {
+    // There is no device/randn helper — buffers are constructed directly and
+    // filled via `copy_from_host`.
+    let mut a: GpuBuffer<f32> = GpuBuffer::new(Shape::dim2(1024, 512), DType::F32, BufferFlags::empty())?;
+    let mut b: GpuBuffer<f32> = GpuBuffer::new(Shape::dim2(512, 768), DType::F32, BufferFlags::empty())?;
+    a.copy_from_host(&vec![0.0f32; 1024 * 512])?;
+    b.copy_from_host(&vec![0.0f32; 512 * 768])?;
+
+    let gemm = GemmKernel::new(); // vendor backend auto-detected
+    let c = gemm.execute(&a, &b, None, 1.0, 0.0)?;
+
     println!("Result shape: {:?}", c.shape());
     Ok(())
 }

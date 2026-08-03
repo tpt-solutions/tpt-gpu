@@ -74,11 +74,12 @@ fn host_example(n: i64) -> f32 {
 }
 ```
 
-Compiles to:
+Compiles to (the emitter rewrites `tpt.xxx(args)` → `tptr::xxx(args)`, and named arguments like
+`dtype=f32` have no Rust equivalent so they're emitted as a positional value with a comment):
 ```rust
 fn host_example(n: i64) -> f32 {
-    let x = tptr::randn(&[n as usize], tptr::DType::Float32);
-    tptr::sum(&x)
+    let x = tptr::randn([n], /*dtype=*/ f32);
+    tptr::sum(x)
 }
 ```
 
@@ -104,14 +105,21 @@ module {
 
 ---
 
-## Kernel Launch Configuration
+## Annotations Recognized by the Compiler
+
+The metadata extractor (`crates/tpt-gpu-script-core/src/semantic/metadata.rs`) recognizes
+(among others): `doc`, `input`, `output`, `constraint`, `complexity`, `requires_gpu`,
+`requires_tensor_cores`, `min_vram_gb`, `max_batch_size`, `deploy`, `distributed`,
+`async_exec`, `differentiable`, `flops`, `memory`, `preferred_dtype`, `gradient_checkpoint`,
+`supports_distributed`, `example`, `gpu_optimized`. There is no `@block_size`, `@grid_size`,
+or `@shared_mem` annotation — kernel launch dimensions are not currently expressed through
+function annotations.
 
 ```tpts
 @doc("Matrix multiplication")
 @requires_gpu(true)
-@block_size(16, 16, 1)      // Thread block dimensions
-@grid_size(64, 64, 1)       // Grid dimensions
-@shared_mem(16384)          // Shared memory bytes
+@requires_tensor_cores(true)
+@min_vram_gb(4)
 fn matmul(
     a: Tensor[f32, M, K],
     b: Tensor[f32, K, N],
@@ -219,7 +227,7 @@ fn run_ffn(batch: i64, d_model: i64, d_ff: i64) -> f32 {
 - ✅ `@requires_gpu(true)` compiles to TPTIR
 - ✅ `@requires_gpu(false)` compiles to Rust
 - ✅ Automatic dispatch boundary between host and device
-- ✅ Kernel launch configuration with annotations
+- ✅ Recognized annotations include `doc`, `constraint`, `complexity`, `requires_gpu`, `requires_tensor_cores`, `min_vram_gb`, `max_batch_size`, `deploy`, `distributed`, and more — but not `@block_size`/`@grid_size`/`@shared_mem`
 - ✅ Type aliases for cleaner code
 
 **Next:** [Tutorial 13: TPT Script Advanced](13_tpt_script_advanced.md)

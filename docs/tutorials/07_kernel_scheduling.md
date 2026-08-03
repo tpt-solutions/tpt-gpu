@@ -7,21 +7,26 @@
 
 ## Introduction
 
-This tutorial covers kernel launch configuration, command queues, priority scheduling, and synchronization events.
+This tutorial covers command queues, priority scheduling, and kernel launch, based on
+`crates/tpt-gpu-runtime/src/command/queue.rs` and `src/device/device.rs`.
 
 ### Scheduling Architecture
 
+A single `CommandQueue` holds three internal `VecDeque`s (high/normal/low); priority is a
+property of each *submitted command*, not of the queue itself. A `CommandScheduler` owns
+a map of named `CommandQueue`s and round-robins across them:
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
+│  CommandQueue                                                    │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
-│  │  High Queue │  │ Normal Queue│  │  Low Queue  │             │
+│  │  high_queue │  │ normal_queue│  │  low_queue  │             │
 │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘             │
 │         └────────────────┼────────────────┘                    │
-│                          ▼                                      │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │              Command Scheduler                           │   │
-│  └─────────────────────────────────────────────────────────┘   │
+│                          ▼  dequeue(): high first, then aged    │
+│                             normal/low                          │
 └─────────────────────────────────────────────────────────────────┘
+        ▲ one or more CommandQueues owned by a CommandScheduler
 ```
 
 ---
@@ -30,24 +35,22 @@ This tutorial covers kernel launch configuration, command queues, priority sched
 
 ```rust
 pub enum QueuePriority {
-    High,    // Time-critical operations
-    Normal,  // Default priority
-    Low,     // Background operations
+    High = 2,
+    Normal = 1,
+    Low = 0,
 }
 
-pub struct CommandQueue {
-    priority: QueuePriority,
-    commands: Vec<Command>,
-    device: Arc<Device>,
-}
+pub struct CommandQueue { /* high_queue, normal_queue, low_queue: VecDeque<CommandEntry>, ... */ }
 ```
 
 ### Creating Queues
 
 ```rust
-let high_queue = device.create_queue(QueuePriority::High)?;
-let normal_queue = device.create_queue(QueuePriority::Normal)?;
-let low_queue = device.create_queue(QueuePriority::Low)?;
+use tpt_gpu_runtime::command::QueuePriority;
+
+// The `priority` argument here is currently unused by the implementation —
+// priority is set per-command in `submit()`, not per-queue.
+let queue = device.create_queue(QueuePriority::Normal, /* capacity */ 64);
 ```
 
 ---
@@ -56,14 +59,21 @@ let low_queue = device.create_queue(QueuePriority::Low)?;
 
 ```rust
 pub enum Command {
-    Allocate { size: usize, flags: MemoryFlags },
-    Free { ptr: *mut u8 },
-    MemcpyH2D { dst: *mut u8, src: *const u8, size: usize },
-    MemcpyD2H { dst: *mut u8, src: *const u8, size: usize },
-    LaunchKernel { kernel: KernelHandle, config: KernelConfig },
+    Allocate { size: u64, region: MemoryRegion, mem_type: MemType, access: MemAccess },
+    Free(MemoryAllocation),
+    Memcpy { dst: MemoryAllocation, src: MemoryAllocation, size: u64, dst_offset: u64, src_offset: u64 },
+    Memset { dst: MemoryAllocation, value: u8, size: u64, offset: u64 },
+    LaunchKernel { kernel: String, config: KernelConfig, args: Vec<Vec<u8>> },
     Barrier,
-    Event { id: u64 },
+    WaitEvent(EventHandle),
+    SignalEvent(EventHandle),
 }
+```
+
+Submit a command with an explicit priority:
+
+```rust
+let cmd_id = device.submit(queue, Command::Barrier, QueuePriority::High)?;
 ```
 
 ---
@@ -71,101 +81,67 @@ pub enum Command {
 ## Priority Scheduling
 
 ```rust
-pub struct CommandScheduler {
-    high_queue: VecDeque<Command>,
-    normal_queue: VecDeque<Command>,
-    low_queue: VecDeque<Command>,
-    aging_counters: HashMap<QueuePriority, u64>,
-}
-
-impl CommandScheduler {
-    pub fn next_command(&mut self) -> Option<Command> {
-        // Priority with aging to prevent starvation
-        if !self.high_queue.is_empty() {
-            return self.high_queue.pop_front();
-        }
-        
-        // Age normal queue
-        self.aging_counters.entry(QueuePriority::Normal)
-            .and_modify(|c| *c += 1)
-            .or_insert(1);
-        
-        // Boost to high priority after 100 cycles
-        if self.aging_counters[&QueuePriority::Normal] > 100 {
-            self.aging_counters.insert(QueuePriority::Normal, 0);
-            return self.normal_queue.pop_front();
-        }
-        
-        self.normal_queue.pop_front()
-            .or_else(|| self.low_queue.pop_front())
+impl CommandQueue {
+    pub fn dequeue(&mut self) -> Option<(u64, Command)> {
+        // High always drains first.
+        // Normal/low pop next, with an aging counter that forces a low-queue
+        // pop every `max_aging` dequeues to avoid starvation.
     }
 }
 ```
+
+`CommandScheduler::dequeue_next()` round-robins across all queues it owns, returning the
+next `(QueueHandle, cmd_id, Command)` from whichever queue yields one first.
 
 ---
 
 ## Synchronization Events
 
+Events are booleans scoped to a single `CommandQueue`, not a separate `Event` type:
+
 ```rust
-// Create event
-let event = device.create_event()?;
-
-// Wait for event with timeout
-event.wait(Duration::from_secs(5))?;
-
-// Record event after command execution
-queue.record_event(&event)?;
-
-// Wait for multiple events
-Event::wait_all(&[&event1, &event2])?;
+let ev = queue.create_event();          // -> EventHandle
+queue.signal_event(ev);
+assert!(queue.is_event_signaled(ev));
 ```
+
+There is no `event.wait(timeout)` or `Event::wait_all` — events are polled via
+`is_event_signaled`, and `Command::WaitEvent`/`Command::SignalEvent` exist as queueable
+commands but are no-ops in the current `dispatch_command` implementation (see below).
 
 ---
 
-## Cross-Queue Synchronization
+## Draining a Queue
 
 ```rust
-let compute_event = device.create_queue(QueuePriority::Normal)?;
-let transfer_event = device.create_queue(QueuePriority::Normal)?;
-
-// Start compute queue
-compute_queue.launch_kernel(&kernel, &config);
-compute_queue.record_event(&compute_event)?;
-
-// Transfer queue waits for compute
-transfer_queue.wait_for_event(&compute_event)?;
-transfer_queue.launch_kernel(&transfer_kernel, &config);
-
-// Wait for both to complete
-compute_event.wait(timeout)?;
-transfer_event.wait(timeout)?;
+// Executes pending Memcpy commands against the backend/simulated arena;
+// Allocate/Free/Memset/LaunchKernel currently no-op when dispatched from a queue.
+device.synchronize();
+println!("pending: {}", device.pending_commands());
 ```
+
+Kernel execution today happens through the direct, synchronous API rather than the queue:
+
+```rust
+let kernel = device.create_kernel("matmul");
+let config = KernelConfig::default(); // grid/block set via its builder methods
+let handle = device.launch_kernel(&kernel, &config, &[arg_a_bytes, arg_b_bytes]);
+```
+
+`launch_kernel` takes raw argument byte buffers (`&[Vec<u8>]`), not `MemoryAllocation`
+references, and returns a `KernelHandle` whose status (`Completed`/`Failed`) is set
+synchronously before the call returns.
 
 ---
 
-## Example: Multi-Queue Execution
+## Example: Queueing Commands by Priority
 
 ```rust
-fn parallel_workloads(device: &Device) -> Result<()> {
-    let compute_queue = device.create_queue(QueuePriority::High)?;
-    let transfer_queue = device.create_queue(QueuePriority::Normal)?;
-    
-    let a = device.allocate(4 * 1024 * 1024)?;
-    let b = device.allocate(4 * 1024 * 1024)?;
-    let c = device.allocate(4 * 1024 * 1024)?;
-    
-    let kernel = device.create_kernel("matmul")?;
-    let config = KernelConfig::new()
-        .grid(64, 1, 1)
-        .block(256, 1, 1);
-    compute_queue.launch_kernel(&kernel, &config, &[&a, &b, &c])?;
-    
-    let host_buf = device.allocate_host(4 * 1024 * 1024)?;
-    transfer_queue.memcpy_d2h(&host_buf, &c, 4 * 1024 * 1024)?;
-    
-    compute_queue.synchronize()?;
-    transfer_queue.synchronize()?;
-    
+fn queue_barriers(device: &mut Device) -> TptrResult<()> {
+    let queue = device.create_queue(QueuePriority::Normal, 64);
+    device.submit(queue, Command::Barrier, QueuePriority::Low)?;
+    device.submit(queue, Command::Barrier, QueuePriority::High)?;
+    device.synchronize(); // drains both, high-priority one first
     Ok(())
 }
 ```
@@ -174,17 +150,18 @@ fn parallel_workloads(device: &Device) -> Result<()> {
 
 ## Exercises
 
-1. **Priority Experiment**: Measure performance impact of different queue priorities
-2. **Event Synchronization**: Implement producer-consumer pattern with events
-3. **Multi-Queue**: Design a pipeline using multiple priority queues
+1. **Priority Experiment**: Submit a mix of high/normal/low commands and trace `dequeue()`'s order
+2. **Aging**: Submit enough normal-priority commands to observe the low-queue aging kick in
+3. **Events**: Use `create_event`/`signal_event`/`is_event_signaled` to gate a second command's logic
 
 ---
 
 ## Summary
 
-- ✅ Priority queues: High, Normal, Low
-- ✅ Aging-based priority boosting to prevent starvation
-- ✅ Event-based synchronization between queues
-- ✅ Cross-queue synchronization patterns
+- ✅ `CommandQueue` holds three internal priority sub-queues; priority is per-command, not per-queue
+- ✅ Aging-based low-queue promotion to prevent starvation
+- ✅ `CommandScheduler` round-robins across multiple named queues
+- ✅ Events are per-queue booleans (`create_event`/`signal_event`/`is_event_signaled`), not a timed-wait primitive
+- ✅ Kernel launch is synchronous via `Device::launch_kernel`, separate from the command-queue path
 
 **Next:** [Tutorial 8: GPU Primitives](08_gpu_primitives.md)

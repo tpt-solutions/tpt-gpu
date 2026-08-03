@@ -90,19 +90,26 @@ fn train_pipeline(
 
 ## Communication Primitives
 
+The module is `tpt.dist` (not `tpt.distributed`), and its operation list
+(`crates/tpt-gpu-script-core/src/modules/stdlib.rs`) has `scatter`, not `reduce_scatter`:
+
 ```tpts
 // All-reduce: Sum across all devices
-let result = tpt.distributed.all_reduce(tensor, op="sum")
+let result = tpt.dist.all_reduce(tensor, op="sum")
 
 // Broadcast: Send from src to all devices
-let result = tpt.distributed.broadcast(tensor, src=0)
+let result = tpt.dist.broadcast(tensor, src=0)
 
-// Reduce-scatter: Reduce and scatter across devices
-let result = tpt.distributed.reduce_scatter(tensor, op="sum")
+// Scatter: distribute chunks of a tensor across devices
+let result = tpt.dist.scatter(tensor, src=0)
 
 // All-gather: Gather from all devices
-let result = tpt.distributed.all_gather(tensor)
+let result = tpt.dist.all_gather(tensor)
 ```
+
+`tpt.dist` also lists `init_process_group`, `destroy_process_group`, `get_rank`,
+`get_world_size`, `barrier`, `send`, `recv`, `DistributedDataParallel`, and
+`FullyShardedDataParallel`.
 
 ---
 
