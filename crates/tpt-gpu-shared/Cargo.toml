@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "tpt-gpu-shared"
 version.workspace = true
 edition.workspace = true
@@ -19,7 +19,7 @@ path = "src/lib.rs"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-ureq = { version = "2", features = ["json"] }
+ureq = { version = "3", features = ["json"] }
 
 [dev-dependencies]
 env_logger = "0.11"
