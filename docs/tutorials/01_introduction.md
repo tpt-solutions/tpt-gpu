@@ -3,6 +3,15 @@
 **Estimated Time:** 30 minutes  
 **Prerequisites:** Basic programming knowledge, Rust toolchain
 
+> **CLI binary name:** The compiled binary produced by `cargo build -p tpt-gpu-script-cli` is
+> **`tpt-gpu-script`**, not `tpt`. Commands in these tutorials written as `tpt check …`, `tpt compile …`,
+> etc. use `tpt` as a short alias. To match those examples exactly, add the alias once:
+> ```bash
+> alias tpt=tpt-gpu-script          # bash / zsh — add to ~/.bashrc or ~/.zshrc to make permanent
+> Set-Alias tpt tpt-gpu-script       # PowerShell — add to $PROFILE to make permanent
+> ```
+> Or invoke the binary directly: `./target/release/tpt-gpu-script check hello.tpts`.
+
 ---
 
 ## What is TPT GPU?

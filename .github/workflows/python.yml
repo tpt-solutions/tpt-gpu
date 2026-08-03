@@ -1,0 +1,35 @@
+name: Python
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  lint-typecheck-test:
+    name: ruff / mypy / pytest (layer6_framework)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev tools and package
+        run: |
+          pip install ruff mypy pytest
+          pip install -e "layer6_framework[dev]"
+
+      - name: Lint with ruff
+        run: ruff check layer6_framework/
+
+      - name: Type-check with mypy
+        # Non-blocking for now — type stubs are incomplete
+        continue-on-error: true
+        run: mypy layer6_framework/tptr/ --ignore-missing-imports
+
+      - name: Run pytest
+        run: pytest layer6_framework/tests/ -v

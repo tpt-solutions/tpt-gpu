@@ -214,7 +214,7 @@ cd crates/tpt-gpu-runtime && cargo publish
 
 ## Contributing
 
-This project accepts bug reports and feature requests via [GitHub Issues](https://github.com/tpt-solutions/tpt-gpu/issues). Pull requests are not accepted at this time.
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on reporting bugs, submitting pull requests, code style requirements, and community tuning profile contributions.
 
 ---
 

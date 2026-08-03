@@ -21,6 +21,7 @@ pub mod benchmark;
 pub mod calibration;
 pub mod domain_mapper;
 pub mod export;
+pub mod import;
 pub mod kv_calculator;
 pub mod profiler;
 pub mod pruner;
@@ -42,6 +43,7 @@ pub use profiler::HardwareProfiler;
 pub use pruner::SurgicalPruner;
 pub use quant_allocator::MixedPrecisionAllocator;
 pub use sensitivity::{LayerSensitivityMap, SensitivityConfig};
+pub use import::gguf::{GgufImporter, GgufModel};
 pub use streaming::StreamingLoader;
 pub use tptf_format::{TensorBlock, TptfHeader, TptfWriter};
 

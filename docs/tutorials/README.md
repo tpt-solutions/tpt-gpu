@@ -56,6 +56,18 @@ cargo build -p tpt-gpu-runtime
 cd layer6_framework && pip install -e ".[dev]"
 ```
 
+## CLI Binary Name
+
+The compiled binary is **`tpt-gpu-script`** (built with `cargo build -p tpt-gpu-script-cli`).
+All tutorial command examples use `tpt` as a short alias — set it up once:
+
+```bash
+alias tpt=tpt-gpu-script          # bash / zsh
+Set-Alias tpt tpt-gpu-script       # PowerShell
+```
+
+Or invoke the binary directly, e.g. `./target/release/tpt-gpu-script check file.tpts`.
+
 ## Common Operations
 
 ```bash

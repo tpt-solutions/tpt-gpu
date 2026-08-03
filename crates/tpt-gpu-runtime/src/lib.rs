@@ -11,6 +11,7 @@ pub mod inference;
 pub mod kernel;
 pub mod kv_cache;
 pub mod memory;
+pub mod rope;
 
 /// Re-export the error types at the crate root.
 pub use error::{ErrorCode, ErrorContext, TptrError, TptrResult};
@@ -35,3 +36,6 @@ pub use arch::{template_for_arch, ArchTemplate, ForwardOp};
 
 /// Re-export KV cache at the crate root.
 pub use kv_cache::KvCache;
+
+/// Re-export RoPE types at the crate root.
+pub use rope::{apply_rope, RopeConfig};

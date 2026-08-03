@@ -1,0 +1,35 @@
+site_name: TPT GPU Documentation
+site_description: Hardware-agnostic full-stack GPU compute platform
+site_url: https://tpt-solutions.github.io/tpt-gpu/
+repo_url: https://github.com/tpt-solutions/tpt-gpu
+repo_name: tpt-solutions/tpt-gpu
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - toc.integrate
+    - search.highlight
+
+nav:
+  - Home: index.md
+  - Tutorials:
+    - Introduction: tutorials/01_introduction.md
+  - Specifications:
+    - ISA Spec: ../layer1_isa/spec/tpt_isa_spec.md
+    - TPTIR Spec: ../layer3_tptc/spec/tptir_spec.md
+    - Runtime Spec: ../layer4_tptr/spec/tptr_spec.md
+    - Primitives Spec: ../layer5_tptp/spec/tptp_spec.md
+    - TPT Script Spec: ../layer7_tptb/spec/tpts_spec.md
+
+docs_dir: docs

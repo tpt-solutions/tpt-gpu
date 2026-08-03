@@ -95,7 +95,7 @@ cargo build --release -p tpt-gpu-model-registry
 ./target/release/tpt-gpu-models fetch \
     --url  https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q4_K_M.gguf \
     --name llama-2-7b-q4 \
-    --arch llama2 \
+    --arch llama \
     --size-gb 3.8
 # → Downloading 'llama-2-7b-q4' from https://…
 # → Downloaded and registered 'llama-2-7b-q4' at /home/user/.tpt/models/llama-2-7b.Q4_K_M.gguf.
@@ -110,13 +110,53 @@ cargo build --release -p tpt-gpu-model-registry
 # List after adding
 ./target/release/tpt-gpu-models list
 # NAME                           ARCH       SIZE_GB  FILE
-# llama-2-7b-q4                  llama2     3.8      llama-2-7b.Q4_K_M.gguf
+# llama-2-7b-q4                  llama      3.8      llama-2-7b.Q4_K_M.gguf
 # my-model                       mistral    4.1      my-model.gguf
 
 # Remove an entry from the manifest (file stays on disk)
 ./target/release/tpt-gpu-models remove my-model
 # → Removed 'my-model'.
 ```
+
+---
+
+## End-to-end workflow — download, convert, and optimise
+
+The complete path from a fresh HuggingFace download to an optimised model
+ready for inference:
+
+```bash
+# 1. Download a GGUF from HuggingFace into the shared registry
+tpt-gpu-model-registry fetch \
+    --hf google/gemma-2-2b-it \
+    --format gguf
+# Downloads to ~/.tpt/models/gemma-2-2b-it.gguf and registers the entry.
+
+# 2. Convert GGUF → TPTF (imports header metadata and raw tensor bytes)
+tpt-gpu-model-optimizer convert \
+    --input  ~/.tpt/models/gemma-2-2b-it.gguf \
+    --output gemma2.tptf
+
+# 3. Optimise: sensitivity analysis → mixed-precision quantisation → TPTF output
+tpt-gpu-model-optimizer optimize \
+    --input  gemma2.tptf \
+    --output gemma2-opt.tptf
+
+# 4. (Optional) Re-export to GGUF for llama.cpp / other tools
+tpt-gpu-model-optimizer export \
+    --format gguf \
+    gemma2-opt.tptf \
+    --output gemma2-opt.gguf
+```
+
+The `convert` step (step 2) is provided by
+`crates/tpt-gpu-model-optimizer/src/import/gguf.rs` (`GgufImporter`).  It
+reads the GGUF v2/v3 binary header, extracts all KV metadata (arch,
+context length, hidden dim, layer count, head counts, FFN dim, vocab size),
+maps per-tensor `ggml_type` codes to TPTF bit depths
+(`F32→32`, `F16→16`, `Q8_0→8`, `Q6_K→6`, `Q4_K→4`, `Q2_K→2`),
+and writes a self-contained `.tptf` file that the `optimize` step can
+consume without needing access to the original GGUF.
 
 ---
 

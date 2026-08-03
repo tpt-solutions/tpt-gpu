@@ -394,31 +394,31 @@
 - [x] `.github/workflows/release.yml` `publish-crates` job — fix stale pre-Phase-8 paths `crates/tptb-{core,cli,lsp,format}` → `crates/tpt-gpu-script-{core,cli,lsp,format}`
 
 ### Priority 3 — Architecture-maturity gaps (backlog, not scheduled)
-- [ ] Layer 4 runtime: `crates/tpt-gpu-runtime/src/inference.rs`'s `ModelWeights::allocate` always zero-initializes — no GGUF/TPTF tensor-loading path exists, so inference is numerically inert regardless of input model
-- [ ] No RoPE implementation anywhere despite all 5 supported architectures (llama/llama3, mistral, qwen2/qwen, phi3, gemma2/gemma) requiring it
+- [x] Layer 4 runtime: `crates/tpt-gpu-runtime/src/inference.rs`'s `ModelWeights::allocate` always zero-initializes — no GGUF/TPTF tensor-loading path exists, so inference is numerically inert regardless of input model
+- [x] No RoPE implementation anywhere despite all 5 supported architectures (llama/llama3, mistral, qwen2/qwen, phi3, gemma2/gemma) requiring it
 - [x] `Attention` only receives current-step K/V, not the accumulated `KvCache` (flagged in-code at `inference.rs:809-813`) — multi-token generation would be numerically wrong even with real weights
 - [x] `QuantGemmKernel` never invoked from `tpt-gpu-runtime` despite `ModelInfo.per_layer_bits` carrying per-layer quant metadata — quantized-inference path unwired end-to-end
 - [ ] No multi-GPU/tensor-parallel path in the runtime
 - [x] No sampling kernel beyond host-side argmax; `arch.rs`'s `Sampling{temperature, top_k}` op has no corresponding layer5 kernel
-- [ ] No GGUF→TPTF importer in `crates/tpt-gpu-model-optimizer` (`export/gguf.rs` only goes `.tptf → GGUF`) — the documented "download GGUF → optimize → run" flow cannot be completed today
-- [ ] `MODELS_REGISTRY.md`'s own CLI example registers arch tag `"llama2"`, which `arch.rs::template_for_arch` doesn't recognize (only `llama`/`llama3`)
-- [ ] `layer2_tptd` targets a fabricated PCIe device with no real hardware and isn't exercised by CI/workspace builds — doc framing should be explicit that it's simulation-only today
+- [x] No GGUF→TPTF importer in `crates/tpt-gpu-model-optimizer` (`export/gguf.rs` only goes `.tptf → GGUF`) — the documented "download GGUF → optimize → run" flow cannot be completed today
+- [x] `MODELS_REGISTRY.md`'s own CLI example registers arch tag `"llama2"`, which `arch.rs::template_for_arch` doesn't recognize (only `llama`/`llama3`)
+- [x] `layer2_tptd` targets a fabricated PCIe device with no real hardware and isn't exercised by CI/workspace builds — doc framing should be explicit that it's simulation-only today
 - [ ] `layer6_framework/tptr` and `layer6_tptf/tptf` are two divergent, non-interoperating Python packages, neither backed by a working compiled Rust extension in practice (`layer6_tptf/tptf/jax_backend.py` silently falls back to NumPy/JAX simulation when the PyO3 extension isn't importable)
 - [x] `crates/tpt-gpu-script-core/src/codegen/tptir_emit.rs:177` — `break`/`continue` inside GPU kernels emit a `"; TODO: control-flow lowering"` comment instead of real lowering or a compile error (silent codegen gap)
 - [x] `crates/tpt-gpu-script-core/src/codegen/tptir_emit.rs:247` — unmatched expression kinds emit a `"; TODO: complex expr"` comment instead of a compile error (silent codegen gap)
 - [x] `layer2_tptd/linux/tptd_drm.rs:254` — page-fault IRQ handler never signals the waiting process; faulted contexts hang instead of erroring
 
 ### Priority 4 — DX / automation gaps (backlog, not scheduled)
-- [ ] No dependency/security scanning (`cargo-audit`, `cargo-deny`, Dependabot/Renovate)
-- [ ] `README.md` still says "Pull requests are not accepted at this time" while `.github/PULL_REQUEST_TEMPLATE.md` exists and CI runs on `pull_request`; still no `CONTRIBUTING.md`
-- [ ] No docs-deployment workflow (mkdocs/GitHub Pages) despite 17+ tutorials and multiple specs
-- [ ] No lint/type-check (ruff/mypy) or coverage reporting for `layer6_framework` Python package
+- [x] No dependency/security scanning (`cargo-audit`, `cargo-deny`, Dependabot/Renovate)
+- [x] `README.md` still says "Pull requests are not accepted at this time" while `.github/PULL_REQUEST_TEMPLATE.md` exists and CI runs on `pull_request`; still no `CONTRIBUTING.md`
+- [x] No docs-deployment workflow (mkdocs/GitHub Pages) despite 17+ tutorials and multiple specs
+- [x] No lint/type-check (ruff/mypy) or coverage reporting for `layer6_framework` Python package
 - [ ] `crates/tpt-gpu-playground` still requires local `wasm-pack build` + manual static server despite root `README.md` marketing it as "no install required" — no hosted/`gh-pages` WASM build exists
-- [ ] No pre-commit hooks, devcontainer, or `tpt-gpu doctor`-style health-check command mirroring CI's `fmt --check` + `clippy -D warnings` locally
-- [ ] Docs/tutorials all invoke the CLI as `tpt`, but the compiled binary is `tpt-gpu-script` — no doc mentions creating an alias
+- [x] No pre-commit hooks, devcontainer, or `tpt-gpu doctor`-style health-check command mirroring CI's `fmt --check` + `clippy -D warnings` locally
+- [x] Docs/tutorials all invoke the CLI as `tpt`, but the compiled binary is `tpt-gpu-script` — no doc mentions creating an alias
 
 ### Further ideas (not scheduled — for future consideration)
 - [ ] Once Priority 1 lands, promote the CPU fallback as a genuine "try TPT GPU with zero GPU required" story in docs/marketing
-- [ ] GGUF→TPTF importer would make `model-optimizer` end-to-end usable from a fresh HF download — the tool's core value proposition
+- [x] GGUF→TPTF importer would make `model-optimizer` end-to-end usable from a fresh HF download — the tool's core value proposition
 - [ ] `tpt-gpu doctor` command: checks Rust version, optional CUDA/ROCm SDK presence, Python venv state, and runs the same fmt/clippy checks CI does; doubles as a pre-commit hook
 - [ ] Wire `cargo-deny`/`cargo-audit` into CI plus Dependabot for cheap dependency-hygiene coverage

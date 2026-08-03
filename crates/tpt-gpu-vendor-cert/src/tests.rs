@@ -679,10 +679,9 @@ fn test_gemm_performance(vendor: &str) -> bool {
 
 fn test_memory_bandwidth(vendor: &str) -> bool {
     debug!("Testing memory bandwidth for {}", vendor);
-    let backend = match detect_backend(vendor) {
-        Some(b) => b,
-        None => return false,
-    };
+    if detect_backend(vendor).is_none() {
+        return false;
+    }
     let size = 1 << 16;
     let mut buf = make(&[size]);
     let data: Vec<f32> = (0..size).map(|i| (i % 100) as f32).collect();
@@ -750,7 +749,7 @@ fn test_conv2d_performance(vendor: &str) -> bool {
     input
         .copy_from_host(&(0..n * c * hh * w).map(|i| (i % 5) as f32).collect::<Vec<f32>>())
         .unwrap();
-    filt.copy_from_host(&(0..kf * c * r * s).map(|i| 1.0).collect::<Vec<f32>>())
+    filt.copy_from_host(&(0..kf * c * r * s).map(|_| 1.0).collect::<Vec<f32>>())
         .unwrap();
     let t0 = Instant::now();
     let res = backend.conv2d(&input, &filt, &mut out, [1, 1], [1, 1]);

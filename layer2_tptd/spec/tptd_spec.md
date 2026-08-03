@@ -4,6 +4,14 @@
 **Version:** 1.0 Draft  
 **License:** Apache License 2.0 (with Express Patent Grant)
 
+> **Simulation-only notice:** The drivers described in this specification target a simulated /
+> prototype TPT GPU PCIe device (`layer1_isa/rtl/tpt_gpu_top.sv`). **No real TPT GPU silicon
+> exists yet.** The Linux DRM (`linux/`) and Windows WDM (`windows/`) code paths compile
+> successfully but are **not exercised against real hardware in CI** — the standard workspace
+> CI runs on software simulation only. The macOS DriverKit path (`macos/`) follows the same
+> status. Until custom silicon is available, these drivers are architectural scaffolding and
+> reference implementations.
+
 ---
 
 ## 1. Overview

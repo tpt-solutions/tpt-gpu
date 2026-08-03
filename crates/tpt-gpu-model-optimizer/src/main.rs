@@ -7,6 +7,7 @@ use tpt_gpu_model_optimizer::{
     calibration::CalibrationGenerator,
     domain_mapper::DomainMapper,
     export::{detect, Exl2ExportConfig, Exl2Exporter, GgufExportConfig, GgufExporter, ModelFormat},
+    import::gguf::GgufImporter,
     kv_calculator::KvCacheCalculator,
     profiler::HardwareProfiler,
     pruner::SurgicalPruner,
@@ -73,6 +74,16 @@ enum Commands {
         output: PathBuf,
     },
 
+    /// Convert a GGUF model to TPTF format (GGUF → TPTF)
+    Convert {
+        /// Input GGUF file path
+        #[arg(long)]
+        input: PathBuf,
+        /// Output TPTF file path
+        #[arg(long)]
+        output: PathBuf,
+    },
+
     /// Compare quality of two models (perplexity + task accuracy)
     Bench { before: PathBuf, after: PathBuf },
 
@@ -105,6 +116,7 @@ fn main() -> Result<()> {
             output,
             stream,
         ),
+        Commands::Convert { input, output } => cmd_convert(input, output),
         Commands::Export {
             model,
             format,
@@ -268,6 +280,22 @@ fn cmd_optimize(
     println!("          (skipped in scaffold — no source model weights to pack)");
 
     println!("\nDone. Output: {:?}", output);
+    Ok(())
+}
+
+fn cmd_convert(input: PathBuf, output: PathBuf) -> Result<()> {
+    println!("Converting {:?} → {:?}", input, output);
+    let model = GgufImporter::import(&input)?;
+    println!(
+        "  arch={}, layers={}, tensors={}",
+        model.header.arch,
+        model.header.num_layers,
+        model.tensors.len()
+    );
+    let out = std::fs::File::create(&output)?;
+    let out = std::io::BufWriter::new(out);
+    model.write_tptf(out)?;
+    println!("Done. Written {:?}", output);
     Ok(())
 }
 

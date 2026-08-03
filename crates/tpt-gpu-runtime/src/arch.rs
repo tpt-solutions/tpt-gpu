@@ -35,6 +35,11 @@ pub enum ForwardOp {
     Softmax { dim: i32 },
     /// Sample the next token from a probability distribution.
     Sampling { temperature: f32, top_k: u32 },
+    /// Apply Rotary Position Embedding to Q and K projections.
+    ///
+    /// `pos` is a placeholder (0) in the template; the runtime substitutes the
+    /// real decode position from `kv_cache.seq_len` at forward-pass time.
+    ApplyRope { head_dim: u32, base: f32, pos: usize },
 }
 
 /// The complete op sequence for one model architecture.
@@ -93,6 +98,7 @@ fn llama3(info: &ModelInfo) -> ArchTemplate {
                 hidden_dim: info.hidden_dim,
                 eps: 1e-5,
             },
+            ForwardOp::ApplyRope { head_dim, base: 500_000.0, pos: 0 },
             ForwardOp::Attention {
                 num_heads,
                 num_kv_heads,
@@ -147,6 +153,7 @@ fn mistral(info: &ModelInfo) -> ArchTemplate {
                 hidden_dim: info.hidden_dim,
                 eps: 1e-5,
             },
+            ForwardOp::ApplyRope { head_dim, base: 10_000.0, pos: 0 },
             ForwardOp::Attention {
                 num_heads,
                 num_kv_heads,
@@ -202,6 +209,7 @@ fn qwen2(info: &ModelInfo) -> ArchTemplate {
                 hidden_dim: info.hidden_dim,
                 eps: 1e-6,
             },
+            ForwardOp::ApplyRope { head_dim, base: 1_000_000.0, pos: 0 },
             ForwardOp::Attention {
                 num_heads,
                 num_kv_heads,
@@ -262,6 +270,7 @@ fn phi3(info: &ModelInfo) -> ArchTemplate {
                 hidden_dim: info.hidden_dim,
                 eps: 1e-5,
             },
+            ForwardOp::ApplyRope { head_dim, base: 10_000.0, pos: 0 },
             ForwardOp::Attention {
                 num_heads,
                 num_kv_heads,
@@ -304,7 +313,7 @@ fn gemma2(info: &ModelInfo) -> ArchTemplate {
     } else {
         num_heads / 2
     };
-    // Gemma2 adds a post-attention norm and a post-FFN norm (6 ops per layer, not 4).
+    // Gemma2 adds a post-attention norm and a post-FFN norm (7 ops per layer with RoPE).
     ArchTemplate {
         num_layers: info.num_layers,
         pre_ops: vec![ForwardOp::Embed {
@@ -316,6 +325,7 @@ fn gemma2(info: &ModelInfo) -> ArchTemplate {
                 hidden_dim: info.hidden_dim,
                 eps: 1e-6,
             }, // pre-attention
+            ForwardOp::ApplyRope { head_dim, base: 10_000.0, pos: 0 },
             ForwardOp::Attention {
                 num_heads,
                 num_kv_heads,
@@ -390,7 +400,8 @@ mod tests {
         let info = stub_info("llama3", 32);
         let t = template_for_arch("llama3", &info).unwrap();
         assert_eq!(t.num_layers, 32);
-        assert_eq!(t.per_layer_ops.len(), 4);
+        // RmsNorm + ApplyRope + Attention + RmsNorm + FfnSwiGlu = 5
+        assert_eq!(t.per_layer_ops.len(), 5);
     }
 
     #[test]
@@ -405,13 +416,13 @@ mod tests {
     }
 
     #[test]
-    fn gemma2_has_six_per_layer_ops() {
+    fn gemma2_has_seven_per_layer_ops() {
         let info = stub_info("gemma2", 46);
         let t = template_for_arch("gemma2", &info).unwrap();
         assert_eq!(
             t.per_layer_ops.len(),
-            6,
-            "Gemma2 uses 6 ops/layer (extra pre/post norms)"
+            7,
+            "Gemma2 uses 7 ops/layer (pre-attn norm + RoPE + attn + post-attn norm + pre-FFN norm + FFN + post-FFN norm)"
         );
     }
 

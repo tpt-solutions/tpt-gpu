@@ -47,6 +47,7 @@ fn run(args: &[String]) -> i32 {
         Some("modules") => cmd_modules(),
         Some("docs") => cmd_docs(args),
         Some("compat") => cmd_compat(args),
+        Some("doctor") => cmd_doctor(),
         Some(cmd) => {
             eprintln!("tpt: unknown subcommand `{cmd}`");
             eprintln!("Run `tpt --help` for usage.");
@@ -499,6 +500,211 @@ fn cmd_docs(args: &[String]) -> i32 {
 }
 
 // ---------------------------------------------------------------------------
+// doctor — environment health check
+// ---------------------------------------------------------------------------
+
+fn cmd_doctor() -> i32 {
+    use std::process::Command;
+
+    struct Check {
+        name: &'static str,
+        passed: bool,
+        detail: String,
+    }
+
+    let mut checks: Vec<Check> = Vec::new();
+
+    // 1. rustc version — warn if < 1.70
+    {
+        let (passed, detail) = match Command::new("rustc").arg("--version").output() {
+            Ok(out) if out.status.success() => {
+                let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                // parse "rustc X.Y.Z (...)"
+                let too_old = ver
+                    .split_whitespace()
+                    .nth(1)
+                    .and_then(|v| {
+                        let mut parts = v.splitn(3, '.');
+                        let major: u32 = parts.next()?.parse().ok()?;
+                        let minor: u32 = parts.next()?.parse().ok()?;
+                        Some((major, minor))
+                    })
+                    .map(|(maj, min)| maj < 1 || (maj == 1 && min < 70))
+                    .unwrap_or(false);
+                if too_old {
+                    (false, format!("{ver} (warning: >= 1.70 recommended)"))
+                } else {
+                    (true, ver)
+                }
+            }
+            Ok(out) => (false, String::from_utf8_lossy(&out.stderr).trim().to_string()),
+            Err(e) => (false, format!("not found: {e}")),
+        };
+        checks.push(Check { name: "rustc", passed, detail });
+    }
+
+    // 2. cargo available
+    {
+        let (passed, detail) = match Command::new("cargo").arg("--version").output() {
+            Ok(out) if out.status.success() => {
+                let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                (true, ver)
+            }
+            Ok(out) => (false, String::from_utf8_lossy(&out.stderr).trim().to_string()),
+            Err(e) => (false, format!("not found: {e}")),
+        };
+        checks.push(Check { name: "cargo", passed, detail });
+    }
+
+    // 3. CUDA — nvcc or nvidia-smi
+    {
+        let nvcc = Command::new("nvcc").arg("--version").output();
+        let (passed, detail) = if let Ok(out) = nvcc {
+            if out.status.success() {
+                // extract version line
+                let text = String::from_utf8_lossy(&out.stdout);
+                let ver = text
+                    .lines()
+                    .find(|l| l.contains("release"))
+                    .and_then(|l| l.split("release").nth(1))
+                    .map(|s| s.trim().trim_end_matches(',').to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                (true, format!("found (nvcc {ver})"))
+            } else {
+                // fall back to nvidia-smi
+                match Command::new("nvidia-smi").arg("--query-gpu=name").arg("--format=csv,noheader").output() {
+                    Ok(smi) if smi.status.success() => {
+                        let gpu = String::from_utf8_lossy(&smi.stdout).trim().to_string();
+                        (true, format!("found via nvidia-smi ({gpu})"))
+                    }
+                    _ => (false, "not found (simulation mode will be used)".to_string()),
+                }
+            }
+        } else {
+            match Command::new("nvidia-smi").output() {
+                Ok(smi) if smi.status.success() => (true, "found via nvidia-smi".to_string()),
+                _ => (false, "not found (simulation mode will be used)".to_string()),
+            }
+        };
+        checks.push(Check { name: "CUDA", passed, detail });
+    }
+
+    // 4. ROCm — hipcc
+    {
+        let (passed, detail) = match Command::new("hipcc").arg("--version").output() {
+            Ok(out) if out.status.success() => {
+                let ver = String::from_utf8_lossy(&out.stdout).trim().lines().next().unwrap_or("").to_string();
+                (true, format!("found ({ver})"))
+            }
+            _ => (false, "not found".to_string()),
+        };
+        checks.push(Check { name: "ROCm", passed, detail });
+    }
+
+    // 5. Python
+    {
+        let py3 = Command::new("python3").arg("--version").output();
+        let (passed, detail) = match py3 {
+            Ok(out) if out.status.success() => {
+                let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                (true, ver)
+            }
+            _ => {
+                // try plain python
+                match Command::new("python").arg("--version").output() {
+                    Ok(out) if out.status.success() => {
+                        let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        (true, ver)
+                    }
+                    Ok(out) => (false, String::from_utf8_lossy(&out.stderr).trim().to_string()),
+                    Err(_) => (false, "not found".to_string()),
+                }
+            }
+        };
+        checks.push(Check { name: "Python", passed, detail });
+    }
+
+    // 6. ruff
+    {
+        let (passed, detail) = match Command::new("ruff").arg("--version").output() {
+            Ok(out) if out.status.success() => {
+                let ver = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                (true, ver)
+            }
+            _ => (false, "not found (run: pip install ruff)".to_string()),
+        };
+        checks.push(Check { name: "ruff", passed, detail });
+    }
+
+    // 7. cargo fmt --check (only when inside a tpt-gpu checkout)
+    {
+        let in_workspace = env::current_dir()
+            .map(|cwd| {
+                cwd.join("Cargo.toml").exists()
+                    && cwd.join("crates").exists()
+            })
+            .unwrap_or(false);
+
+        let (passed, detail) = if in_workspace {
+            match Command::new("cargo")
+                .args(["fmt", "--all", "--", "--check"])
+                .output()
+            {
+                Ok(out) if out.status.success() => (true, "cargo fmt check passed".to_string()),
+                Ok(out) => {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    let hint = if stderr.contains("Diff in") || stderr.is_empty() {
+                        "formatting drift detected — run `cargo fmt --all`"
+                    } else {
+                        "cargo fmt check failed"
+                    };
+                    (false, hint.to_string())
+                }
+                Err(e) => (false, format!("could not run cargo fmt: {e}")),
+            }
+        } else {
+            (true, "skipped (not in a tpt-gpu workspace root)".to_string())
+        };
+        checks.push(Check { name: "cargo fmt", passed, detail });
+    }
+
+    // Print results
+    println!("tpt-gpu doctor");
+    println!("==============");
+    println!();
+    let mut failures: Vec<&str> = Vec::new();
+    for check in &checks {
+        let marker = if check.passed { "OK  " } else { "FAIL" };
+        println!("  [{marker}] {:<12} {}", check.name, check.detail);
+        if !check.passed {
+            failures.push(check.name);
+        }
+    }
+    println!();
+
+    // CUDA and ROCm not-found are advisory, not failures for the summary
+    let hard_failures: Vec<&&str> = failures
+        .iter()
+        .filter(|&&n| n != "CUDA" && n != "ROCm" && n != "ruff")
+        .collect();
+
+    if hard_failures.is_empty() {
+        println!("All checks passed!");
+        0
+    } else {
+        println!(
+            "Failed checks: {}",
+            hard_failures
+                .iter()
+                .map(|s| **s)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        1
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -519,6 +725,7 @@ fn print_help() {
     println!("    modules           List all standard library modules");
     println!("    docs <op>         Print Markdown docs for a built-in op");
     println!("    compat <file>     Generate Python compatibility stubs");
+    println!("    doctor            Check development environment health");
     println!();
     println!("OPTIONS:");
     println!("    -o <path>         Output file path");

@@ -25,6 +25,7 @@ use tpt_gpu_primitives::{
 use crate::arch::{template_for_arch, ArchTemplate, ForwardOp};
 use crate::error::{ErrorCode, TptrError, TptrResult};
 use crate::kv_cache::KvCache;
+use crate::rope::RopeConfig;
 
 // ---------------------------------------------------------------------------
 // ModelInfo
@@ -548,6 +549,187 @@ fn alloc_f32_1d(n: usize) -> TptrResult<GpuBuffer<f32>> {
 }
 
 impl ModelWeights {
+    /// Load model weights from a TPTF v1 file.
+    ///
+    /// Parses the TPTF header via [`parse_tptf_header`], allocates all weight
+    /// buffers (zero-initialised), then reads each quantized tensor block from
+    /// the tensor data section, dequantizes it to `f32`, and copies the result
+    /// into the matching [`GpuBuffer`] field (gate_proj, up_proj, down_proj,
+    /// q_proj, k_proj, v_proj, o_proj, norm1, norm2).  Tensors absent from the
+    /// file remain zero-initialised (e.g. attention projections when the TPTF
+    /// was produced by a FFN-only quantizer pass).
+    fn load_tptf(path: &Path, info: &ModelInfo, tied: bool) -> TptrResult<Self> {
+        use std::fs;
+
+        let data = fs::read(path).map_err(|e| {
+            TptrError::new(
+                ErrorCode::InternalError,
+                format!("load_tptf: cannot read {}: {}", path.display(), e),
+            )
+        })?;
+
+        // Tensor section offset is stored as a u64 at byte 460 in the TPTF header.
+        // Fall back to the fixed HEADER_SIZE (512) when the field is absent or zero.
+        const TPTF_TENSOR_OFFSET_FIELD: usize = 460;
+        const TPTF_HEADER_SIZE: usize = 512;
+        let tensor_start: usize = if data.len() >= TPTF_TENSOR_OFFSET_FIELD + 8 {
+            let raw = u64::from_le_bytes(
+                data[TPTF_TENSOR_OFFSET_FIELD..TPTF_TENSOR_OFFSET_FIELD + 8]
+                    .try_into()
+                    .unwrap(),
+            ) as usize;
+            if raw >= TPTF_HEADER_SIZE { raw } else { TPTF_HEADER_SIZE }
+        } else {
+            TPTF_HEADER_SIZE
+        };
+
+        // Tokenizer section offset (field immediately after tensor_offset).
+        let tokenizer_start: usize = if data.len() >= TPTF_TENSOR_OFFSET_FIELD + 16 {
+            u64::from_le_bytes(
+                data[TPTF_TENSOR_OFFSET_FIELD + 8..TPTF_TENSOR_OFFSET_FIELD + 16]
+                    .try_into()
+                    .unwrap(),
+            ) as usize
+        } else {
+            0
+        };
+
+        let tensor_end = if tokenizer_start > tensor_start {
+            tokenizer_start
+        } else {
+            data.len()
+        };
+
+        let mut weights = Self::allocate(info, tied)?;
+        let num_layers = info.num_layers as usize;
+
+        // Parse tensor blocks sequentially.  Each block's binary layout:
+        //   u32  layer_idx
+        //   u8   name_len (max 31)
+        //   [u8; name_len]  name
+        //   u8   bits
+        //   u32  group_size
+        //   u32  rows
+        //   u32  cols
+        //   u32  weights_len
+        //   [u8; weights_len]  packed weights
+        //   u32  scales_len
+        //   [f32; scales_len]  scales
+        //   u32  zp_len
+        //   [i8; zp_len]  zero_points
+        //   <padding to next 128-byte boundary (absolute file position)>
+        let mut pos = tensor_start;
+        while pos + 14 < tensor_end.min(data.len()) {
+            let block_start = pos;
+
+            // layer_idx
+            if pos + 4 > data.len() { break; }
+            let layer_idx = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+            pos += 4;
+
+            // name
+            if pos >= data.len() { break; }
+            let name_len = data[pos] as usize;
+            pos += 1;
+            if name_len > 31 || pos + name_len > data.len() { break; }
+            let name = String::from_utf8_lossy(&data[pos..pos + name_len]).to_string();
+            pos += name_len;
+
+            // bits, group_size, rows, cols
+            if pos + 13 > data.len() { break; }
+            let bits = data[pos];
+            pos += 1;
+            let group_size =
+                u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+            pos += 4;
+            let rows = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+            pos += 4;
+            let cols = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+            pos += 4;
+
+            // packed weights
+            if pos + 4 > data.len() { break; }
+            let weights_len =
+                u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+            pos += 4;
+            if pos + weights_len > data.len() { break; }
+            let packed = data[pos..pos + weights_len].to_vec();
+            pos += weights_len;
+
+            // scales
+            if pos + 4 > data.len() { break; }
+            let scales_len =
+                u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+            pos += 4;
+            if pos + scales_len * 4 > data.len() { break; }
+            let mut scales = vec![1.0f32; scales_len];
+            for s in scales.iter_mut() {
+                *s = f32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+                pos += 4;
+            }
+
+            // zero_points
+            if pos + 4 > data.len() { break; }
+            let zp_len =
+                u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+            pos += 4;
+            if pos + zp_len > data.len() { break; }
+            let zero_points: Vec<i8> =
+                data[pos..pos + zp_len].iter().map(|&b| b as i8).collect();
+            pos += zp_len;
+
+            // Advance to the next 128-byte boundary (absolute file position).
+            let _ = block_start; // suppress unused warning
+            pos = (pos + 127) & !127_usize;
+
+            // Dequantize.
+            let num_elements = rows * cols;
+            let group_sz = if group_size > 0 { group_size } else { num_elements.max(1) };
+            let f32_data =
+                tptf_dequantize(&packed, &scales, &zero_points, bits, group_sz, num_elements);
+
+            // Copy into the matching GpuBuffer field.
+            if layer_idx < num_layers {
+                let layer = &mut weights.layers[layer_idx];
+                let target: Option<&mut GpuBuffer<f32>> = match name.as_str() {
+                    "gate_proj" => Some(&mut layer.gate_proj),
+                    "up_proj"   => Some(&mut layer.up_proj),
+                    "down_proj" => Some(&mut layer.down_proj),
+                    "q_proj"    => Some(&mut layer.q_proj),
+                    "k_proj"    => Some(&mut layer.k_proj),
+                    "v_proj"    => Some(&mut layer.v_proj),
+                    "o_proj"    => Some(&mut layer.o_proj),
+                    "norm1"     => Some(&mut layer.norm1),
+                    "norm2"     => Some(&mut layer.norm2),
+                    _ => None,
+                };
+                if let Some(buf) = target {
+                    let n = f32_data.len().min(buf.num_elements());
+                    if n > 0 {
+                        let _ = buf.copy_from_host(&f32_data[..n]);
+                    }
+                }
+            } else if name == "embed_table" || name == "embedding" {
+                let n = f32_data.len().min(weights.embed_table.num_elements());
+                if n > 0 {
+                    let _ = weights.embed_table.copy_from_host(&f32_data[..n]);
+                }
+            } else if name == "final_norm" {
+                let n = f32_data.len().min(weights.final_norm.num_elements());
+                if n > 0 {
+                    let _ = weights.final_norm.copy_from_host(&f32_data[..n]);
+                }
+            } else if name == "lm_head" && !weights.lm_head_tied {
+                let n = f32_data.len().min(weights.lm_head.num_elements());
+                if n > 0 {
+                    let _ = weights.lm_head.copy_from_host(&f32_data[..n]);
+                }
+            }
+        }
+
+        Ok(weights)
+    }
+
     fn allocate(info: &ModelInfo, tied: bool) -> TptrResult<Self> {
         let h = info.hidden_dim as usize;
         let v = info.vocab_size as usize;
@@ -586,6 +768,27 @@ impl ModelWeights {
             lm_head,
             lm_head_tied: tied,
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RoPE config helpers
+// ---------------------------------------------------------------------------
+
+/// Build the `RopeConfig` for a given model, deriving `head_dim` from
+/// `hidden_dim / num_heads` and `max_seq_len` from `context_len`.
+fn rope_config_for_arch(arch: &str, info: &ModelInfo) -> Option<RopeConfig> {
+    let num_heads = info.num_heads.max(1) as usize;
+    let head_dim = info.hidden_dim as usize / num_heads;
+    let max_seq_len = info.context_len as usize;
+    match arch {
+        "llama3" => Some(RopeConfig { head_dim, base: 500_000.0, max_seq_len }),
+        "llama"  => Some(RopeConfig { head_dim, base: 10_000.0,  max_seq_len }),
+        "mistral" => Some(RopeConfig { head_dim, base: 10_000.0, max_seq_len }),
+        "qwen2" | "qwen" => Some(RopeConfig { head_dim, base: 1_000_000.0, max_seq_len }),
+        "phi3"   => Some(RopeConfig { head_dim, base: 10_000.0,  max_seq_len }),
+        "gemma2" | "gemma" => Some(RopeConfig { head_dim, base: 10_000.0, max_seq_len }),
+        _ => None,
     }
 }
 
@@ -635,6 +838,9 @@ pub struct GpuInferenceEngine {
     cancelled: Arc<Mutex<bool>>,
     /// xorshift64 PRNG state for temperature sampling (never zero).
     rng_state: u64,
+    /// RoPE configuration derived from the model architecture.
+    /// `None` only for architectures that do not use RoPE (none currently supported).
+    rope_config: Option<RopeConfig>,
 }
 
 impl std::fmt::Debug for GpuInferenceEngine {
@@ -648,7 +854,8 @@ impl std::fmt::Debug for GpuInferenceEngine {
 
 impl LlmInference for GpuInferenceEngine {
     fn load(model_path: &Path) -> TptrResult<Self> {
-        let info = match detect_format(model_path) {
+        let fmt = detect_format(model_path);
+        let info = match fmt {
             ModelFormat::Gguf => parse_gguf_header(model_path)?,
             ModelFormat::Tptf => parse_tptf_header(model_path)?,
             ModelFormat::Unknown => {
@@ -664,7 +871,13 @@ impl LlmInference for GpuInferenceEngine {
             .iter()
             .any(|op| matches!(op, ForwardOp::LinearOut { tied: true, .. }));
 
-        let weights = ModelWeights::allocate(&info, tied)?;
+        // For TPTF files load the quantized tensor blocks from the tensor data
+        // section rather than returning a zero-initialised weight set.
+        let weights = if fmt == ModelFormat::Tptf {
+            ModelWeights::load_tptf(model_path, &info, tied)?
+        } else {
+            ModelWeights::allocate(&info, tied)?
+        };
 
         // All kernel handles share a single VendorBackend::detect() result.
         let vendor = VendorBackend::detect();
@@ -683,6 +896,8 @@ impl LlmInference for GpuInferenceEngine {
             head_dim,
         );
 
+        let rope_config = rope_config_for_arch(&info.arch, &info);
+
         Ok(Self {
             info,
             template,
@@ -696,6 +911,7 @@ impl LlmInference for GpuInferenceEngine {
             kv_cache,
             cancelled: Arc::new(Mutex::new(false)),
             rng_state: 0x853c49e6748fea9b,
+            rope_config,
         })
     }
 
@@ -804,6 +1020,21 @@ impl GpuInferenceEngine {
             let q = proj_gemm!(&normed, &layer.q_proj, "q_proj")?;
             let k = proj_gemm!(&normed, &layer.k_proj, "k_proj")?;
             let v = proj_gemm!(&normed, &layer.v_proj, "v_proj")?;
+
+            // Apply RoPE to Q and K before caching so stored K values carry
+            // positional information.  The decode position is the current
+            // KV-cache length (0-indexed: first token is position 0).
+            let rope_pos = self.kv_cache.seq_len;
+            let (q, k) = if let Some(ref rope_cfg) = self.rope_config {
+                let mut q_data = buf_to_vec(&q);
+                let mut k_data = buf_to_vec(&k);
+                crate::rope::apply_rope(&mut q_data, &mut k_data, rope_pos, rope_cfg);
+                let q_rotated = vec_to_buf(q_data, 1, num_heads * head_dim)?;
+                let k_rotated = vec_to_buf(k_data, 1, num_kv * head_dim)?;
+                (q_rotated, k_rotated)
+            } else {
+                (q, k)
+            };
 
             // KV cache: append current step's K and V.
             // After append, the token data is at position `kv_step - 1` but
@@ -1190,6 +1421,128 @@ fn expand_kv_heads(src: &[f32], seq_len: usize, kv_row: usize, qk_dim: usize) ->
     out
 }
 
+/// Dequantize a packed tensor block (matching the `quantize_tensor` format used
+/// by `tpt-gpu-model-optimizer`) back to `f32`.
+///
+/// For `bits >= 16` the weight bytes are interpreted directly as little-endian
+/// `f32` values (no quantization was applied during storage).  For sub-byte
+/// depths the values are extracted LSB-first, then dequantized:
+/// `result[i] = (q + zero_point) * scale`
+/// where `q` is the per-element quantized integer and scale/zp are per-group.
+fn tptf_dequantize(
+    quantized: &[u8],
+    scales: &[f32],
+    zero_points: &[i8],
+    bits: u8,
+    group_size: usize,
+    num_elements: usize,
+) -> Vec<f32> {
+    if bits >= 16 {
+        // Raw f32 LE bytes (bits == 16 → no quantization path in quantize_tensor).
+        let float_count = num_elements.min(quantized.len() / 4);
+        let mut result = vec![0.0f32; num_elements];
+        for i in 0..float_count {
+            let b = &quantized[i * 4..(i + 1) * 4];
+            result[i] = f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+        }
+        return result;
+    }
+
+    let pack_factor = (8usize / bits as usize).max(1);
+    let mask = (1u16 << bits) - 1;
+    let mut result = vec![0.0f32; num_elements];
+
+    for elem_idx in 0..num_elements {
+        let packed_byte_idx = elem_idx / pack_factor;
+        let bit_offset = (elem_idx % pack_factor) * bits as usize;
+
+        if packed_byte_idx < quantized.len() {
+            let byte = quantized[packed_byte_idx] as u16;
+            let q = (byte >> bit_offset) & mask;
+
+            let group_idx = elem_idx / group_size;
+            let scale = scales.get(group_idx).copied().unwrap_or(1.0);
+            let zp = zero_points.get(group_idx).copied().unwrap_or(0) as f32;
+
+            result[elem_idx] = (q as f32 + zp) * scale;
+        }
+    }
+
+    result
+}
+
+/// Host-side token sampling from raw logit scores.
+///
+/// Deterministic (greedy) when `temperature == 0.0` or `top_k <= 1` — returns
+/// the argmax index.  Otherwise applies temperature scaling, selects the top-k
+/// candidates, runs softmax over those k values, and draws a categorical sample
+/// using an internal xorshift64 PRNG (no external crate required).
+pub fn execute_sampling(logits: &[f32], temperature: f32, top_k: usize) -> usize {
+    if logits.is_empty() {
+        return 0;
+    }
+
+    // Greedy (deterministic) fast path.
+    if temperature == 0.0 || top_k <= 1 {
+        return logits
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+    }
+
+    // Temperature scaling.
+    let mut scaled: Vec<(usize, f32)> = logits
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| (i, v / temperature))
+        .collect();
+
+    // Partial sort: keep only the top-k entries (descending by score).
+    let k = top_k.min(logits.len()).max(1);
+    scaled.sort_unstable_by(|(_, a), (_, b)| {
+        b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    scaled.truncate(k);
+
+    // Numerically-stable softmax over the top-k scores.
+    let max_val = scaled
+        .iter()
+        .map(|(_, v)| *v)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let mut expd: Vec<f32> = scaled.iter().map(|(_, v)| (*v - max_val).exp()).collect();
+    let sum: f32 = expd.iter().sum();
+    if sum > 0.0 {
+        for e in expd.iter_mut() {
+            *e /= sum;
+        }
+    }
+
+    // Categorical sample via a module-level xorshift64 PRNG (no external dep).
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static PRNG: AtomicU64 = AtomicU64::new(0x853c49e6748fea9b);
+    let u = {
+        let mut x = PRNG.load(Ordering::Relaxed);
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        PRNG.store(x, Ordering::Relaxed);
+        (x as f64 / u64::MAX as f64) as f32
+    };
+
+    let mut cumsum = 0.0f32;
+    for (i, p) in expd.iter().enumerate() {
+        cumsum += p;
+        if u <= cumsum || i + 1 == k {
+            return scaled[i].0;
+        }
+    }
+    scaled[0].0
+}
+
 /// xorshift64 PRNG — returns a uniform float in (0, 1].
 fn xorshift64(state: &mut u64) -> f32 {
     let mut x = *state;
@@ -1564,5 +1917,154 @@ mod tests {
         engine.infer(&[1], 2, |tok| generated.push(tok)).unwrap();
         assert_eq!(generated.len(), 2);
         let _ = fs::remove_file(&p);
+    }
+
+    // ----- TPTF tensor-loading roundtrip -----
+
+    /// Write a TPTF block binary (matching TensorBlock::write_to from tpt-gpu-model-optimizer).
+    fn append_tptf_tensor_block(
+        data: &mut Vec<u8>,
+        layer_idx: u32,
+        name: &str,
+        bits: u8,
+        group_size: u32,
+        rows: u32,
+        cols: u32,
+        weight_bytes: &[u8],
+    ) {
+        data.extend_from_slice(&layer_idx.to_le_bytes());
+        let nb = name.as_bytes();
+        data.push(nb.len().min(31) as u8);
+        data.extend_from_slice(&nb[..nb.len().min(31)]);
+        data.push(bits);
+        data.extend_from_slice(&group_size.to_le_bytes());
+        data.extend_from_slice(&rows.to_le_bytes());
+        data.extend_from_slice(&cols.to_le_bytes());
+        // weights
+        data.extend_from_slice(&(weight_bytes.len() as u32).to_le_bytes());
+        data.extend_from_slice(weight_bytes);
+        // scales: 1 group, scale = 1.0
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&1.0f32.to_le_bytes());
+        // zero_points: 1 group, zp = 0
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.push(0u8);
+        // pad absolute position to next 128-byte boundary
+        while data.len() % 128 != 0 {
+            data.push(0u8);
+        }
+    }
+
+    /// Build a minimal TPTF file containing 2 f32 tensor blocks of known values
+    /// (bits=16 → raw f32 bytes, no quantization).
+    fn write_tptf_with_tensors(path: &Path) {
+        // Header: arch=llama3, hidden=4, ffn=8, heads=2, kv=1, layers=1, vocab=8
+        let mut buf = vec![0u8; 512];
+        buf[0..4].copy_from_slice(b"TPTF");
+        buf[4..8].copy_from_slice(&1u32.to_le_bytes()); // version
+        buf[8..12].copy_from_slice(&0u32.to_le_bytes()); // flags
+        let ab = b"llama3";
+        buf[12] = ab.len() as u8;
+        buf[13..13 + ab.len()].copy_from_slice(ab);
+        buf[76..80].copy_from_slice(&64u32.to_le_bytes()); // context_len
+        buf[80..84].copy_from_slice(&8u32.to_le_bytes()); // vocab_size
+        buf[84..88].copy_from_slice(&4u32.to_le_bytes()); // hidden_dim
+        buf[88..92].copy_from_slice(&2u32.to_le_bytes()); // num_heads
+        buf[92..96].copy_from_slice(&1u32.to_le_bytes()); // num_kv_heads
+        buf[96..100].copy_from_slice(&8u32.to_le_bytes()); // ffn_dim
+        buf[100..104].copy_from_slice(&1u32.to_le_bytes()); // num_layers = 1
+        // tensor_offset at byte 460 = 512 (start of tensor section)
+        buf[460..468].copy_from_slice(&512u64.to_le_bytes());
+        // tokenizer_offset = 0 (no tokenizer → read tensors until EOF)
+
+        let mut data = buf;
+
+        // Tensor 1: gate_proj for layer 0 — 32 elements (4 × 8), bits=16
+        let gate_vals: Vec<f32> = (1u32..=32).map(|i| i as f32 * 0.1).collect();
+        let gate_bytes: Vec<u8> =
+            gate_vals.iter().flat_map(|v| v.to_le_bytes()).collect();
+        append_tptf_tensor_block(&mut data, 0, "gate_proj", 16, 32, 4, 8, &gate_bytes);
+
+        // Tensor 2: up_proj for layer 0 — 32 elements (4 × 8), bits=16
+        let up_vals: Vec<f32> = (1u32..=32).map(|i| i as f32 * 0.2).collect();
+        let up_bytes: Vec<u8> =
+            up_vals.iter().flat_map(|v| v.to_le_bytes()).collect();
+        append_tptf_tensor_block(&mut data, 0, "up_proj", 16, 32, 4, 8, &up_bytes);
+
+        fs::write(path, &data).unwrap();
+    }
+
+    #[test]
+    fn test_load_tptf_roundtrip() {
+        let p = tmp("tptf_roundtrip.tptf");
+        write_tptf_with_tensors(&p);
+
+        let info = parse_tptf_header(&p).unwrap();
+        assert_eq!(info.arch, "llama3");
+        assert_eq!(info.num_layers, 1);
+        assert_eq!(info.hidden_dim, 4);
+        assert_eq!(info.ffn_dim, 8);
+
+        // llama3 does not tie lm_head
+        let weights = ModelWeights::load_tptf(&p, &info, /*tied=*/false).unwrap();
+
+        // gate_proj[layer=0] should be (0.1, 0.2, ..., 3.2)
+        let gate = buf_to_vec(&weights.layers[0].gate_proj);
+        assert_eq!(gate.len(), 4 * 8, "gate_proj shape mismatch");
+        for i in 0..32 {
+            let expected = (i + 1) as f32 * 0.1;
+            assert!(
+                (gate[i] - expected).abs() < 1e-5,
+                "gate_proj[{}]: expected {:.4}, got {:.4}",
+                i,
+                expected,
+                gate[i]
+            );
+        }
+
+        // up_proj[layer=0] should be (0.2, 0.4, ..., 6.4)
+        let up = buf_to_vec(&weights.layers[0].up_proj);
+        assert_eq!(up.len(), 4 * 8, "up_proj shape mismatch");
+        for i in 0..32 {
+            let expected = (i + 1) as f32 * 0.2;
+            assert!(
+                (up[i] - expected).abs() < 1e-5,
+                "up_proj[{}]: expected {:.4}, got {:.4}",
+                i,
+                expected,
+                up[i]
+            );
+        }
+
+        let _ = fs::remove_file(&p);
+    }
+
+    // ----- execute_sampling tests -----
+
+    #[test]
+    fn test_sampling_temperature_zero_is_argmax() {
+        // With temperature=0, execute_sampling must return the argmax index
+        // regardless of the values of the other logits.
+        let logits = vec![0.1f32, 0.5, 0.9, 0.3, 0.2];
+        let idx = execute_sampling(&logits, 0.0, 5);
+        assert_eq!(idx, 2, "argmax of [0.1,0.5,0.9,0.3,0.2] should be 2, got {}", idx);
+
+        // Also verify with a negative max-at-zero case.
+        let logits2 = vec![10.0f32, 1.0, 2.0];
+        let idx2 = execute_sampling(&logits2, 0.0, 3);
+        assert_eq!(idx2, 0, "argmax of [10,1,2] should be 0, got {}", idx2);
+    }
+
+    #[test]
+    fn test_sampling_topk_one_is_argmax() {
+        // With top_k=1, only the highest-logit token can be sampled — the result
+        // is always the argmax regardless of the temperature value.
+        let logits = vec![0.1f32, 0.8, 0.3, 0.6];
+        let idx = execute_sampling(&logits, 1.0, 1);
+        assert_eq!(idx, 1, "top_k=1 should return argmax (1), got {}", idx);
+
+        let logits2 = vec![3.0f32, 1.0, 2.0, 5.0, 4.0];
+        let idx2 = execute_sampling(&logits2, 2.0, 1);
+        assert_eq!(idx2, 3, "top_k=1 should return argmax (3), got {}", idx2);
     }
 }
