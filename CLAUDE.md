@@ -14,7 +14,7 @@ layer2_tptd/     Kernel drivers — Linux DRM (Rust for Linux), Windows WDM (C),
 layer3_tptc/     TPTIR compiler — MLIR-compatible dialect (C++) + Rust port (`crates/tpt-gpu-compiler`)
 layer4_tptr/     GPU runtime — allocator, scheduler, kernel launch (`crates/tpt-gpu-runtime`)
 layer5_tptp/     GPU primitives — GEMM, Attention, Conv2D (`crates/tpt-gpu-primitives`)
-layer6_tptf/     Framework backends — PyTorch dispatch, JAX integration (Python + `crates/tpt-gpu-dispatch`)
+layer6_tptf/     Framework backends — PyTorch dispatch, JAX integration (Python + `crates/out-gpu-dispatch`)
 layer7_tptb/     TPT Script compiler — lexer → parser → type checker → codegen (`crates/tpt-gpu-script-*`)
 ```
 
@@ -147,7 +147,7 @@ The TPTIR text format uses `^label:` blocks. TPTIR emitted by layer7 feeds direc
 - **`kv_cache.rs`** — `KvCache`: sliding-window host-side K/V cache per transformer layer; drops oldest token on overflow for indefinite-length decoding
 - **`rope.rs`** — `RopeConfig` per-architecture presets (`llama`, `llama3`, `mistral`, `qwen2`, `phi3`, `gemma2`: head_dim/base/max_seq_len) plus the rotary position embedding application used by `inference.rs`
 
-Python bindings (`crates/tpt-gpu-runtime-py`) wrap these via PyO3: `Device`, `Memory`, `Queue`, `Kernel`.
+Python bindings (`crates/out-gpu-runtime-py`) wrap these via PyO3: `Device`, `Memory`, `Queue`, `Kernel`.
 
 ---
 
@@ -160,7 +160,7 @@ Python bindings (`crates/tpt-gpu-runtime-py`) wrap these via PyO3: `Device`, `Me
 | `tpt-gpu-kernel-optimizer` | `crates/tpt-gpu-kernel-optimizer` | Auto-tuning: grid search → hill-climb → AI-guided |
 | `tpt-gpu-model-optimizer` | `crates/tpt-gpu-model-optimizer` | GGUF→TPTF import/conversion (`GgufImporter`), pruning, quantization allocation, calibration |
 | `tpt-gpu-model-registry` | `crates/tpt-gpu-model-registry` | Shared GGUF model registry (`~/.tpt/models/`); `ModelRegistry::open()`, HuggingFace download via `hf.rs` |
-| `tpt-gpu-playground` | `crates/tpt-gpu-playground` | Interactive TPT Script playground |
+| `out-gpu-playground` | `crates/out-gpu-playground` | Interactive TPT Script playground (unpublished) |
 | `tpt-gpu-vendor-cert` | `crates/tpt-gpu-vendor-cert` | Vendor certification harness |
 | `tpt-gpu-doctor` | `crates/tpt-gpu-doctor` | Environment health check — mirrors CI's Rust toolchain/fmt/clippy gates plus optional vendor SDK + Python detection; `--pre-commit`/`--fast` flags |
 
@@ -170,13 +170,13 @@ The `tpt-gpu-model-registry` crate is shared across tpt-gpu, tpt-spark, and tpt-
 
 ## Crates
 
-All 22 crates live in `crates/<package-name>/` as members of the single root workspace:
+All 22 crates live in `crates/<package-name>/` as members of the single root workspace. Crates prefixed `out-gpu-*` are internal-only (`publish = false`, never pushed to crates.io); everything prefixed `tpt-gpu-*` is published:
 
 | Crate | Location |
 |-------|----------|
 | `tpt-gpu-bench` | `crates/tpt-gpu-bench` |
 | `tpt-gpu-compiler` (TPTIR Rust port) | `crates/tpt-gpu-compiler` |
-| `tpt-gpu-dispatch` | `crates/tpt-gpu-dispatch` |
+| `out-gpu-dispatch` (unpublished) | `crates/out-gpu-dispatch` |
 | `tpt-gpu-doctor` | `crates/tpt-gpu-doctor` |
 | `tpt-gpu-driver-daemon` | `crates/tpt-gpu-driver-daemon` |
 | `tpt-gpu-ir-spec` | `crates/tpt-gpu-ir-spec` |
@@ -184,12 +184,12 @@ All 22 crates live in `crates/<package-name>/` as members of the single root wor
 | `tpt-gpu-kernelgen` | `crates/tpt-gpu-kernelgen` |
 | `tpt-gpu-model-optimizer` | `crates/tpt-gpu-model-optimizer` |
 | `tpt-gpu-model-registry` | `crates/tpt-gpu-model-registry` |
-| `tpt-gpu-playground` | `crates/tpt-gpu-playground` |
+| `out-gpu-playground` (unpublished) | `crates/out-gpu-playground` |
 | `tpt-gpu-primitives` | `crates/tpt-gpu-primitives` |
-| `tpt-gpu-primitives-benches` | `crates/tpt-gpu-primitives-benches` |
+| `out-gpu-primitives-benches` (unpublished) | `crates/out-gpu-primitives-benches` |
 | `tpt-gpu-runtime` | `crates/tpt-gpu-runtime` |
-| `tpt-gpu-runtime-c` | `crates/tpt-gpu-runtime-c` |
-| `tpt-gpu-runtime-py` | `crates/tpt-gpu-runtime-py` |
+| `out-gpu-runtime-c` (unpublished) | `crates/out-gpu-runtime-c` |
+| `out-gpu-runtime-py` (unpublished) | `crates/out-gpu-runtime-py` |
 | `tpt-gpu-script-cli` | `crates/tpt-gpu-script-cli` |
 | `tpt-gpu-script-core` | `crates/tpt-gpu-script-core` |
 | `tpt-gpu-script-format` | `crates/tpt-gpu-script-format` |
@@ -206,7 +206,7 @@ All 22 crates live in `crates/<package-name>/` as members of the single root wor
 | Layer 7 codegen | Layer 3 | TPTIR text → `compile_native()` |
 | Layer 3 C++ | Layer 3 Rust | C API (`include/tptir/CAPI/tptir_capi.h`) + Rust FFI (`ffi.rs`) |
 | Layer 4 Rust | Layer 2 driver | `libc` ioctl via `tpt_driver.h` ABI |
-| Layer 4 | Python | PyO3 (`tpt-gpu-runtime-py`) |
+| Layer 4 | Python | PyO3 (`out-gpu-runtime-py`) |
 | Layer 6 | Layer 4 | `tptr` crate or Python `tptr` package |
 
 ---

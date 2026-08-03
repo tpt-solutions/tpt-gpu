@@ -1,9 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/out-gpu-dispatch",
+    "crates/out-gpu-playground",
+    "crates/out-gpu-primitives-benches",
+    "crates/out-gpu-runtime-c",
+    "crates/out-gpu-runtime-py",
     "crates/tpt-gpu-bench",
     "crates/tpt-gpu-compiler",
-    "crates/tpt-gpu-dispatch",
     "crates/tpt-gpu-doctor",
     "crates/tpt-gpu-driver-daemon",
     "crates/tpt-gpu-ir-spec",
@@ -11,12 +15,8 @@ members = [
     "crates/tpt-gpu-kernelgen",
     "crates/tpt-gpu-model-optimizer",
     "crates/tpt-gpu-model-registry",
-    "crates/tpt-gpu-playground",
     "crates/tpt-gpu-primitives",
-    "crates/tpt-gpu-primitives-benches",
     "crates/tpt-gpu-runtime",
-    "crates/tpt-gpu-runtime-c",
-    "crates/tpt-gpu-runtime-py",
     "crates/tpt-gpu-script-cli",
     "crates/tpt-gpu-script-core",
     "crates/tpt-gpu-script-format",

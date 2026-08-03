@@ -14,15 +14,15 @@ import importlib.util
 _native_ext = None
 
 # Strategy 1: load the compiled extension directly out of the Cargo target
-# directory. The native extension is built by tpt-gpu-runtime-py
-# (`cargo build -p tpt-gpu-runtime-py` from the repo root).
+# directory. The native extension is built by out-gpu-runtime-py
+# (`cargo build -p out-gpu-runtime-py` from the repo root).
 def _find_native_extension():
     """Find and load the native tptr extension module."""
     possible_paths = [
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "crates", "tpt-gpu-runtime", "target", "release"),
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "crates", "tpt-gpu-runtime", "target", "debug"),
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "crates", "tpt-gpu-runtime-py", "target", "release"),
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "crates", "tpt-gpu-runtime-py", "target", "debug"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "crates", "out-gpu-runtime-py", "target", "release"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "crates", "out-gpu-runtime-py", "target", "debug"),
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "target", "release"),
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "target", "debug"),
     ]
@@ -72,7 +72,7 @@ else:
     # Use a simple warning without stacklevel to avoid issues
     warnings.warn(
         "Native tptr extension not found. Using simulation fallback. "
-        "Build with: cargo build -p tpt-gpu-runtime-py",
+        "Build with: cargo build -p out-gpu-runtime-py",
         RuntimeWarning,
     )
     from ._sim import (

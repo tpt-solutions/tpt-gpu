@@ -34,13 +34,13 @@ jobs:
           version: latest
 
       - name: Build playground WASM
-        working-directory: crates/tpt-gpu-playground
+        working-directory: crates/out-gpu-playground
         run: wasm-pack build --target web --out-dir pkg --release
 
       - name: Stage playground into docs site
         run: |
           mkdir -p site/playground
-          cp -r crates/tpt-gpu-playground/index.html crates/tpt-gpu-playground/pkg site/playground/
+          cp -r crates/out-gpu-playground/index.html crates/out-gpu-playground/pkg site/playground/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing to TPT GPU!
 
+**This project does not accept pull requests.** All contributions — bug reports, feature requests, GPU tuning profile results, vendor certification results — go through [GitHub Issues](https://github.com/tpt-solutions/tpt-gpu/issues). A maintainer triages and implements accepted changes.
+
 ---
 
 ## Reporting Bugs
@@ -14,19 +16,13 @@ Open an issue on [GitHub Issues](https://github.com/tpt-solutions/tpt-gpu/issues
 
 ---
 
-## Submitting Pull Requests
+## Requesting Features
 
-1. **Fork** the repository and create a branch from `master`:
-   ```bash
-   git checkout -b my-fix
-   ```
-2. Make your changes and add tests where applicable.
-3. Run the formatting and lint checks (see Code Style below).
-4. Open a **pull request against `master`** with a clear description of what the PR changes and why.
+Open an issue describing the use case and, if relevant, a proposed API or behavior.
 
 ---
 
-## Build Setup
+## Building Locally
 
 Prerequisites: Rust toolchain ≥ 1.75 (`rustup update`).
 
@@ -42,20 +38,7 @@ cargo build --workspace
 cargo test --workspace
 ```
 
-See `CLAUDE.md` for per-layer build instructions (C++ compiler, SystemVerilog simulation, Python framework).
-
----
-
-## Code Style
-
-Before submitting, run:
-
-```bash
-cargo fmt --all
-cargo clippy --all-targets -- -D warnings
-```
-
-The CI pipeline enforces both. PRs that fail either check will not be merged.
+See `CLAUDE.md` for per-layer build instructions (C++ compiler, SystemVerilog simulation, Python framework). `cargo run -p tpt-gpu-doctor` mirrors the exact toolchain/fmt/clippy gates CI runs, useful for checking your environment before filing an issue.
 
 ---
 
@@ -64,10 +47,10 @@ The CI pipeline enforces both. PRs that fail either check will not be merged.
 The `tuning/` directory contains per-GPU tuning profiles (`tuning/<gpu_model>.json`) that feed the kernel optimizer and auto-dispatch table. To contribute a profile for your GPU:
 
 1. Run `tpt-gpu-bench --contribute` — it benchmarks your hardware and writes a candidate `tuning/<gpu_model>.json`.
-2. Open a PR adding that file. The CI job in `.github/workflows/validate-profiles.yml` validates it against `tuning/schema.json` automatically.
+2. Open an issue and attach that file. A maintainer will validate it against `tuning/schema.json` and merge it in.
 
 ---
 
 ## Hardware CI Note
 
-Some CI jobs (CUDA/ROCm kernel correctness, real-hardware GEMM round-trips) are gated behind self-hosted runners with physical GPUs. These jobs will show as skipped on standard GitHub-hosted runners — this is expected. If your change touches vendor backends (`crates/tpt-gpu-primitives/src/vendor/`), a maintainer will trigger the self-hosted run before merging.
+Some CI jobs (CUDA/ROCm kernel correctness, real-hardware GEMM round-trips) are gated behind self-hosted runners with physical GPUs. These jobs will show as skipped on standard GitHub-hosted runners — this is expected.

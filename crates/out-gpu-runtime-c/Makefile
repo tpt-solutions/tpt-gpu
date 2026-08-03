@@ -14,7 +14,7 @@ SYSLIBS := -lntdll -lws2_32 -ladvapi32 -luserenv -lbcrypt -lkernel32 -lsynchroni
 .PHONY: build-runtime example clean
 
 build-runtime:
-	cd ../.. && cargo build -p tpt-gpu-runtime-c
+	cd ../.. && cargo build -p out-gpu-runtime-c
 
 example: build-runtime
 	clang examples/c/hello_device.c $(INCLUDES) $(LIBPATHS) -ltptr_c $(SYSLIBS) -o examples/c/hello_device.exe

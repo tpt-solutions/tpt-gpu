@@ -27,7 +27,7 @@ The steps below are only needed when you want to build and serve the playground 
 ## Build & run
 
 ```bash
-cd crates/tpt-gpu-playground
+cd crates/out-gpu-playground
 
 # Linux/macOS
 ./build.sh

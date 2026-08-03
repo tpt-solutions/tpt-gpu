@@ -1,7 +1,7 @@
 /*
  * hello_device.c - Minimal example using the TPT Runtime C ABI.
  *
- * Build (after `cargo build -p tpt-gpu-runtime-c`):
+ * Build (after `cargo build -p out-gpu-runtime-c`):
  *   cc examples/c/hello_device.c \
  *      -L ../../target/debug -ltptr_c -o hello_device
  *   (or -L ../../target/release -ltptr_c for the release build)

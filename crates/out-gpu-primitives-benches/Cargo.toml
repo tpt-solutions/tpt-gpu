@@ -1,5 +1,5 @@
 [package]
-name = "tpt-gpu-primitives-benches"
+name = "out-gpu-primitives-benches"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

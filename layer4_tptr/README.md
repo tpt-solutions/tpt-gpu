@@ -11,7 +11,7 @@ manages GPU device resources, command execution, and memory allocation.
 
 > **Layout note:** The Rust crates formerly at `layer4_tptr/tptr-core` and
 > `layer4_tptr/tptr-py` moved to the root Cargo workspace under `crates/` —
-> `crates/tpt-gpu-runtime` and `crates/tpt-gpu-runtime-py`. This directory now
+> `crates/tpt-gpu-runtime` and `crates/out-gpu-runtime-py`. This directory now
 > retains only the layer specification:
 
 ```
@@ -70,7 +70,7 @@ cargo test -p tpt-gpu-runtime
 #### Python bindings
 ```bash
 # From the repo root (single root Cargo workspace)
-cargo build -p tpt-gpu-runtime-py
+cargo build -p out-gpu-runtime-py
 ```
 
 ### Usage (Python)
@@ -96,4 +96,4 @@ print(f"Device: {info['name']}, Memory: {info['total_memory']}")
 
 ### License
 
-Apache License 2.0 (with Express Patent Grant)
+Dual-licensed under MIT or Apache 2.0 WITH LLVM-exception, matching the `tpt-gpu-runtime` and `out-gpu-runtime-py` crates. See [LICENSE-MIT](../LICENSE-MIT) / [LICENSE-APACHE](../LICENSE-APACHE) for details.

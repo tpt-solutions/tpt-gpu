@@ -1,16 +1,15 @@
 [package]
-name = "tpt-gpu-runtime-py"
+name = "out-gpu-runtime-c"
 version.workspace = true
 edition = "2021"
 authors.workspace = true
-description = "TPT Runtime - Python bindings via PyO3"
+description = "TPT Runtime - C ABI (stable C API over tpt-gpu-runtime)"
 license = "MIT OR Apache-2.0 WITH LLVM-exception"
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
-name = "tptr"
+crate-type = ["cdylib", "staticlib"]
+name = "tptr_c"
 
 [dependencies]
 tpt-gpu-runtime = { path = "../tpt-gpu-runtime" }
-pyo3 = { version = "0.29", features = ["extension-module"] }

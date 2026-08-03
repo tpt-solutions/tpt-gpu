@@ -27,14 +27,14 @@
 
 ## 1. Getting Started
 
-For cloning the repo, building the `tpt` CLI, and writing/compiling your first `.tpts` file, see the root [`README.md`](../README.md#quick-start) Quick Start — this guide picks up from there and focuses on the language itself. Prefer a live, no-install environment? Try the [browser playground](../crates/tpt-gpu-playground/).
+For cloning the repo, building the `tpt` CLI, and writing/compiling your first `.tpts` file, see the root [`README.md`](../README.md#quick-start) Quick Start — this guide picks up from there and focuses on the language itself. Prefer a live, no-install environment? Try the [browser playground](../crates/out-gpu-playground/).
 
 ### Running the Browser Playground
 
 The playground is a WASM build of the layer7 compiler with a live editor, example kernels, and TPTIR/Rust/perf/error output tabs — no server round-trip required. To launch it locally:
 
 ```bash
-cd crates/tpt-gpu-playground
+cd crates/out-gpu-playground
 
 # Linux/macOS
 ./build.sh
@@ -46,7 +46,7 @@ python3 -m http.server 8080
 # open http://localhost:8080
 ```
 
-See [`crates/tpt-gpu-playground/README.md`](../crates/tpt-gpu-playground/README.md) for details.
+See [`crates/out-gpu-playground/README.md`](../crates/out-gpu-playground/README.md) for details.
 
 ### Additional Tooling
 

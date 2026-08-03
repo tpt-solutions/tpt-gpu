@@ -16,7 +16,7 @@
 - **LLM Inference Runtime** — `GpuInferenceEngine` with arch-template dispatch (LLaMA 3, Mistral, Qwen2, Phi-3, Gemma 2), sliding-window KV cache, and automatic vendor routing (CUDA → ROCm → Metal → TPTIR)
 - **Shared Model Registry** — GGUF models stored once in `~/.tpt/models/` and shared across all TPT tools
 - **IDE Support** — Full LSP server, VS Code extension, formatter, and linter
-- **Browser Playground** — Try TPT Script in your browser at [`tpt-solutions.github.io/tpt-gpu/playground/`](https://tpt-solutions.github.io/tpt-gpu/playground/) (rebuilt on every push to master; also runnable locally from [`crates/tpt-gpu-playground/`](crates/tpt-gpu-playground/))
+- **Browser Playground** — Try TPT Script in your browser at [`tpt-solutions.github.io/tpt-gpu/playground/`](https://tpt-solutions.github.io/tpt-gpu/playground/) (rebuilt on every push to master; also runnable locally from [`crates/out-gpu-playground/`](crates/out-gpu-playground/))
 - **Framework Integration** — PyTorch dispatch backend; JAX backend planned, not yet implemented
 - **AI-Assisted Kernel Generation** — Automated kernel optimization and generation tools
 - **Comprehensive Documentation** — 17 tutorials, complete language spec, and API reference
@@ -213,34 +213,9 @@ cd crates/tpt-gpu-runtime && cargo publish
 
 ---
 
-## Roadmap
-
-### v1.0 (Current)
-- Complete standard library
-- Production-ready compiler
-- LLM inference runtime with KV cache
-- Shared GGUF model registry
-- IDE support (LSP, VS Code extension)
-- Framework integration (PyTorch; JAX planned)
-- AI-assisted kernel generation
-
-### v1.1 (Next)
-- REPL for interactive development
-- Enhanced error recovery
-- Performance profiling tools
-- Expanded hardware support
-
-### v2.0 (Future)
-- Custom silicon support
-- Advanced distributed computing
-- Web-based compiler playground
-- TPT Script as recommended API
-
----
-
 ## Contributing
 
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on reporting bugs, submitting pull requests, code style requirements, and community tuning profile contributions.
+This project takes contributions through [GitHub Issues](https://github.com/tpt-solutions/tpt-gpu/issues) only — pull requests are not accepted. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to report bugs, request features, or submit a community GPU tuning profile.
 
 ---
 

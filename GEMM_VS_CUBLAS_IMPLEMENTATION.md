@@ -47,8 +47,8 @@ The implementation adds a **Fused GEMM** kernel that combines matrix multiplicat
 - `crates/tpt-gpu-primitives/src/lib.rs` - Updated to export new types
 
 ### Benchmarks
-- `crates/tpt-gpu-primitives-benches/src/examples/fused_gemm_benchmark.rs` - Benchmark comparing TPT vs cuBLAS
-- `crates/tpt-gpu-primitives-benches/Cargo.toml` - Added fused_gemm_benchmark example
+- `crates/out-gpu-primitives-benches/src/examples/fused_gemm_benchmark.rs` - Benchmark comparing TPT vs cuBLAS
+- `crates/out-gpu-primitives-benches/Cargo.toml` - Added fused_gemm_benchmark example
 
 ## Performance Advantages
 
@@ -103,18 +103,18 @@ let result = FusedGemmKernel::new(FusedActivation::Gelu)
 
 ```bash
 # Run with default settings (transformer size)
-cargo run -p tpt-gpu-primitives-benches --example fused_gemm_benchmark
+cargo run -p out-gpu-primitives-benches --example fused_gemm_benchmark
 
 # Run with specific problem size
-cargo run -p tpt-gpu-primitives-benches --example fused_gemm_benchmark -- --size llm
-cargo run -p tpt-gpu-primitives-benches --example fused_gemm_benchmark -- --size bert
+cargo run -p out-gpu-primitives-benches --example fused_gemm_benchmark -- --size llm
+cargo run -p out-gpu-primitives-benches --example fused_gemm_benchmark -- --size bert
 
 # Run with bias
-cargo run -p tpt-gpu-primitives-benches --example fused_gemm_benchmark -- --with-bias
+cargo run -p out-gpu-primitives-benches --example fused_gemm_benchmark -- --with-bias
 
 # Run with different activation
-cargo run -p tpt-gpu-primitives-benches --example fused_gemm_benchmark -- --activation gelu
-cargo run -p tpt-gpu-primitives-benches --example fused_gemm_benchmark -- --activation silu
+cargo run -p out-gpu-primitives-benches --example fused_gemm_benchmark -- --activation gelu
+cargo run -p out-gpu-primitives-benches --example fused_gemm_benchmark -- --activation silu
 ```
 
 ## AI-Guided Optimization Details

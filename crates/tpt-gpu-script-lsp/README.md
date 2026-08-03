@@ -21,4 +21,4 @@ cargo install tpt-gpu-script-lsp
 
 ## License
 
-Apache-2.0 — see the [repository](https://github.com/tpt-solutions/tpt-gpu) for details.
+Dual-licensed under MIT or Apache 2.0 WITH LLVM-exception. See [LICENSE-MIT](../../LICENSE-MIT) / [LICENSE-APACHE](../../LICENSE-APACHE) for details.

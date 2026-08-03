@@ -85,7 +85,7 @@ cargo build --release -p tpt-gpu-script-cli
 cargo build -p tpt-gpu-runtime
 
 # Build Python bindings (optional)
-cargo build -p tpt-gpu-runtime-py
+cargo build -p out-gpu-runtime-py
 
 # Install Python framework (Layer 6)
 cd layer6_framework
@@ -108,7 +108,7 @@ cargo run -p tpt-gpu-doctor -- --fast  # skip slower checks
 cargo run -p tpt-gpu-doctor -- --pre-commit  # fmt + clippy only, for a pre-commit hook
 ```
 
-There's also a hosted, zero-install build of `tpt-gpu-playground` (no local `wasm-pack`
+There's also a hosted, zero-install build of `out-gpu-playground` (no local `wasm-pack`
 required) deployed via `.github/workflows/docs.yml`.
 
 ---

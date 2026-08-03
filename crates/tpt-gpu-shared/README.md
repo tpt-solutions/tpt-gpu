@@ -278,4 +278,4 @@ cargo test -p tpt-gpu-shared -- --nocapture
 
 ## License
 
-Apache 2.0 (with Express Patent Grant)
+Dual-licensed under MIT or Apache 2.0 WITH LLVM-exception. See [LICENSE-MIT](../../LICENSE-MIT) / [LICENSE-APACHE](../../LICENSE-APACHE) for details.

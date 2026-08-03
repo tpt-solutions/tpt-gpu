@@ -30,8 +30,8 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Step 1: Build the project
-Write-Host "[1/4] Building tpt-gpu-primitives-benches..." -ForegroundColor Yellow
-cargo build -p tpt-gpu-primitives-benches --example ci_regression --release 2>&1 | Out-Null
+Write-Host "[1/4] Building out-gpu-primitives-benches..." -ForegroundColor Yellow
+cargo build -p out-gpu-primitives-benches --example ci_regression --release 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Build failed!" -ForegroundColor Red
     exit 2
@@ -44,7 +44,7 @@ $ciArgs = if ($Quick) { "--quick" } else { "" }
 if ($UpdateBaseline) {
     Write-Host "[2/4] Generating baseline report..." -ForegroundColor Yellow
     $outputArg = "--output `"$BaselineFile`""
-    $cmd = "cargo run -p tpt-gpu-primitives-benches --example ci_regression --release -- --baseline $ciArgs $outputArg"
+    $cmd = "cargo run -p out-gpu-primitives-benches --example ci_regression --release -- --baseline $ciArgs $outputArg"
     Write-Host "      Running: $cmd"
     Invoke-Expression $cmd
     if ($LASTEXITCODE -ne 0) {
@@ -67,7 +67,7 @@ if (-not (Test-Path $BaselineFile)) {
 Write-Host "[3/4] Running current benchmarks..." -ForegroundColor Yellow
 $outputArg = "--output `"$CurrentFile`""
 $thresholdArg = "--threshold $Threshold"
-$cmd = "cargo run -p tpt-gpu-primitives-benches --example ci_regression --release -- --baseline-file `"$BaselineFile`" $ciArgs $outputArg $thresholdArg"
+$cmd = "cargo run -p out-gpu-primitives-benches --example ci_regression --release -- --baseline-file `"$BaselineFile`" $ciArgs $outputArg $thresholdArg"
 Write-Host "      Running: $cmd"
 Invoke-Expression $cmd
 $exitCode = $LASTEXITCODE

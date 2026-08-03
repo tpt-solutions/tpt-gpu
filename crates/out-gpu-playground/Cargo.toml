@@ -1,5 +1,5 @@
 [package]
-name = "tpt-gpu-playground"
+name = "out-gpu-playground"
 version.workspace = true
 edition = "2021"
 authors.workspace = true

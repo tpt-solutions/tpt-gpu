@@ -20,4 +20,4 @@ tpt-gpu-model-optimizer --model llama3-8b --quant q4_k_m --target tpt
 
 ## License
 
-Apache-2.0 — see the [repository](https://github.com/tpt-solutions/tpt-gpu) for details.
+Dual-licensed under MIT or Apache 2.0 WITH LLVM-exception. See [LICENSE-MIT](../../LICENSE-MIT) / [LICENSE-APACHE](../../LICENSE-APACHE) for details.

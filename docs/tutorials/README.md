@@ -83,7 +83,7 @@ python layer6_framework/examples/basic_usage.py
 - **User Guide**: `docs/user-guide.md`
 - **Examples**: `layer7_tptb/examples/`
 - **Use Cases**: `docs/use-cases.md`
-- **Browser Playground**: `crates/tpt-gpu-playground/` — try TPT Script live, no install required
+- **Browser Playground**: `crates/out-gpu-playground/` — try TPT Script live, no install required
 - **Specifications**: `layer*/spec/`
 - **Architecture**: `CLAUDE.md`
 

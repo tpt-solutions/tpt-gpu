@@ -21,22 +21,22 @@ Output includes:
 
 ```bash
 # Standard benchmark (recommended)
-cargo run -p tpt-gpu-primitives-benches --example run_benchmarks
+cargo run -p out-gpu-primitives-benches --example run_benchmarks
 
 # Quick mode (30-second sanity check)
-cargo run -p tpt-gpu-primitives-benches --example run_benchmarks -- --quick
+cargo run -p out-gpu-primitives-benches --example run_benchmarks -- --quick
 
 # CI mode (minimal iterations)
-cargo run -p tpt-gpu-primitives-benches --example run_comprehensive -- --ci
+cargo run -p out-gpu-primitives-benches --example run_comprehensive -- --ci
 
 # Comprehensive mode (30-minute thorough benchmark)
-cargo run -p tpt-gpu-primitives-benches --example run_comprehensive -- --comprehensive
+cargo run -p out-gpu-primitives-benches --example run_comprehensive -- --comprehensive
 
 # Generate JSON report
-cargo run -p tpt-gpu-primitives-benches --example run_benchmarks -- --output report.json
+cargo run -p out-gpu-primitives-benches --example run_benchmarks -- --output report.json
 
 # Generate Markdown report
-cargo run -p tpt-gpu-primitives-benches --example run_benchmarks -- --output report.md
+cargo run -p out-gpu-primitives-benches --example run_benchmarks -- --output report.md
 ```
 
 ## Features
@@ -230,7 +230,7 @@ benches/
 Use the CLI:
 
 ```bash
-cargo run -p tpt-gpu-primitives-benches --example run_benchmarks -- --vendor cublas
+cargo run -p out-gpu-primitives-benches --example run_benchmarks -- --vendor cublas
 ```
 
 ### Automated Baseline Collection
@@ -259,8 +259,8 @@ Targets are configurable in report generation.
 ```yaml
 - name: Run benchmarks
   run: |
-    cargo build -p tpt-gpu-primitives-benches
-    cargo run -p tpt-gpu-primitives-benches --example run_comprehensive -- --ci
+    cargo build -p out-gpu-primitives-benches
+    cargo run -p out-gpu-primitives-benches --example run_comprehensive -- --ci
 
 - name: Upload benchmark results
   uses: actions/upload-artifact@v3
@@ -288,7 +288,7 @@ fi
 Reduce problem sizes or run in quick mode:
 
 ```bash
-cargo run -p tpt-gpu-primitives-benches --example run_benchmarks -- --quick
+cargo run -p out-gpu-primitives-benches --example run_benchmarks -- --quick
 ```
 
 ### High Variance in Results
@@ -304,13 +304,13 @@ Ensure feature flags are enabled:
 
 ```bash
 # For CUDA
-cargo build -p tpt-gpu-primitives-benches --features cuda
+cargo build -p out-gpu-primitives-benches --features cuda
 
 # For ROCm
-cargo build -p tpt-gpu-primitives-benches --features rocm
+cargo build -p out-gpu-primitives-benches --features rocm
 
 # For both
-cargo build -p tpt-gpu-primitives-benches --features all-baselines
+cargo build -p out-gpu-primitives-benches --features all-baselines
 ```
 
 ## Development

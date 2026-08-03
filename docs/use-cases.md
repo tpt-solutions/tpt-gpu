@@ -12,7 +12,7 @@ Runnable, end-to-end starting points, organized by what you're trying to do. Eac
 | Full supervised training loop | [`layer7_tptb/examples/04_training_loop.tpts`](../layer7_tptb/examples/04_training_loop.tpts) |
 | FSDP across 8 GPUs | [`layer7_tptb/examples/distributed/fsdp_8gpu.tpts`](../layer7_tptb/examples/distributed/fsdp_8gpu.tpts) |
 | Pipeline parallelism (4 stages) | [`layer7_tptb/examples/distributed/pipeline_parallel.tpts`](../layer7_tptb/examples/distributed/pipeline_parallel.tpts) |
-| Try it in the browser | Hosted at [`tpt-solutions.github.io/tpt-gpu/playground/`](https://tpt-solutions.github.io/tpt-gpu/playground/), or run a local WASM build from [`crates/tpt-gpu-playground/`](../crates/tpt-gpu-playground/) |
+| Try it in the browser | Hosted at [`tpt-solutions.github.io/tpt-gpu/playground/`](https://tpt-solutions.github.io/tpt-gpu/playground/), or run a local WASM build from [`crates/out-gpu-playground/`](../crates/out-gpu-playground/) |
 
 Run any `.tpts` example with `tpt check <file>` then `tpt compile <file> -o out/` — see [`layer7_tptb/examples/README.md`](../layer7_tptb/examples/README.md).
 
@@ -54,7 +54,7 @@ See also tutorials [9 (Python API)](tutorials/09_python_api.md) and [10 (PyTorch
 | Generate a new kernel from a template or AI pipeline | [`crates/tpt-gpu-kernelgen/README.md`](../crates/tpt-gpu-kernelgen/README.md) |
 | Auto-tune a kernel's launch parameters | [`crates/tpt-gpu-kernel-optimizer/README.md`](../crates/tpt-gpu-kernel-optimizer/README.md) |
 | See how TPT GEMM compares to cuBLAS | [`GEMM_VS_CUBLAS_IMPLEMENTATION.md`](../GEMM_VS_CUBLAS_IMPLEMENTATION.md) |
-| Rust-level primitive benchmarks (GEMM, Attention, Conv2D/3D) | [`crates/tpt-gpu-primitives/examples/`](../crates/tpt-gpu-primitives/examples/) and [`crates/tpt-gpu-primitives-benches/src/examples/`](../crates/tpt-gpu-primitives-benches/src/examples/) |
+| Rust-level primitive benchmarks (GEMM, Attention, Conv2D/3D) | [`crates/tpt-gpu-primitives/examples/`](../crates/tpt-gpu-primitives/examples/) and [`crates/out-gpu-primitives-benches/src/examples/`](../crates/out-gpu-primitives-benches/src/examples/) |
 
 ## Certify a new hardware vendor backend
 
