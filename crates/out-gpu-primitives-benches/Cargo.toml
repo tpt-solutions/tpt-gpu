@@ -16,7 +16,7 @@ log = { workspace = true }
 env_logger = "0.11"
 clap = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
-rand = "0.8"
+rand = "0.10"
 
 [features]
 default = []
