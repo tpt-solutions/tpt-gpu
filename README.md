@@ -156,7 +156,7 @@ layer2_tptd/     Kernel drivers — Linux DRM, Windows WDM, macOS DriverKit
 layer3_tptc/     TPTIR compiler — MLIR-compatible dialect (C++ + Rust)
 layer4_tptr/     GPU runtime — allocator, scheduler, kernel launch, LLM inference (Rust)
 layer5_tptp/     GPU primitives — GEMM, Attention, Conv2D (TPTIR + Rust)
-layer6_tptf/     Framework backends — PyTorch dispatch, JAX planned (Python + Rust)
+layer6_framework/ Framework backends — PyTorch dispatch, JAX integration (Python)
 layer7_tptb/     TPT Script compiler — lexer → parser → type checker → codegen (Rust)
 ```
 

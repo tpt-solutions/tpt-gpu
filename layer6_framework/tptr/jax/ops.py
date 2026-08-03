@@ -1,55 +1,55 @@
-"""JAX backend for TPT GPU primitives.
+"""JAX primitive dispatch for TPT GPU operations.
 
-Registers JAX primitives for the three core TPT operations:
-  - tpt_matmul   (GEMM / matrix multiply)
+Registers JAX primitives for the core TPT operations:
+  - tpt_matmul    (GEMM / matrix multiply)
   - tpt_attention (scaled dot-product attention)
-  - tpt_conv2d   (2-D convolution)
+  - tpt_conv2d    (2-D convolution)
 
 Each primitive:
   1. Defines a ``jax.core.Primitive`` with an ``impl`` rule (actual execution).
   2. Registers an ``abstract_eval`` rule so JAX can trace through it.
   3. Registers JVP (forward-mode) and VJP (reverse-mode) differentiation rules.
-  4. Optionally registers an XLA lowering rule for compilation via ``jax.jit``.
+  4. Registers an XLA/MLIR lowering rule for compilation via ``jax.jit``.
 
 Layer norm is also provided as a ``jax.custom_vjp`` function.
+
+Execution is XLA/jnp-based simulation for now, mirroring the software-fallback
+convention used by tptr.pytorch.ops and the layer5 kernel fallbacks — wiring
+these up to real TPT hardware dispatch (paralleling tptr._ffi) is future work.
 """
 
 from __future__ import annotations
 
 import math
 from functools import partial
-from typing import Any
 
 import jax
 import jax.numpy as jnp
 from jax import core
-from jax.interpreters import mlir, xla
-from jax.interpreters.mlir import ir
+from jax.interpreters import mlir
 
-from .runtime_bridge import TptRuntime
-
+try:
+    # JAX >= 0.4.29 moved Primitive out of the (now deprecated) jax.core.
+    from jax.extend.core import Primitive
+except ImportError:
+    from jax.core import Primitive
 
 # ---------------------------------------------------------------------------
 # Primitive: tpt_matmul  (A @ B)
 # ---------------------------------------------------------------------------
 
-tpt_matmul_p = core.Primitive("tpt_matmul")
+tpt_matmul_p = Primitive("tpt_matmul")
 tpt_matmul_p.multiple_results = False
 
 
 def tpt_matmul_jax(a: jax.Array, b: jax.Array) -> jax.Array:
-    """Matrix multiply routed through the TPT runtime."""
+    """Matrix multiply routed through the TPT primitive."""
     return tpt_matmul_p.bind(a, b)
 
 
 @tpt_matmul_p.def_impl
 def _tpt_matmul_impl(a, b):
-    import numpy as np
-    rt = TptRuntime.default()
-    a_np = np.asarray(a)
-    b_np = np.asarray(b)
-    result = rt.launch_gemm(a_np, b_np)
-    return jnp.asarray(result)
+    return jnp.matmul(a, b)
 
 
 @tpt_matmul_p.def_abstract_eval
@@ -126,7 +126,7 @@ def tpt_gemm_jax(a, b, alpha: float = 1.0, beta: float = 0.0, c=None):
 # Primitive: tpt_attention  (scaled dot-product attention)
 # ---------------------------------------------------------------------------
 
-tpt_attention_p = core.Primitive("tpt_attention")
+tpt_attention_p = Primitive("tpt_attention")
 tpt_attention_p.multiple_results = False
 
 
@@ -137,7 +137,7 @@ def tpt_attention_jax(
     mask: jax.Array | None = None,
     scale: float | None = None,
 ) -> jax.Array:
-    """Scaled dot-product attention routed through the TPT runtime."""
+    """Scaled dot-product attention routed through the TPT primitive."""
     if mask is None:
         mask = jnp.zeros((), dtype=q.dtype)  # sentinel: no mask
     s = float(scale) if scale is not None else float(q.shape[-1]) ** -0.5
@@ -146,19 +146,16 @@ def tpt_attention_jax(
 
 @tpt_attention_p.def_impl
 def _tpt_attention_impl(q, k, v, mask, *, scale):
-    import numpy as np
-    rt = TptRuntime.default()
-    q_np = np.asarray(q)
-    k_np = np.asarray(k)
-    v_np = np.asarray(v)
-    mask_np = None if mask.ndim == 0 else np.asarray(mask)
-    result = rt.launch_attention(q_np, k_np, v_np, mask_np, scale)
-    return jnp.asarray(result)
+    scores = jnp.matmul(q, k.swapaxes(-1, -2)) * scale
+    if mask.ndim > 0:
+        scores = scores + mask
+    weights = jax.nn.softmax(scores, axis=-1)
+    return jnp.matmul(weights, v)
 
 
 @tpt_attention_p.def_abstract_eval
 def _tpt_attention_abstract(q, k, v, mask, *, scale):
-    # Output shape matches Q (same batch/head dims, seq_q × d_v)
+    # Output shape matches Q (same batch/head dims, seq_q x d_v)
     out_shape = (*q.shape[:-1], v.shape[-1])
     return core.ShapedArray(out_shape, q.dtype)
 
@@ -215,24 +212,22 @@ mlir.register_lowering(tpt_attention_p, _tpt_attention_lowering)
 # Primitive: tpt_conv2d
 # ---------------------------------------------------------------------------
 
-tpt_conv2d_p = core.Primitive("tpt_conv2d")
+tpt_conv2d_p = Primitive("tpt_conv2d")
 tpt_conv2d_p.multiple_results = False
 
 
+def _pair(v: int | tuple[int, int]) -> tuple[int, int]:
+    return (v, v) if isinstance(v, int) else tuple(v)
+
+
 def tpt_conv2d_jax(x, weight, bias=None, stride=1, padding=0, dilation=1, groups=1):
-    """2-D convolution routed through the TPT runtime."""
-    if isinstance(stride, int):
-        stride = (stride, stride)
-    if isinstance(padding, int):
-        padding = (padding, padding)
-    if isinstance(dilation, int):
-        dilation = (dilation, dilation)
+    """2-D convolution routed through the TPT primitive."""
     b_arr = bias if bias is not None else jnp.zeros((), dtype=x.dtype)
     return tpt_conv2d_p.bind(
         x, weight, b_arr,
-        stride=tuple(stride),
-        padding=tuple(padding),
-        dilation=tuple(dilation),
+        stride=_pair(stride),
+        padding=_pair(padding),
+        dilation=_pair(dilation),
         groups=int(groups),
         has_bias=bias is not None,
     )
@@ -240,18 +235,8 @@ def tpt_conv2d_jax(x, weight, bias=None, stride=1, padding=0, dilation=1, groups
 
 @tpt_conv2d_p.def_impl
 def _tpt_conv2d_impl(x, weight, bias, *, stride, padding, dilation, groups, has_bias):
-    # TPT runtime sim: use jax.lax.conv_general_dilated as reference
-    # (in hardware mode this would dispatch to the tptr Conv2D kernel)
-    N, C_in, H, W = x.shape
-    C_out, _, kH, kW = weight.shape
     pH, pW = padding
-    sH, sW = stride
-    dH, dW = dilation
-
     x_padded = jnp.pad(x, ((0, 0), (0, 0), (pH, pH), (pW, pW)))
-    H_out = (H + 2 * pH - dH * (kH - 1) - 1) // sH + 1
-    W_out = (W + 2 * pW - dW * (kW - 1) - 1) // sW + 1
-
     out = jax.lax.conv_general_dilated(
         x_padded,
         weight,
@@ -268,7 +253,7 @@ def _tpt_conv2d_impl(x, weight, bias, *, stride, padding, dilation, groups, has_
 
 @tpt_conv2d_p.def_abstract_eval
 def _tpt_conv2d_abstract(x, weight, bias, *, stride, padding, dilation, groups, has_bias):
-    N, C_in, H, W = x.shape
+    N, _C_in, H, W = x.shape
     C_out, _, kH, kW = weight.shape
     pH, pW = padding
     sH, sW = stride
@@ -278,25 +263,34 @@ def _tpt_conv2d_abstract(x, weight, bias, *, stride, padding, dilation, groups, 
     return core.ShapedArray((N, C_out, H_out, W_out), x.dtype)
 
 
-# VJP via custom_vjp
-@jax.custom_vjp
+# VJP via custom_vjp. stride/padding/dilation/groups are static op-config,
+# not differentiable data, so they're declared nondiff_argnums — otherwise
+# JAX wraps them in tracers too and _tpt_conv2d_impl's `pH, pW = padding`
+# unpacking (and tpt_conv2d_jax's int/tuple coercion) breaks under grad/jit.
+@partial(jax.custom_vjp, nondiff_argnums=(3, 4, 5, 6))
 def tpt_conv2d(x, weight, bias=None, stride=1, padding=0, dilation=1, groups=1):
     return tpt_conv2d_jax(x, weight, bias, stride, padding, dilation, groups)
 
 
 def _tpt_conv2d_fwd(x, weight, bias, stride, padding, dilation, groups):
     out = tpt_conv2d_jax(x, weight, bias, stride, padding, dilation, groups)
-    return out, (x, weight, bias, stride, padding, dilation, groups)
+    return out, (x, weight, bias)
 
 
-def _tpt_conv2d_bwd(res, g):
-    x, weight, bias, stride, padding, dilation, groups = res
-    # Use JAX built-ins for gradient correctness
+def _tpt_conv2d_bwd(stride, padding, dilation, groups, res, g):
+    x, weight, bias = res
+    has_bias = bias is not None
+    b_arr = bias if has_bias else jnp.zeros((), dtype=x.dtype)
+    # Differentiate the raw jnp/lax implementation directly — tpt_conv2d_p
+    # has no jvp/transpose rule of its own (unlike tpt_matmul_p), so nesting
+    # jax.vjp around a call that binds the primitive would fail.
     def fwd(x, weight, bias):
-        return tpt_conv2d_jax(x, weight, bias, stride, padding, dilation, groups)
-    _, vjp_fn = jax.vjp(fwd, x, weight, bias)
+        return _tpt_conv2d_impl(x, weight, bias,
+                                stride=_pair(stride), padding=_pair(padding),
+                                dilation=_pair(dilation), groups=groups, has_bias=has_bias)
+    _, vjp_fn = jax.vjp(fwd, x, weight, b_arr)
     dx, dw, db = vjp_fn(g)
-    return dx, dw, db, None, None, None, None
+    return dx, dw, (db if has_bias else None)
 
 
 tpt_conv2d.defvjp(_tpt_conv2d_fwd, _tpt_conv2d_bwd)
@@ -375,4 +369,3 @@ def register_jax_primitives() -> None:
     """Ensure all TPT JAX primitives are registered (idempotent)."""
     # Primitives are registered at import time above; this function exists
     # as an explicit hook for initialisation order in user code.
-    pass

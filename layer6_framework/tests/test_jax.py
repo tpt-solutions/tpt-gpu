@@ -1,7 +1,5 @@
-"""Tests for tptr JAX integration — skipped until JAX is implemented."""
+"""Tests for tptr JAX integration."""
 import pytest
-
-pytestmark = pytest.mark.skip(reason="JAX integration not yet implemented (tptr.jax stubs only)")
 
 
 class TestJaxBackend:
@@ -22,10 +20,10 @@ class TestJaxBackend:
         assert get_backend_name() == "tpt"
 
     def test_is_registered(self):
+        pytest.importorskip("jax")
         from tptr.jax import is_registered, register_backend
-        # Before registration
-        assert not is_registered()
-        # After registration
+        # After registration (requires JAX; without it register_backend()
+        # returns False and is_registered() stays False)
         register_backend()
         assert is_registered()
 
@@ -88,13 +86,14 @@ class TestTptrJaxArray:
         arr.copy_from_host(data)  # Should not raise
 
     def test_array_to_numpy(self):
+        pytest.importorskip("numpy")
         from tptr.jax import TptrJaxArray
         arr = TptrJaxArray((5, 5), "float32")
         np_array = arr.to_numpy()
         assert np_array.shape == (5, 5)
 
     def test_array_from_numpy(self):
-        import numpy as np
+        np = pytest.importorskip("numpy")
         from tptr.jax import TptrJaxArray
         np_array = np.ones((3, 3), dtype=np.float32)
         arr = TptrJaxArray.from_numpy(np_array)
@@ -106,7 +105,7 @@ class TestJaxConversion:
     """Tests for JAX array conversion functions."""
 
     def test_jax_to_tptr(self):
-        import numpy as np
+        np = pytest.importorskip("numpy")
         from tptr.jax import TptrJaxArray, jax_to_tptr
         np_array = np.ones((4, 4), dtype=np.float32)
         tptr_arr = jax_to_tptr(np_array)

@@ -6,13 +6,13 @@ use clap::Parser;
 use std::fs;
 use std::path::PathBuf;
 
-use tpt_gpu_primitives_benches::harness::{BenchConfig, BenchHarness};
-use tpt_gpu_primitives_benches::kernels::{AttentionBench, Conv2DBench, GemmBench};
-use tpt_gpu_primitives_benches::problem_configs::{
+use out_gpu_primitives_benches::harness::{BenchConfig, BenchHarness};
+use out_gpu_primitives_benches::kernels::{AttentionBench, Conv2DBench, GemmBench};
+use out_gpu_primitives_benches::problem_configs::{
     get_all_baselines, get_attention_config, get_conv2d_config, get_gemm_config,
 };
-use tpt_gpu_primitives_benches::report::BenchReport;
-use tpt_gpu_primitives_benches::stats::compute_statistics;
+use out_gpu_primitives_benches::report::BenchReport;
+use out_gpu_primitives_benches::stats::compute_statistics;
 
 #[derive(Parser)]
 #[command(
@@ -160,9 +160,9 @@ fn main() {
             .unwrap_or_else(|e| panic!("failed to read config file {}: {}", cfg_path.display(), e));
         #[derive(serde::Deserialize)]
         struct CustomConfig {
-            gemm: Option<Vec<tpt_gpu_primitives_benches::problem_configs::GemmProblem>>,
-            attention: Option<Vec<tpt_gpu_primitives_benches::problem_configs::AttentionProblem>>,
-            conv2d: Option<Vec<tpt_gpu_primitives_benches::problem_configs::Conv2DProblem>>,
+            gemm: Option<Vec<out_gpu_primitives_benches::problem_configs::GemmProblem>>,
+            attention: Option<Vec<out_gpu_primitives_benches::problem_configs::AttentionProblem>>,
+            conv2d: Option<Vec<out_gpu_primitives_benches::problem_configs::Conv2DProblem>>,
         }
         let custom: CustomConfig = serde_json::from_str(&raw)
             .unwrap_or_else(|e| panic!("failed to parse config file: {}", e));

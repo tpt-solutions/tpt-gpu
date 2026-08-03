@@ -7,9 +7,9 @@
 
 use clap::Parser;
 
-use tpt_gpu_primitives_benches::harness::{BenchConfig, BenchHarness};
-use tpt_gpu_primitives_benches::kernels::Conv2DBench;
-use tpt_gpu_primitives_benches::stats::{compute_statistics, remove_outliers};
+use out_gpu_primitives_benches::harness::{BenchConfig, BenchHarness};
+use out_gpu_primitives_benches::kernels::Conv2DBench;
+use out_gpu_primitives_benches::stats::{compute_statistics, remove_outliers};
 
 #[derive(Parser)]
 #[command(

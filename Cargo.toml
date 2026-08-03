@@ -44,9 +44,12 @@ thiserror = "2"
 bytemuck = "1.21"
 chrono = { version = "0.4", features = ["serde"] }
 rand = "0.8"
-parking_lot = "0.12"
 memmap2 = "0.9"
 tokio = { version = "1", features = ["full"] }
 tower-lsp = "0.20"
-tower = { version = "0.4", features = ["full"] }
+# tower-lsp 0.20.0 (latest upstream release) pins dashmap ^5 internally, which
+# duplicates the dashmap 6 used directly below in Cargo.lock. Not fixable from
+# this repo until tower-lsp releases an update — do not "fix" by re-pinning.
 dashmap = "6"
+toml = "1.1"
+ureq = { version = "3", features = ["json"] }

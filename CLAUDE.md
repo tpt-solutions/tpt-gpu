@@ -14,7 +14,7 @@ layer2_tptd/     Kernel drivers — Linux DRM (Rust for Linux), Windows WDM (C),
 layer3_tptc/     TPTIR compiler — MLIR-compatible dialect (C++) + Rust port (`crates/tpt-gpu-compiler`)
 layer4_tptr/     GPU runtime — allocator, scheduler, kernel launch (`crates/tpt-gpu-runtime`)
 layer5_tptp/     GPU primitives — GEMM, Attention, Conv2D (`crates/tpt-gpu-primitives`)
-layer6_framework/ Framework backends — PyTorch dispatch, JAX integration (Python `tptr` package; CI lints/tests this dir). A separate `layer6_tptf/` (`tptf` package, maturin-based) also exists in-tree but is not wired into CI.
+layer6_framework/ Framework backends — PyTorch dispatch, JAX integration (Python `tptr` package; CI lints/tests this dir).
 layer7_tptb/     TPT Script compiler — lexer → parser → type checker → codegen (`crates/tpt-gpu-script-*`)
 ```
 

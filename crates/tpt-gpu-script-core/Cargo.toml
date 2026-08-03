@@ -15,7 +15,7 @@ rust-version = "1.75"
 [dependencies]
 thiserror = { workspace = true }
 serde = { workspace = true }
-toml = "1.1"
+toml = { workspace = true }
 
 [dev-dependencies]
 # Used only in tests

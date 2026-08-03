@@ -1,25 +1,20 @@
-"""Tests for the JAX backend.
-
-Run with: pytest layer6_tptf/tests/test_jax_backend.py
-"""
+"""Tests for the TPT JAX primitives (tptr.jax.ops)."""
 
 import pytest
 
 jax = pytest.importorskip("jax")
 jnp = pytest.importorskip("jax.numpy")
 import numpy as np
-
-from tptf.jax_backend import (
-    tpt_matmul,
-    tpt_matmul_jax,
-    tpt_gemm_jax,
+from tptr.jax.ops import (
     tpt_attention,
     tpt_attention_jax,
     tpt_conv2d,
     tpt_conv2d_jax,
+    tpt_gemm_jax,
     tpt_layer_norm_jax,
+    tpt_matmul,
+    tpt_matmul_jax,
 )
-
 
 # ---------------------------------------------------------------------------
 # Matmul
@@ -45,7 +40,9 @@ class TestTptMatmul:
         assert tpt_matmul_jax(a, b).shape == (7, 11)
 
     def test_abstract_eval_shape_mismatch(self):
-        with pytest.raises(Exception):
+        # Eager calls run tpt_matmul_p's impl directly (jnp.matmul -> TypeError);
+        # traced/jitted calls go through _tpt_matmul_abstract's ValueError instead.
+        with pytest.raises((ValueError, TypeError)):
             tpt_matmul_jax(jnp.ones((3, 4)), jnp.ones((5, 6)))
 
     def test_jit_compatible(self):
@@ -161,7 +158,9 @@ class TestTptConv2d:
     def test_jit_compatible(self):
         x = jnp.ones((1, 3, 4, 4))
         w = jnp.ones((8, 3, 3, 3))
-        f = jax.jit(tpt_conv2d_jax)
+        # stride/padding are static op-config, not traced data — must be
+        # marked static under jit like any other non-array primitive kwarg.
+        f = jax.jit(tpt_conv2d_jax, static_argnames=("stride", "padding"))
         out = f(x, w, stride=1, padding=1)
         assert out.shape == (1, 8, 4, 4)
 
@@ -192,7 +191,7 @@ class TestTptLayerNorm:
         w = jnp.full((4,), 2.0)
         b = jnp.full((4,), 1.0)
         out = tpt_layer_norm_jax(x, (4,), weight=w, bias=b)
-        # After layer norm of all-ones, xn=0, weight=2, bias=1 → output=1
+        # After layer norm of all-ones, xn=0, weight=2, bias=1 -> output=1
         np.testing.assert_allclose(out, 1.0, atol=1e-5)
 
     def test_grad(self):

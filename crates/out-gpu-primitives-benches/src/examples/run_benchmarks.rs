@@ -10,9 +10,9 @@ use clap::Parser;
 use std::fs;
 use std::path::PathBuf;
 
-use tpt_gpu_primitives_benches::harness::{BenchConfig, BenchHarness};
-use tpt_gpu_primitives_benches::kernels::{AttentionBench, Conv2DBench, GemmBench};
-use tpt_gpu_primitives_benches::report::{get_default_baselines, BenchReport};
+use out_gpu_primitives_benches::harness::{BenchConfig, BenchHarness};
+use out_gpu_primitives_benches::kernels::{AttentionBench, Conv2DBench, GemmBench};
+use out_gpu_primitives_benches::report::{get_default_baselines, BenchReport};
 
 #[derive(Parser)]
 #[command(name = "tpt-bench", version, about = "TPT Primitives Benchmark Runner")]
