@@ -49,4 +49,4 @@ memmap2 = "0.9"
 tokio = { version = "1", features = ["full"] }
 tower-lsp = "0.20"
 tower = { version = "0.4", features = ["full"] }
-dashmap = "5"
+dashmap = "6"
