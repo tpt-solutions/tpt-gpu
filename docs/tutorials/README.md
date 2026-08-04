@@ -4,7 +4,7 @@
 
 ---
 
-New to TPT GPU? Start with the root [`README.md`](../../README.md#quick-start) Quick Start (5 minutes: clone, build, compile your first `.tpts` file) before working through this series. The tutorials below are the deep-dive path once you're past hello-world.
+New to TPT GPU? Start with the root [`README.md`](https://github.com/tpt-solutions/tpt-gpu/blob/master/README.md#quick-start) Quick Start (5 minutes: clone, build, compile your first `.tpts` file) before working through this series. The tutorials below are the deep-dive path once you're past hello-world.
 
 ## Tutorial Overview
 

@@ -15,10 +15,9 @@
 6. [Working with Tensors](#6-working-with-tensors)
 7. [GPU Kernels](#7-gpu-kernels)
 8. [Control Flow](#8-control-flow)
-9. [Modules & Imports](#9-modules--imports)
-10. [Built-in Operations](#10-built-in-operations)
+9. [Modules & Imports](#9-modules-imports)
 11. [IDE Setup](#11-ide-setup)
-12. [Formatter & Linter](#12-formatter--linter)
+12. [Formatter & Linter](#12-formatter-linter)
 13. [Error Handling](#13-error-handling)
 14. [Best Practices](#14-best-practices)
 15. [Complete Examples](#15-complete-examples)
@@ -27,7 +26,7 @@
 
 ## 1. Getting Started
 
-For cloning the repo, building the `tpt` CLI, and writing/compiling your first `.tpts` file, see the root [`README.md`](../README.md#quick-start) Quick Start — this guide picks up from there and focuses on the language itself. Prefer a live, no-install environment? Try the [browser playground](../crates/out-gpu-playground/).
+For cloning the repo, building the `tpt` CLI, and writing/compiling your first `.tpts` file, see the root [`README.md`](https://github.com/tpt-solutions/tpt-gpu/blob/master/README.md#quick-start) Quick Start — this guide picks up from there and focuses on the language itself. Prefer a live, no-install environment? Try the [browser playground](https://github.com/tpt-solutions/tpt-gpu/tree/master/crates/out-gpu-playground).
 
 ### Running the Browser Playground
 
@@ -46,7 +45,7 @@ python3 -m http.server 8080
 # open http://localhost:8080
 ```
 
-See [`crates/out-gpu-playground/README.md`](../crates/out-gpu-playground/README.md) for details.
+See [`crates/out-gpu-playground/README.md`](https://github.com/tpt-solutions/tpt-gpu/blob/master/crates/out-gpu-playground/README.md) for details.
 
 ### Additional Tooling
 
@@ -587,4 +586,4 @@ fn predict(model: Model, x: Tensor[f32, 1, seq]) -> Tensor[i64, 1] {
 
 ---
 
-*For the complete language specification, see [layer7_tptb/spec/tpts_spec.md](../layer7_tptb/spec/tpts_spec.md).*
+*For the complete language specification, see [layer7_tptb/spec/tpts_spec.md](https://github.com/tpt-solutions/tpt-gpu/blob/master/layer7_tptb/spec/tpts_spec.md).*
