@@ -905,65 +905,7 @@ impl std::fmt::Debug for GpuInferenceEngine {
 
 impl LlmInference for GpuInferenceEngine {
     fn load(model_path: &Path) -> TptrResult<Self> {
-        let fmt = detect_format(model_path);
-        let info = match fmt {
-            ModelFormat::Gguf => parse_gguf_header(model_path)?,
-            ModelFormat::Tptf => parse_tptf_header(model_path)?,
-            ModelFormat::Unknown => {
-                // Fall back to GGUF parser which will give a descriptive error.
-                parse_gguf_header(model_path)?
-            }
-        };
-        let template = template_for_arch(&info.arch, &info)?;
-
-        // Determine if this arch uses tied embeddings.
-        let tied = template
-            .post_ops
-            .iter()
-            .any(|op| matches!(op, ForwardOp::LinearOut { tied: true, .. }));
-
-        // For TPTF files load the quantized tensor blocks from the tensor data
-        // section rather than returning a zero-initialised weight set.
-        let weights = if fmt == ModelFormat::Tptf {
-            ModelWeights::load_tptf(model_path, &info, tied)?
-        } else {
-            ModelWeights::allocate(&info, tied)?
-        };
-
-        // All kernel handles share a single VendorBackend::detect() result.
-        let vendor = VendorBackend::detect();
-        let embed_k = EmbeddingKernel::with_vendor(vendor.clone());
-        let rmsnorm_k = RmsNormKernel::with_vendor(vendor.clone());
-        let attn_k = AttentionKernel::with_vendor(vendor.clone());
-        let gemm_k = GemmKernel::with_vendor(vendor.clone());
-        let quant_gemm_k = QuantGemmKernel::with_vendor(vendor.clone());
-        let softmax_k = SoftmaxKernel::with_vendor(vendor);
-
-        let head_dim = info.hidden_dim / info.num_heads.max(1);
-        let kv_cache = KvCache::new(
-            info.num_layers,
-            info.context_len,
-            info.num_kv_heads.max(1),
-            head_dim,
-        );
-
-        let rope_config = rope_config_for_arch(&info.arch, &info);
-
-        Ok(Self {
-            info,
-            template,
-            weights,
-            embed_k,
-            rmsnorm_k,
-            attn_k,
-            gemm_k,
-            quant_gemm_k,
-            softmax_k,
-            kv_cache,
-            cancelled: Arc::new(Mutex::new(false)),
-            rng_state: 0x853c49e6748fea9b,
-            rope_config,
-        })
+        Self::load_with_vendor(model_path, VendorBackend::detect())
     }
 
     fn model_info(&self) -> &ModelInfo {

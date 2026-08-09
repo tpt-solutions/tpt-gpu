@@ -90,23 +90,62 @@ impl std::fmt::Debug for CudaBackend {
 }
 
 impl CudaBackend {
-    /// Create a new CUDA backend by dynamically loading the CUDA driver and
-    /// cuBLAS, initializing the runtime, and creating a cuBLAS handle.
+    /// Create a new CUDA backend on device ordinal 0 by dynamically loading
+    /// the CUDA driver and cuBLAS, initializing the runtime, and creating a
+    /// cuBLAS handle.
     pub fn new() -> TptpResult<Self> {
+        Self::new_on(0)
+    }
+
+    /// Create a new CUDA backend bound to a specific device ordinal (as
+    /// returned by `cuDeviceGet`). Used for multi-GPU data-parallel dispatch,
+    /// where each replica binds to a different physical GPU.
+    pub fn new_on(ordinal: i32) -> TptpResult<Self> {
         #[cfg(feature = "cuda")]
         {
-            Self::new_inner()
+            Self::new_inner(ordinal)
         }
         #[cfg(not(feature = "cuda"))]
         {
+            let _ = ordinal;
             Err(TptpError::vendor_unavailable(
                 "CUDA support not compiled in (build with --features cuda)",
             ))
         }
     }
 
+    /// Number of CUDA-visible devices (0 if CUDA is unavailable/not compiled in).
+    pub fn device_count() -> usize {
+        #[cfg(feature = "cuda")]
+        {
+            Self::device_count_inner().unwrap_or(0)
+        }
+        #[cfg(not(feature = "cuda"))]
+        {
+            0
+        }
+    }
+
     #[cfg(feature = "cuda")]
-    fn new_inner() -> TptpResult<Self> {
+    fn device_count_inner() -> TptpResult<usize> {
+        let lib_cuda =
+            Library::open("nvcuda.dll").or_else(|_| Library::open("libcuda.so"))?;
+        let cu_init: unsafe extern "C" fn(u32) -> CUresult =
+            unsafe { *lib_cuda.get(sym!("cuInit"))? };
+        let cu_device_get_count: unsafe extern "C" fn(*mut i32) -> CUresult =
+            unsafe { *lib_cuda.get(sym!("cuDeviceGetCount"))? };
+        if unsafe { cu_init(0) } != CUDA_SUCCESS {
+            return Err(TptpError::vendor_unavailable("cuInit failed"));
+        }
+        let mut count: i32 = 0;
+        if unsafe { cu_device_get_count(&mut count) } != CUDA_SUCCESS {
+            return Err(TptpError::vendor_unavailable("cuDeviceGetCount failed"));
+        }
+        Ok(count.max(0) as usize)
+    }
+
+    #[cfg(feature = "cuda")]
+    fn new_inner(ordinal: i32) -> TptpResult<Self> {
         // Prefer the versioned cuBLAS DLL name; fall back to unversioned.
         let lib_cublas = Arc::new(
             Library::open("cublas64_12.dll")
@@ -168,7 +207,7 @@ impl CudaBackend {
             return Err(TptpError::vendor_unavailable("cuInit failed"));
         }
         let mut device: CUdevice = 0;
-        if unsafe { cu_device_get(&mut device, 0) } != CUDA_SUCCESS {
+        if unsafe { cu_device_get(&mut device, ordinal) } != CUDA_SUCCESS {
             return Err(TptpError::vendor_unavailable("cuDeviceGet failed"));
         }
         let mut ctx: CUcontext = std::ptr::null_mut();
@@ -219,7 +258,7 @@ impl CudaBackend {
         });
 
         Ok(CudaBackend {
-            device_id: 0,
+            device_id: device,
             device_name,
             ctx,
             handle,

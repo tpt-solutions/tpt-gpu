@@ -48,8 +48,9 @@ mod imp {
     unsafe impl Sync for CudaContext {}
 
     impl CudaContext {
-        /// Initialize the CUDA driver and create a primary context on device 0.
-        pub(super) fn new() -> TptrResult<Self> {
+        /// Initialize the CUDA driver and create a primary context on the
+        /// given device ordinal.
+        pub(super) fn new(ordinal: i32) -> TptrResult<Self> {
             let lib_cublas = Arc::new(
                 Library::open("cublas64_12.dll")
                     .or_else(|_| Library::open("cublas64_11.dll"))
@@ -104,7 +105,7 @@ mod imp {
                 ));
             }
             let mut device: CUdevice = 0;
-            if unsafe { cu_device_get(&mut device, 0) } != CUDA_SUCCESS {
+            if unsafe { cu_device_get(&mut device, ordinal) } != CUDA_SUCCESS {
                 return Err(TptrError::new(
                     ErrorCode::DeviceNotFound,
                     "CUDA: cuDeviceGet failed",
@@ -226,17 +227,19 @@ pub enum DeviceBackend {
 }
 
 impl DeviceBackend {
-    /// Try to open a real CUDA context on device 0. Returns `None` when the
-    /// `cuda` feature is disabled or no GPU/driver is available, allowing the
-    /// caller to transparently fall back to the simulated backend.
+    /// Try to open a real CUDA context on the given device ordinal. Returns
+    /// `None` when the `cuda` feature is disabled or no GPU/driver is
+    /// available at that ordinal, allowing the caller to transparently fall
+    /// back to the simulated backend.
     #[allow(dead_code)]
-    pub(super) fn try_cuda() -> Option<Self> {
+    pub(super) fn try_cuda(ordinal: i32) -> Option<Self> {
         #[cfg(feature = "cuda")]
         {
-            imp::CudaContext::new().ok().map(DeviceBackend::Cuda)
+            imp::CudaContext::new(ordinal).ok().map(DeviceBackend::Cuda)
         }
         #[cfg(not(feature = "cuda"))]
         {
+            let _ = ordinal;
             None
         }
     }

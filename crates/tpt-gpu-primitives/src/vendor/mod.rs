@@ -25,10 +25,22 @@ pub enum VendorBackend {
 }
 
 impl VendorBackend {
-    /// Detect available vendor backend
+    /// Detect available vendor backend on CUDA device ordinal 0.
     pub fn detect() -> Self {
+        Self::detect_on(0)
+    }
+
+    /// Detect available vendor backend, binding CUDA (if selected) to a
+    /// specific device ordinal. Used for multi-GPU data-parallel dispatch,
+    /// where each replica binds to a different physical GPU.
+    ///
+    /// ROCm and Metal do not yet support selecting among multiple devices of
+    /// the same vendor — `ordinal` only affects the CUDA path; the ROCm/Metal
+    /// fallbacks below always bind to their single default device regardless
+    /// of `ordinal`.
+    pub fn detect_on(ordinal: i32) -> Self {
         // Try CUDA first
-        if let Ok(backend) = cuda::CudaBackend::new() {
+        if let Ok(backend) = cuda::CudaBackend::new_on(ordinal) {
             return VendorBackend::Cuda(backend);
         }
         // Try ROCm
@@ -43,6 +55,12 @@ impl VendorBackend {
             }
         }
         VendorBackend::None
+    }
+
+    /// Number of CUDA-visible devices (0 if CUDA is unavailable/not compiled
+    /// in). ROCm/Metal enumeration is not yet implemented.
+    pub fn available_device_count() -> usize {
+        cuda::CudaBackend::device_count()
     }
 
     /// Check if a vendor backend is available

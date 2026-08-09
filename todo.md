@@ -48,7 +48,7 @@
 ### Layer 6 — Framework Backends (Python + Rust)
 - [x] Python thin wrapper over Rust runtime (tptr)
 - [x] PyTorch dispatch layer (Python)
-- [ ] JAX integration (Python) — NOT IMPLEMENTED; `layer6_framework/tptr/jax/__init__.py` is honest stubs (`is_available()` → `False`, other calls raise `NotImplementedError`); tests marked skip
+- [x] JAX integration (Python) — implemented via `layer6_framework/tptr/jax/__init__.py` + `ops.py`: real `jax.core.Primitive` definitions (matmul/attention/conv2d/layer_norm) with JVP/VJP/XLA lowering (see Phase 10 note)
 - [x] Performance-critical dispatch paths (Rust)
 
 ---
@@ -102,7 +102,7 @@
 ## Phase 3 (Months 4–6): Framework Integration & TPT Script Beta
 
 - [x] Complete PyTorch backend integration
-- [ ] Complete JAX backend integration — NOT IMPLEMENTED (see Layer 6 note); PyTorch only
+- [x] Complete JAX backend integration — implemented (see Layer 6 note); PyTorch and JAX both supported
 - [x] Hugging Face integration (model loading / inference)
 - [x] TPT Script beta release (advanced external users)
 - [x] Distributed training examples (FSDP strategy, 8-GPU)
@@ -337,7 +337,9 @@
 - [x] Fix doc path inconsistencies: `docs/tutorials/01_introduction.md` project-structure tree corrected — `examples/` row removed; `layer6_framework/` and `layer7_tptb/` annotated with their respective `examples/` subdirectories
 - [x] Add `scripts/setup.sh`/`setup.ps1` bootstrap scripts covering the documented Rust-only quickstart (check `cargo`, build `tpt-gpu-script-cli`, print next steps)
 - [x] Add `Fetch`/`Add` subcommands to `crates/tpt-gpu-model-registry/src/main.rs`; end-to-end walkthrough added to `MODELS_REGISTRY.md`
-- [ ] External/manual items flagged for the user, not executable here: publish `v/tpt-vscode` to the VS Code Marketplace (needs publisher account); crates.io publishing per `RELEASE_CHECKLIST.md` (needs account/token); revisit "Pull requests are not accepted at this time" policy (no `CONTRIBUTING.md` exists)
+- [x] crates.io publishing per `RELEASE_CHECKLIST.md` — done; all 22 `crates/*` packages confirmed live on crates.io (verified via API, 2026-08-04)
+- [x] Revisit "Pull requests are not accepted at this time" policy — `CONTRIBUTING.md` now exists; README no longer contains that line
+- [ ] External/manual item flagged for the user, not executable here: publish `v/tpt-vscode` to the VS Code Marketplace (needs publisher account)
 
 ### Further ideas (not scheduled — for future consideration)
 - [x] Add a CI job for Python/pytest (`layer6_framework`) — would have caught the JAX gap (Priority 2) automatically; also consider RTL sim (layer1) and driver build (layer2) CI jobs
@@ -355,8 +357,8 @@
 **Why:** tpt-crucible also generates an MLIR-based IR (TPT-IR) from its Catalyst ingestion module. A single shared TPTIR dialect spec lets a model compiled once route to GPU (tpt-gpu runtime), FPGA (Crucible Fusion), MCU swarm (Crucible Alloy), or analog (Crucible Element) without re-compilation.
 - [x] Extract the TPTIR dialect definition into a standalone crate — `crates/tptir-spec` (`tpt-gpu-ir-spec`) already exists
 - [x] Define a stable text-format serialisation that tpt-crucible's Catalyst can consume — `parse_region()` / `parse_op()` added to `crates/tpt-gpu-ir-spec/src/text.rs`; full round-trip verified by tests
-- [ ] Publish the crate to crates.io so tpt-crucible can depend on it directly (no `publish` setting currently in its `Cargo.toml` — verify readiness and actually publish)
-- [ ] Tag the first stable release as `tptir-spec v0.1.0`
+- [x] Publish the crate to crates.io so tpt-crucible can depend on it directly — `tpt-gpu-ir-spec` confirmed live on crates.io (verified via API, 2026-08-04)
+- [ ] Tag the first stable release (crate is published as `tpt-gpu-ir-spec`, not `tptir-spec` — confirm the tag name tpt-crucible expects before tagging)
 
 ### 2. Shared model registry (`~/.tpt/models/`)
 **Why:** tpt-spark and tpt-crucible both consume GGUF models; a shared convention avoids duplicate downloads/directories.
@@ -368,7 +370,7 @@
 **Why:** tpt-spark's `WgpuEngine` (hand-written WGSL) could delegate to tpt-gpu's production-quality kernels via a stable trait.
 - [x] `LlmInference` trait defined in `layer4_tptr/tptr-core/src/inference.rs` (`GpuInferenceEngine` implementation exists) — will move to `crates/tpt-gpu-runtime/src/inference.rs` under Phase 8
 - [x] Confirm the trait signature matches what's proposed here — `LlmInference` in `crates/tpt-gpu-runtime/src/inference.rs` has exactly `load(model_path)`, `model_info()`, `infer(tokens, max_new_tokens, callback)`, `cancel()` — no reconciliation needed
-- [ ] Publish/expose `tpt-gpu-runtime` (or an `ffi` feature) so tpt-spark can add it as an optional dependency
+- [x] Publish/expose `tpt-gpu-runtime` so tpt-spark can add it as an optional dependency — confirmed live on crates.io (verified via API, 2026-08-04)
 - [ ] Write a minimal cross-repo integration test: load a GGUF model, run inference via the trait from tpt-spark's side
 
 ### 4. TPT Script frontend note (deferred — depends on item 1)

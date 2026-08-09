@@ -225,12 +225,13 @@ impl Device {
         }
     }
 
-    /// Create a device backed by a real CUDA GPU (device 0), if one is
-    /// available. Fails with [`ErrorCode::DeviceNotFound`] when the `cuda`
-    /// feature is disabled or no NVIDIA GPU/driver is present.
+    /// Create a device backed by a real CUDA GPU at device ordinal `id`, if
+    /// one is available. Fails with [`ErrorCode::DeviceNotFound`] when the
+    /// `cuda` feature is disabled or no NVIDIA GPU/driver is present at that
+    /// ordinal.
     #[cfg(feature = "cuda")]
     pub fn new_cuda(id: u64) -> TptrResult<Self> {
-        let ctx = DeviceBackend::try_cuda().ok_or_else(|| {
+        let ctx = DeviceBackend::try_cuda(id as i32).ok_or_else(|| {
             TptrError::new(
                 ErrorCode::DeviceNotFound,
                 "no CUDA-capable device available",
