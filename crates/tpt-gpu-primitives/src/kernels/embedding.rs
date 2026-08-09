@@ -106,7 +106,8 @@ impl EmbeddingKernel {
         };
 
         let t0 = Instant::now();
-        self.tptir_embedding(weight, indices, batch, seq_len, embed_dim, vocab_size)?;
+        let mut output = GpuBuffer::new(Shape::new(&out_dims), DType::F32, BufferFlags::STORAGE)?;
+        self.tptir_embedding(weight, indices, &mut output, batch, seq_len, embed_dim, vocab_size)?;
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         log::debug!(
             "Embedding [{}x{} → {}] via TPTIR: {:.3}ms",
@@ -115,13 +116,84 @@ impl EmbeddingKernel {
             embed_dim,
             elapsed_ms
         );
-        GpuBuffer::new(Shape::new(&out_dims), DType::F32, BufferFlags::STORAGE)
+        Ok(output)
     }
 
+    /// Pool-friendly variant of [`EmbeddingKernel::execute`].
+    ///
+    /// When `out` is `Some(buf)`, `buf` (shape `[batch, seq_len, embed_dim]`) is reused
+    /// as the output and returned, avoiding a fresh allocation.
+    pub fn execute_into(
+        &self,
+        weight: &GpuBuffer<f32>,
+        indices: &GpuBuffer<i32>,
+        out: Option<GpuBuffer<f32>>,
+    ) -> TptpResult<GpuBuffer<f32>> {
+        if weight.ndim() != 2 {
+            return Err(TptpError::shape_error(
+                "Embedding: weight must be 2-D [vocab_size, embed_dim]",
+            ));
+        }
+        if indices.ndim() < 1 {
+            return Err(TptpError::shape_error(
+                "Embedding: indices must be at least 1-D",
+            ));
+        }
+        let vocab_size = weight.dim(0).unwrap();
+        let embed_dim = weight.dim(1).unwrap();
+
+        let mut out_dims: Vec<usize> = (0..indices.ndim())
+            .map(|d| indices.dim(d).unwrap_or(1))
+            .collect();
+        out_dims.push(embed_dim);
+
+        let batch = if indices.ndim() > 1 {
+            indices.dim(0).unwrap_or(1)
+        } else {
+            1
+        };
+        let seq_len = if indices.ndim() > 1 {
+            indices.dim(1).unwrap_or(1)
+        } else {
+            indices.dim(0).unwrap_or(1)
+        };
+
+        let mut output = match out {
+            Some(b) => {
+                if b.shape() != &Shape::new(&out_dims) {
+                    return Err(TptpError::ShapeError {
+                        message: format!(
+                            "out shape {} does not match embedding output shape {}",
+                            b.shape(),
+                            Shape::new(&out_dims)
+                        ),
+                        expected: Some(Shape::new(&out_dims).to_string()),
+                        got: Some(b.shape().to_string()),
+                    });
+                }
+                b
+            }
+            None => GpuBuffer::new(Shape::new(&out_dims), DType::F32, BufferFlags::STORAGE)?,
+        };
+        let t0 = Instant::now();
+        self.tptir_embedding(weight, indices, &mut output, batch, seq_len, embed_dim, vocab_size)?;
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        log::debug!(
+            "Embedding [{}x{} → {}] via TPTIR: {:.3}ms",
+            batch,
+            seq_len,
+            embed_dim,
+            elapsed_ms
+        );
+        Ok(output)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn tptir_embedding(
         &self,
         _weight: &GpuBuffer<f32>,
         _indices: &GpuBuffer<i32>,
+        output: &mut GpuBuffer<f32>,
         _batch: usize,
         _seq_len: usize,
         _embed_dim: usize,
@@ -131,6 +203,9 @@ impl EmbeddingKernel {
             "TPTIR Embedding fallback: batch={}, seq={}, embed_dim={}, vocab_size={}, block_size={}",
             _batch, _seq_len, _embed_dim, _vocab_size, self.params.block_size
         );
+        // Soft-fallback is not yet numerically implemented; zero the output so that
+        // a pooled/reused buffer is deterministic (matches a fresh allocation).
+        output.zero();
         Ok(())
     }
 }

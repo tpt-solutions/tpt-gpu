@@ -131,6 +131,77 @@ impl QuantGemmKernel {
         Ok(output)
     }
 
+    /// Pool-friendly variant of [`QuantGemmKernel::execute`].
+    ///
+    /// When `out` is `Some(buf)`, `buf` (shape `[m, n]`) is reused as the output
+    /// and returned, avoiding a fresh allocation. The fallback fully overwrites
+    /// the output, so reuse is numerically safe.
+    pub fn execute_into(
+        &self,
+        a_packed: &GpuBuffer<i8>,
+        b_f32: &GpuBuffer<f32>,
+        scales: &GpuBuffer<f32>,
+        zpoints: &GpuBuffer<i8>,
+        out: Option<GpuBuffer<f32>>,
+    ) -> TptpResult<GpuBuffer<f32>> {
+        if b_f32.ndim() != 2 {
+            return Err(TptpError::shape_error(
+                "QuantGemm: activation B must be 2D [k, n]",
+            ));
+        }
+        let k = b_f32
+            .dim(0)
+            .ok_or_else(|| TptpError::shape_error("B has no dim 0"))?;
+        let n = b_f32
+            .dim(1)
+            .ok_or_else(|| TptpError::shape_error("B has no dim 1"))?;
+
+        let pack_factor = (8usize / self.params.bits.max(1) as usize).max(1);
+        let packed_cols = k.div_ceil(pack_factor);
+        let m = a_packed.num_elements() / packed_cols;
+
+        if m == 0 {
+            return Err(TptpError::shape_error(
+                "QuantGemm: cannot infer M from packed weight buffer",
+            ));
+        }
+
+        let mut output = match out {
+            Some(buf) => {
+                if buf.dim(0) != Some(m) || buf.dim(1) != Some(n) {
+                    return Err(TptpError::shape_error(format!(
+                        "out shape [{},{}] does not match quant-gemm output [{},{}]",
+                        buf.dim(0).unwrap_or(0),
+                        buf.dim(1).unwrap_or(0),
+                        m,
+                        n
+                    )));
+                }
+                buf
+            }
+            None => GpuBuffer::<f32>::new(Shape::dim2(m, n), DType::F32, BufferFlags::STORAGE)
+                .map_err(|e| TptpError::device_error(e.to_string()))?,
+        };
+
+        if self.vendor.supports_int8_gemm() {
+            self.vendor.quant_gemm(
+                a_packed,
+                b_f32,
+                &mut output,
+                scales,
+                zpoints,
+                m,
+                n,
+                k,
+                self.params.bits,
+            )?;
+        } else {
+            self.tptir_fallback(a_packed, b_f32, &mut output, scales, zpoints, m, n, k)?;
+        }
+
+        Ok(output)
+    }
+
     /// Host-side fallback: unpack weights to f32, then scalar GEMM.
     #[allow(clippy::too_many_arguments)]
     fn tptir_fallback(

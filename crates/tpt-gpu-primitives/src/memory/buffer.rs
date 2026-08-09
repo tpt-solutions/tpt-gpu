@@ -186,6 +186,16 @@ impl<T: Pod> GpuBuffer<T> {
     pub fn num_elements(&self) -> usize {
         self.shape.num_elements()
     }
+
+    /// Zero the entire backing store (every element becomes `0`).
+    ///
+    /// Used by the host-side fallback kernels (RMSNorm, Softmax, Embedding) which
+    /// are not yet numerically implemented: zeroing makes output deterministic so
+    /// that a buffer recycled from a [`crate`]-level `ScratchPool` behaves the
+    /// same as a freshly-allocated one.
+    pub fn zero(&mut self) {
+        self.storage.iter_mut().for_each(|b| *b = 0);
+    }
     pub fn byte_size(&self) -> usize {
         self.byte_size
     }
@@ -194,6 +204,37 @@ impl<T: Pod> GpuBuffer<T> {
     }
     pub fn dim(&self, i: usize) -> Option<usize> {
         self.shape.dim(i)
+    }
+
+    /// Re-interpret the buffer's shape **in place** without copying or
+    /// reallocating any data. The new shape must hold exactly the same number
+    /// of elements as the current shape, otherwise an error is returned.
+    ///
+    /// This is the cheap, allocation-free path used on the inference hot loop
+    /// (e.g. reinterpreting a `[hidden_dim]` activation as `[1, hidden_dim]`).
+    pub fn reshape(&mut self, new_shape: Shape) -> TptpResult<()> {
+        if !new_shape.is_valid() {
+            return Err(TptpError::ShapeError {
+                message: format!("invalid target shape: {}", new_shape),
+                expected: None,
+                got: None,
+            });
+        }
+        if new_shape.num_elements() != self.num_elements() {
+            return Err(TptpError::ShapeError {
+                message: format!(
+                    "reshape element-count mismatch: {} has {} elements, {} has {}",
+                    self.shape,
+                    self.num_elements(),
+                    new_shape,
+                    new_shape.num_elements()
+                ),
+                expected: Some(self.num_elements().to_string()),
+                got: Some(new_shape.num_elements().to_string()),
+            });
+        }
+        self.shape = new_shape;
+        Ok(())
     }
 
     pub fn copy_from_host(&mut self, data: &[T]) -> TptpResult<()> {
@@ -238,5 +279,52 @@ impl<T: Pod> fmt::Debug for GpuBuffer<T> {
             .field("dtype", &self.dtype)
             .field("byte_size", &self.byte_size)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reshape_in_place_keeps_data() {
+        let mut buf =
+            GpuBuffer::<f32>::new(Shape::new(&[8]), DType::F32, BufferFlags::STORAGE).unwrap();
+        buf.copy_from_host(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+            .unwrap();
+        // [8] -> [2, 4] is the same number of elements, so reshape is in place.
+        buf.reshape(Shape::dim2(2, 4)).unwrap();
+        assert_eq!(buf.shape(), &Shape::dim2(2, 4));
+        assert_eq!(buf.num_elements(), 8);
+        let mut out = [0.0f32; 8];
+        buf.copy_to_host(&mut out).unwrap();
+        assert_eq!(out, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+    }
+
+    #[test]
+    fn reshape_rejects_mismatched_element_count() {
+        let mut buf =
+            GpuBuffer::<f32>::new(Shape::new(&[8]), DType::F32, BufferFlags::STORAGE).unwrap();
+        let err = buf.reshape(Shape::new(&[4])).unwrap_err();
+        assert!(matches!(err, TptpError::ShapeError { .. }));
+    }
+
+    #[test]
+    fn reshape_rejects_invalid_shape() {
+        let mut buf =
+            GpuBuffer::<f32>::new(Shape::new(&[8]), DType::F32, BufferFlags::STORAGE).unwrap();
+        let err = buf.reshape(Shape::new(&[0, 0])).unwrap_err();
+        assert!(matches!(err, TptpError::ShapeError { .. }));
+    }
+
+    #[test]
+    fn zero_clears_storage() {
+        let mut buf =
+            GpuBuffer::<f32>::new(Shape::new(&[4]), DType::F32, BufferFlags::STORAGE).unwrap();
+        buf.copy_from_host(&[9.0, 8.0, 7.0, 6.0]).unwrap();
+        buf.zero();
+        let mut out = [1.0f32; 4];
+        buf.copy_to_host(&mut out).unwrap();
+        assert_eq!(out, [0.0, 0.0, 0.0, 0.0]);
     }
 }

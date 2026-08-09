@@ -424,3 +424,28 @@
 - [x] GGUF→TPTF importer would make `model-optimizer` end-to-end usable from a fresh HF download — the tool's core value proposition
 - [x] `tpt-gpu doctor` command: checks Rust version, optional CUDA/ROCm SDK presence, Python venv state, and runs the same fmt/clippy checks CI does; doubles as a pre-commit hook (implemented as `crates/tpt-gpu-doctor`; `--pre-commit`/`--fast` flags; README tools entry)
 - [x] Wire `cargo-deny`/`cargo-audit` into CI plus Dependabot for cheap dependency-hygiene coverage (done: `security.yml` runs both; `dependabot.yml` watches cargo + github-actions)
+
+---
+
+## Phase 11: Activation Scratch Pool + Mmap-Backed Model Loading
+
+**Context:** originated from a proposal for a `ZeroCopyModelLoader` trait (GGUF/SafeTensors mmap) and a `DeterministicArena` bump allocator with compile-time-computed capacity. Research found real overlap (GGUF loading already mmaps, just copies afterward) and real conflicts (no SafeTensors reader exists anywhere; a compile-time peak-size pass conflicts with tpt-gpu's deliberately dynamic shape model per the draft TPT-UIR RFC; a flat bump-pointer arena is unsound given residual connections and the cross-layer-lived KV cache). Scoped down to two independent, additive changes. Plan: `C:\Users\phill\.claude\plans\i-m-thinking-of-adding-crispy-rain.md`.
+
+### Feature 1 — `ScratchPool`: free-list buffer pool replacing per-op fresh allocations
+- [ ] `crates/tpt-gpu-primitives/src/memory/buffer.rs` — add `GpuBuffer::reshape()` (validate `num_elements()`, swap `shape`, no copy); replace `reshape_to_2d` (`inference.rs:1246-1259`) with a thin wrapper
+- [ ] `crates/tpt-gpu-runtime/src/scratch.rs` (new) — `ScratchPool` keyed by `Shape` (`HashMap<Shape, Vec<GpuBuffer<f32>>>`, free-list not bump/arena — `Shape` already derives `Hash + Eq`); `pub mod scratch;` in `lib.rs`
+- [ ] Route `alloc_f32`/`alloc_f32_1d`/`vec_to_buf` (`inference.rs:545-553, 1579-1588`) and `quant_layer_gemm`'s scratch buffers (`inference.rs:1347-1379`) through `ScratchPool::checkout_*`/`release`
+- [ ] Extend `GemmKernel::execute`'s existing `Option<&mut GpuBuffer<f32>>` output-param pattern (`gemm.rs:77-153`) to `RmsNormKernel`, `SoftmaxKernel`, `AttentionKernel`, `EmbeddingKernel`, `QuantGemmKernel`; wire `forward_step` to pass pool buffers in — one kernel at a time. Note: call sites passing `Some(&mut buf)` must ignore the returned clone (`gemm.rs:150` deep-clones `storage` on return) and keep using `buf` directly, or the pool win is defeated
+- [ ] Tests: `GpuBuffer::reshape` unit test; `ScratchPool` checkout/release/reuse-hit unit test; confirm `forward_step` output unchanged on a synthetic small model
+
+### Feature 2 — mmap-backed `.tptf` loading
+- [ ] `crates/tpt-gpu-runtime/src/inference.rs::parse_tptf_header` (405-420) — replace whole-file `fs::read` with a fixed 512-byte `read_exact`, matching `tptf_format::read_header` (`crates/tpt-gpu-model-optimizer/src/tptf_format.rs:211-219`)
+- [ ] `crates/tpt-gpu-runtime/src/inference.rs::ModelWeights::load_tptf` (565-758) — replace whole-file `fs::read` with `memmap2::Mmap`, matching the pattern already in `GgufImporter::import` (`gguf.rs:285-289`); mmap stays a local, not stored long-term. Add `memmap2 = { workspace = true }` to `crates/tpt-gpu-runtime/Cargo.toml`
+- [ ] Tests: byte-for-byte parity vs. the old `fs::read` path on the existing synthetic `.tptf` fixture; existing `load_tptf_via_engine`/`parse_tptf_header_basic` tests (`inference.rs:1735-1762, 2004-2011`) still pass
+
+### Explicitly out of scope (see plan file for rationale)
+- SafeTensors reader (none exists today, only a writer)
+- Layer3 compiler compile-time `peak_activation_size` pass (conflicts with dynamic-shape design; would duplicate TPT-UIR's future `memory_dialect`)
+- Fixing `load_with_vendor` (`inference.rs:908`, referenced but undefined anywhere in the crate — pre-existing, unrelated bug, flagged here for tracking)
+- Full TPTF-parser consolidation (`tptf_format::read_tensor_blocks` vs. the inline parser in `inference.rs`)
+- `GgufImporter`'s per-tensor `.to_vec()` copy during offline GGUF→TPTF conversion (one-time cost, not the inference hot path)

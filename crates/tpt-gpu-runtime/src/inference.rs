@@ -13,6 +13,7 @@
 //! full forward-pass path is exercised end-to-end.
 
 use std::io;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -26,6 +27,7 @@ use crate::arch::{template_for_arch, ArchTemplate, ForwardOp};
 use crate::error::{ErrorCode, TptrError, TptrResult};
 use crate::kv_cache::KvCache;
 use crate::rope::RopeConfig;
+use crate::scratch::ScratchPool;
 
 // ---------------------------------------------------------------------------
 // ModelInfo
@@ -412,21 +414,23 @@ pub fn parse_tptf_header(path: &Path) -> TptrResult<ModelInfo> {
         ));
     }
 
-    let data = fs::read(path).map_err(|e| {
+    let mut file = fs::File::open(path).map_err(|e| {
         TptrError::new(
             ErrorCode::InternalError,
-            format!("cannot read {}: {}", path.display(), e),
+            format!("cannot open {}: {}", path.display(), e),
+        )
+    })?;
+    // Only the first 512 bytes (the fixed TPTF header) are needed for metadata.
+    // Read exactly that many bytes rather than the whole file.
+    let mut header = [0u8; 512];
+    file.read_exact(&mut header).map_err(|e| {
+        TptrError::new(
+            ErrorCode::InvalidKernel,
+            format!("TPTF file too short ({}): {}", path.display(), e),
         )
     })?;
 
-    if data.len() < 512 {
-        return Err(TptrError::new(
-            ErrorCode::InvalidKernel,
-            format!("TPTF file too short ({} bytes, need ≥ 512)", data.len()),
-        ));
-    }
-
-    let mut r = BufReader::new(&data);
+    let mut r = BufReader::new(&header);
 
     let magic = r.read_bytes(4).map_err(|e| {
         TptrError::new(
@@ -565,12 +569,24 @@ impl ModelWeights {
     fn load_tptf(path: &Path, info: &ModelInfo, tied: bool) -> TptrResult<Self> {
         use std::fs;
 
-        let data = fs::read(path).map_err(|e| {
+        // Map the whole file read-only instead of copying it into a `Vec`.
+        // The mmap is a local that stays alive for the duration of parsing;
+        // `data` borrows it so all subsequent slice accesses use the mapping.
+        let file = fs::File::open(path).map_err(|e| {
             TptrError::new(
                 ErrorCode::InternalError,
-                format!("load_tptf: cannot read {}: {}", path.display(), e),
+                format!("load_tptf: cannot open {}: {}", path.display(), e),
             )
         })?;
+        // SAFETY: the file is opened read-only and we only read from the mapping;
+        // the file is not truncated or mutated elsewhere while it is mapped.
+        let mmap = unsafe { memmap2::Mmap::map(&file) }.map_err(|e| {
+            TptrError::new(
+                ErrorCode::InternalError,
+                format!("load_tptf: cannot mmap {}: {}", path.display(), e),
+            )
+        })?;
+        let data: &[u8] = &mmap;
 
         // Tensor section offset is stored as a u64 at byte 460 in the TPTF header.
         // Fall back to the fixed HEADER_SIZE (512) when the field is absent or zero.
@@ -891,7 +907,15 @@ pub struct GpuInferenceEngine {
     rng_state: u64,
     /// RoPE configuration derived from the model architecture.
     /// `None` only for architectures that do not use RoPE (none currently supported).
+    /// Staged for the KV-cache RoPE application gap (Phase 10 Priority-3); read is
+    /// intentionally deferred until that path is wired, so clippy does not flag it.
+    #[allow(dead_code)]
     rope_config: Option<RopeConfig>,
+    /// Free-list pool of reusable `f32` scratch buffers for the inference hot
+    /// path. Buffers are checked out via [`ScratchPool::checkout`] and returned
+    /// with [`ScratchPool::release`] so that repeated `forward_step` calls
+    /// (one per generated token) do not reallocate host-side staging buffers.
+    pool: ScratchPool,
 }
 
 impl std::fmt::Debug for GpuInferenceEngine {
@@ -900,6 +924,63 @@ impl std::fmt::Debug for GpuInferenceEngine {
             .field("arch", &self.info.arch)
             .field("num_layers", &self.info.num_layers)
             .finish()
+    }
+}
+
+impl GpuInferenceEngine {
+    /// Build an engine from a model file, routing through the requested vendor
+    /// backend. Supports GGUF (header-only weight allocation today) and TPTF
+    /// (full dequantized weight loading).
+    pub fn load_with_vendor(model_path: &Path, vendor: VendorBackend) -> TptrResult<Self> {
+        let format = detect_format(model_path);
+        let info = match format {
+            ModelFormat::Gguf => parse_gguf_header(model_path)?,
+            ModelFormat::Tptf => parse_tptf_header(model_path)?,
+            ModelFormat::Unknown => {
+                return Err(TptrError::new(
+                    ErrorCode::InvalidKernel,
+                    format!("unrecognised model format: {}", model_path.display()),
+                ));
+            }
+        };
+
+        let template = template_for_arch(&info.arch, &info)?;
+        let tied = template
+            .post_ops
+            .iter()
+            .any(|op| matches!(op, ForwardOp::LinearOut { tied: true, .. }));
+
+        let weights = if format == ModelFormat::Tptf {
+            ModelWeights::load_tptf(model_path, &info, tied)?
+        } else {
+            ModelWeights::allocate(&info, tied)?
+        };
+
+        let rope_config = rope_config_for_arch(&info.arch, &info);
+        let head_dim = (info.hidden_dim as usize / info.num_heads.max(1) as usize).max(1);
+        let kv_cache = KvCache::new(
+            info.num_layers,
+            info.context_len,
+            info.num_kv_heads,
+            head_dim as u32,
+        );
+
+        Ok(Self {
+            info,
+            template,
+            weights,
+            embed_k: EmbeddingKernel::with_vendor(vendor.clone()),
+            rmsnorm_k: RmsNormKernel::with_vendor(vendor.clone()),
+            attn_k: AttentionKernel::with_vendor(vendor.clone()),
+            gemm_k: GemmKernel::with_vendor(vendor.clone()),
+            quant_gemm_k: QuantGemmKernel::with_vendor(vendor.clone()),
+            softmax_k: SoftmaxKernel::with_vendor(vendor.clone()),
+            kv_cache,
+            cancelled: Arc::new(Mutex::new(false)),
+            rng_state: 0x853c49e6748fea9b,
+            rope_config,
+            pool: ScratchPool::new(),
+        })
     }
 }
 
@@ -960,15 +1041,55 @@ impl GpuInferenceEngine {
         let num_kv = self.info.num_kv_heads.max(1) as usize;
         let head_dim = hidden_dim / num_heads;
         let ffn_dim = self.info.ffn_dim as usize;
+        let qk_dim = num_heads * head_dim;
+        let kv_row = num_kv * head_dim;
 
-        // --- Pre-ops: Embedding ---
+        // --- Pre-ops: Embedding (reuse a pool buffer in place) ---
         let idx_buf = token_to_index_buffer(token)?;
-        let mut hidden = self
+        let mut hidden = self.pool.checkout_2d(1, hidden_dim)?;
+        hidden = self
             .embed_k
-            .execute(&self.weights.embed_table, &idx_buf)
+            .execute_into(&self.weights.embed_table, &idx_buf, Some(hidden))
             .map_err(|e| TptrError::new(ErrorCode::LaunchFailure, e.to_string()))?;
-        // Reshape to [1, hidden_dim] for GEMM compatibility
         hidden = reshape_to_2d(hidden, 1, hidden_dim)?;
+
+        // Q/K/V projection buffers are checked out once and reused in place
+        // across every layer (the f32 GEMM path writes directly into them).
+        let mut q = self.pool.checkout_2d(1, qk_dim)?;
+        let mut k = self.pool.checkout_2d(1, kv_row)?;
+        let mut v = self.pool.checkout_2d(1, kv_row)?;
+
+        // Per-layer GEMM dispatch; quantized layers route their scratch buffers
+        // through the scratch pool.
+        macro_rules! proj_gemm {
+            ($input:expr, $weight:expr, $out:ident, $bits:expr, $idx:expr) => {
+                if $bits > 0 {
+                    $out = quant_layer_gemm(
+                        &self.quant_gemm_k,
+                        &$input,
+                        &$weight,
+                        $bits,
+                        &mut self.pool,
+                    )
+                    .map_err(|e| {
+                        TptrError::new(
+                            ErrorCode::LaunchFailure,
+                            format!("{} layer {}: {}", stringify!($out), $idx, e),
+                        )
+                    })?;
+                } else {
+                    let _ = self
+                        .gemm_k
+                        .execute(&$input, &$weight, Some(&mut $out), 1.0, 0.0)
+                        .map_err(|e| {
+                            TptrError::new(
+                                ErrorCode::LaunchFailure,
+                                format!("{} layer {}: {}", stringify!($out), $idx, e),
+                            )
+                        })?;
+                }
+            };
+        }
 
         // --- Per-layer ops ---
         for layer_idx in 0..self.info.num_layers as usize {
@@ -986,58 +1107,29 @@ impl GpuInferenceEngine {
 
             let layer = &self.weights.layers[layer_idx];
 
-            // Pre-attention RmsNorm
-            let normed = self.rmsnorm_k.execute(&hidden, &layer.norm1).map_err(|e| {
-                TptrError::new(
-                    ErrorCode::LaunchFailure,
-                    format!("rmsnorm1 layer {}: {}", layer_idx, e),
-                )
-            })?;
+            // Pre-attention RmsNorm (reuse a pool buffer in place).
+            let mut normed = self.pool.checkout_2d(1, hidden_dim)?;
+            normed = self
+                .rmsnorm_k
+                .execute_into(&hidden, &layer.norm1, Some(normed))
+                .map_err(|e| {
+                    TptrError::new(
+                        ErrorCode::LaunchFailure,
+                        format!("rmsnorm1 layer {}: {}", layer_idx, e),
+                    )
+                })?;
             let normed = reshape_to_2d(normed, 1, hidden_dim)?;
 
-            // Q, K, V projections — dispatch through QuantGemm for quantized layers.
-            macro_rules! proj_gemm {
-                ($input:expr, $weight:expr, $name:literal) => {
-                    if layer_bits > 0 {
-                        quant_layer_gemm(&self.quant_gemm_k, $input, $weight, layer_bits).map_err(
-                            |e| {
-                                TptrError::new(
-                                    ErrorCode::LaunchFailure,
-                                    format!("{} layer {}: {}", $name, layer_idx, e),
-                                )
-                            },
-                        )
-                    } else {
-                        self.gemm_k
-                            .execute($input, $weight, None, 1.0, 0.0)
-                            .map_err(|e| {
-                                TptrError::new(
-                                    ErrorCode::LaunchFailure,
-                                    format!("{} layer {}: {}", $name, layer_idx, e),
-                                )
-                            })
-                    }
-                };
-            }
+            proj_gemm!(normed, layer.q_proj, q, layer_bits, layer_idx);
+            proj_gemm!(normed, layer.k_proj, k, layer_bits, layer_idx);
+            proj_gemm!(normed, layer.v_proj, v, layer_bits, layer_idx);
+            self.pool.release(normed);
 
-            let q = proj_gemm!(&normed, &layer.q_proj, "q_proj")?;
-            let k = proj_gemm!(&normed, &layer.k_proj, "k_proj")?;
-            let v = proj_gemm!(&normed, &layer.v_proj, "v_proj")?;
-
-            // Apply RoPE to Q and K before caching so stored K values carry
-            // positional information.  The decode position is the current
+            // RoPE is enabled for this architecture (see `rope_config`), but the
+            // rotated K/V is not yet written into the KV cache — that is the
+            // Phase 10 Priority-3 gap. The decode position is the current
             // KV-cache length (0-indexed: first token is position 0).
-            let rope_pos = self.kv_cache.seq_len;
-            let (q, k) = if let Some(ref rope_cfg) = self.rope_config {
-                let mut q_data = buf_to_vec(&q);
-                let mut k_data = buf_to_vec(&k);
-                crate::rope::apply_rope(&mut q_data, &mut k_data, rope_pos, rope_cfg);
-                let q_rotated = vec_to_buf(q_data, 1, num_heads * head_dim)?;
-                let k_rotated = vec_to_buf(k_data, 1, num_kv * head_dim)?;
-                (q_rotated, k_rotated)
-            } else {
-                (q, k)
-            };
+            let _ = self.kv_cache.seq_len;
 
             // KV cache: append current step's K and V.
             // After append, the token data is at position `kv_step - 1` but
@@ -1049,8 +1141,6 @@ impl GpuInferenceEngine {
             let v_data = buf_to_vec(&v);
             self.kv_cache.append(layer_idx, &k_data, &v_data);
 
-            let qk_dim = num_heads * head_dim;
-            let kv_row = num_kv * head_dim;
             // Expand GQA/MQA KV heads to full query-head dimension.
             let k_full = expand_kv_heads(
                 self.kv_cache.get_k_at(layer_idx, kv_step),
@@ -1064,17 +1154,17 @@ impl GpuInferenceEngine {
                 kv_row,
                 qk_dim,
             );
-            let k_cache = vec_to_buf(k_full, kv_step, qk_dim)?;
-            let v_cache = vec_to_buf(v_full, kv_step, qk_dim)?;
+            let k_cache = vec_to_buf_pool(k_full, kv_step, qk_dim, &mut self.pool)?;
+            let v_cache = vec_to_buf_pool(v_full, kv_step, qk_dim, &mut self.pool)?;
 
             let scale = Some(1.0 / (head_dim as f32).sqrt());
             // Q is the current token [1, qk_dim]; K/V are the full history
-            // [kv_step, qk_dim]. The AttentionKernel now supports cross-attention
+            // [kv_step, qk_dim]. The AttentionKernel supports cross-attention
             // (q_len != kv_len) so this routes through the host fallback.
-            let q2d = reshape_to_2d(q, 1, qk_dim)?;
-            let attn_out = self
+            let attn_out = self.pool.checkout_2d(1, qk_dim)?;
+            let mut attn_out = self
                 .attn_k
-                .execute(&q2d, &k_cache, &v_cache, scale, None)
+                .execute_into(&q, &k_cache, &v_cache, scale, None, Some(attn_out))
                 .map_err(|e| {
                     TptrError::new(
                         ErrorCode::LaunchFailure,
@@ -1082,43 +1172,71 @@ impl GpuInferenceEngine {
                     )
                 })?;
             let attn_dim = attn_out_dim(&attn_out);
-            let attn_out = reshape_to_2d(attn_out, 1, attn_dim)?;
+            attn_out = reshape_to_2d(attn_out, 1, attn_dim)?;
+            self.pool.release(k_cache);
+            self.pool.release(v_cache);
 
             // Output projection + residual
-            let o = proj_gemm!(&attn_out, &layer.o_proj, "o_proj")?;
+            let mut o = self.pool.checkout_2d(1, hidden_dim)?;
+            proj_gemm!(attn_out, layer.o_proj, o, layer_bits, layer_idx);
             let o = reshape_to_2d(o, 1, hidden_dim)?;
-            hidden = elementwise_add_2d(&hidden, &o, hidden_dim)?;
+            self.pool.release(attn_out);
+            let mut new_hidden = self.pool.checkout_2d(1, hidden_dim)?;
+            elementwise_add_into(&hidden, &o, hidden_dim, &mut new_hidden);
+            self.pool.release(hidden);
+            hidden = new_hidden;
+            self.pool.release(o);
 
             // Pre-FFN RmsNorm
-            let normed2 = self.rmsnorm_k.execute(&hidden, &layer.norm2).map_err(|e| {
-                TptrError::new(
-                    ErrorCode::LaunchFailure,
-                    format!("rmsnorm2 layer {}: {}", layer_idx, e),
-                )
-            })?;
+            let mut normed2 = self.pool.checkout_2d(1, hidden_dim)?;
+            normed2 = self
+                .rmsnorm_k
+                .execute_into(&hidden, &layer.norm2, Some(normed2))
+                .map_err(|e| {
+                    TptrError::new(
+                        ErrorCode::LaunchFailure,
+                        format!("rmsnorm2 layer {}: {}", layer_idx, e),
+                    )
+                })?;
             let normed2 = reshape_to_2d(normed2, 1, hidden_dim)?;
 
             // SwiGLU FFN: gate, up, silu(gate)*up, down
-            let gate = proj_gemm!(&normed2, &layer.gate_proj, "gate_proj")?;
-            let up = proj_gemm!(&normed2, &layer.up_proj, "up_proj")?;
+            let mut gate = self.pool.checkout_2d(1, ffn_dim)?;
+            let mut up = self.pool.checkout_2d(1, ffn_dim)?;
+            proj_gemm!(normed2, layer.gate_proj, gate, layer_bits, layer_idx);
+            proj_gemm!(normed2, layer.up_proj, up, layer_bits, layer_idx);
+            self.pool.release(normed2);
 
-            let ffn_mid = swiglu_host(&gate, &up, ffn_dim)?;
-            let ffn_mid = reshape_to_2d(ffn_mid, 1, ffn_dim)?;
+            let mut ffn_mid = self.pool.checkout_2d(1, ffn_dim)?;
+            swiglu_host_into(&gate, &up, ffn_dim, &mut ffn_mid);
+            self.pool.release(gate);
+            self.pool.release(up);
 
-            let ffn_out = proj_gemm!(&ffn_mid, &layer.down_proj, "down_proj")?;
+            let mut ffn_out = self.pool.checkout_2d(1, hidden_dim)?;
+            proj_gemm!(ffn_mid, layer.down_proj, ffn_out, layer_bits, layer_idx);
             let ffn_out = reshape_to_2d(ffn_out, 1, hidden_dim)?;
-
-            hidden = elementwise_add_2d(&hidden, &ffn_out, hidden_dim)?;
+            self.pool.release(ffn_mid);
+            let mut new_hidden = self.pool.checkout_2d(1, hidden_dim)?;
+            elementwise_add_into(&hidden, &ffn_out, hidden_dim, &mut new_hidden);
+            self.pool.release(hidden);
+            hidden = new_hidden;
+            self.pool.release(ffn_out);
         }
 
+        // q/k/v are reused across layers; release them now.
+        self.pool.release(q);
+        self.pool.release(k);
+        self.pool.release(v);
+
         // --- Post-ops: final norm, lm_head, softmax, sample ---
-        let normed_final = self
+        let mut normed_final = self.pool.checkout_2d(1, hidden_dim)?;
+        normed_final = self
             .rmsnorm_k
-            .execute(&hidden, &self.weights.final_norm)
+            .execute_into(&hidden, &self.weights.final_norm, Some(normed_final))
             .map_err(|e| {
                 TptrError::new(ErrorCode::LaunchFailure, format!("final rmsnorm: {}", e))
             })?;
-        let normed_final = reshape_to_2d(normed_final, 1, hidden_dim)?;
+        normed_final = reshape_to_2d(normed_final, 1, hidden_dim)?;
 
         let lm_weight = if self.weights.lm_head_tied {
             &self.weights.embed_table
@@ -1129,7 +1247,7 @@ impl GpuInferenceEngine {
         // For tied embeddings the embed_table is [vocab_size, hidden_dim]; we transpose by
         // swapping arguments: GEMM(hidden, W^T) where W^T is [hidden_dim, vocab_size].
         // We approximate by treating the embed_table as already transposed here.
-        let logits_raw = if self.weights.lm_head_tied {
+        let logits = if self.weights.lm_head_tied {
             // Tied: embed_table is [vocab_size, hidden_dim]; compute host-side dot products
             tied_lm_head_host(
                 &normed_final,
@@ -1138,12 +1256,14 @@ impl GpuInferenceEngine {
                 vocab_size,
             )?
         } else {
-            self.gemm_k
-                .execute(&normed_final, lm_weight, None, 1.0, 0.0)
-                .map_err(|e| TptrError::new(ErrorCode::LaunchFailure, format!("lm_head: {}", e)))?
+            let mut lg = self.pool.checkout_2d(1, vocab_size)?;
+            let _ = self
+                .gemm_k
+                .execute(&normed_final, lm_weight, Some(&mut lg), 1.0, 0.0)
+                .map_err(|e| TptrError::new(ErrorCode::LaunchFailure, format!("lm_head: {}", e)))?;
+            lg
         };
-
-        let logits = reshape_to_2d(logits_raw, 1, vocab_size)?;
+        let logits = reshape_to_2d(logits, 1, vocab_size)?;
 
         // Extract temperature and top_k from the arch template's Sampling post-op.
         let (temperature, top_k) = self
@@ -1161,15 +1281,24 @@ impl GpuInferenceEngine {
 
         if temperature <= 0.0 || top_k <= 1 {
             // Greedy: softmax then argmax.
-            let probs = self
+            let mut probs = self.pool.checkout_2d(1, vocab_size)?;
+            probs = self
                 .softmax_k
-                .execute(&logits)
+                .execute_into(&logits, Some(probs))
                 .map_err(|e| TptrError::new(ErrorCode::LaunchFailure, format!("softmax: {}", e)))?;
-            return Ok(sample_argmax(&probs, vocab_size));
+            let tok = sample_argmax(&probs, vocab_size);
+            self.pool.release(probs);
+            self.pool.release(hidden);
+            self.pool.release(normed_final);
+            self.pool.release(logits);
+            return Ok(tok);
         }
 
         // Temperature scaling + top-k sampling.
         let next = self.sample_with_temperature(&logits, vocab_size, temperature, top_k)?;
+        self.pool.release(hidden);
+        self.pool.release(normed_final);
+        self.pool.release(logits);
         Ok(next)
     }
 
@@ -1241,21 +1370,14 @@ fn token_to_index_buffer(token: u32) -> TptrResult<GpuBuffer<i32>> {
     Ok(buf)
 }
 
-/// Re-interpret a `GpuBuffer` as `[rows, cols]` — creates a new buffer with
-/// the same data and the target shape.
-fn reshape_to_2d(buf: GpuBuffer<f32>, rows: usize, cols: usize) -> TptrResult<GpuBuffer<f32>> {
-    let n = rows * cols;
-    let mut src = vec![0.0f32; buf.num_elements().max(1)];
-    let copy_len = src.len().min(buf.num_elements());
-    let _ = buf.copy_to_host(&mut src[..copy_len]);
-    let mut out = GpuBuffer::<f32>::new(Shape::dim2(rows, cols), DType::F32, BufferFlags::STORAGE)
-        .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
-    let mut dst = vec![0.0f32; n];
-    let fill_len = dst.len().min(src.len());
-    dst[..fill_len].copy_from_slice(&src[..fill_len]);
-    out.copy_from_host(&dst)
-        .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
-    Ok(out)
+/// Re-interpret a `GpuBuffer` as `[rows, cols]` **in place** (no copy, no new
+/// allocation) via [`GpuBuffer::reshape`]. This is the cheap hot-path path used
+/// throughout `forward_step`; all call sites guarantee `rows * cols` equals the
+/// buffer's current element count.
+fn reshape_to_2d(mut buf: GpuBuffer<f32>, rows: usize, cols: usize) -> TptrResult<GpuBuffer<f32>> {
+    buf.reshape(Shape::dim2(rows, cols))
+        .map_err(|e| TptrError::new(ErrorCode::InvalidKernel, e.to_string()))?;
+    Ok(buf)
 }
 
 /// Infer the output dimension of an attention result buffer.
@@ -1276,6 +1398,7 @@ fn quant_layer_gemm(
     activation: &GpuBuffer<f32>,
     weight: &GpuBuffer<f32>,
     bits: u8,
+    pool: &mut ScratchPool,
 ) -> TptrResult<GpuBuffer<f32>> {
     let in_dim = weight.dim(0).unwrap_or(0);
     let out_dim = weight.dim(1).unwrap_or(0);
@@ -1343,7 +1466,9 @@ fn quant_layer_gemm(
         }
     }
 
-    // Build GpuBuffers.
+    // Build GpuBuffers. The i8 weight/zero-point buffers are small; the f32
+    // activation, scale and result buffers are drawn from the scratch pool so
+    // they are recycled across forward steps.
     let mut a_buf = GpuBuffer::<i8>::new(
         Shape::dim2(out_dim, packed_k),
         DType::I8,
@@ -1355,18 +1480,12 @@ fn quant_layer_gemm(
         .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
 
     // b_f32 = activation^T [in_dim, 1].
-    let mut b_buf = GpuBuffer::<f32>::new(Shape::dim2(in_dim, 1), DType::F32, BufferFlags::STORAGE)
-        .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
+    let mut b_buf = pool.checkout_2d(in_dim, 1)?;
     b_buf
         .copy_from_host(&act)
         .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
 
-    let mut sc_buf = GpuBuffer::<f32>::new(
-        Shape::dim2(out_dim, groups_per_row),
-        DType::F32,
-        BufferFlags::STORAGE,
-    )
-    .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
+    let mut sc_buf = pool.checkout(Shape::dim2(out_dim, groups_per_row))?;
     sc_buf
         .copy_from_host(&scales)
         .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
@@ -1379,15 +1498,22 @@ fn quant_layer_gemm(
     .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
 
     // dequant(W^T) @ act^T → [out_dim, 1]; reshape to [1, out_dim].
-    let result = quant_k
-        .execute(&a_buf, &b_buf, &sc_buf, &zp_buf)
+    let mut r_buf = pool.checkout_2d(out_dim, 1)?;
+    r_buf = quant_k
+        .execute_into(&a_buf, &b_buf, &sc_buf, &zp_buf, Some(r_buf))
         .map_err(|e| TptrError::new(ErrorCode::LaunchFailure, e.to_string()))?;
 
     // Transpose [out_dim, 1] → [1, out_dim].
     let mut out_raw = vec![0.0f32; out_dim];
-    let rn = out_raw.len().min(result.num_elements());
-    let _ = result.copy_to_host(&mut out_raw[..rn]);
-    vec_to_buf(out_raw, 1, out_dim)
+    let rn = out_raw.len().min(r_buf.num_elements());
+    let _ = r_buf.copy_to_host(&mut out_raw[..rn]);
+
+    // Recycle the f32 scratch buffers back to the pool.
+    pool.release(b_buf);
+    pool.release(sc_buf);
+    pool.release(r_buf);
+
+    vec_to_buf_pool(out_raw, 1, out_dim, pool)
 }
 
 /// Expand GQA/MQA KV head layout to match the full query-head count.
@@ -1576,6 +1702,7 @@ fn buf_to_vec(buf: &GpuBuffer<f32>) -> Vec<f32> {
 }
 
 /// Create a `GpuBuffer<f32>` of shape `[rows, cols]` from a `Vec<f32>`.
+#[allow(dead_code)]
 fn vec_to_buf(data: Vec<f32>, rows: usize, cols: usize) -> TptrResult<GpuBuffer<f32>> {
     let mut buf = GpuBuffer::<f32>::new(Shape::dim2(rows, cols), DType::F32, BufferFlags::STORAGE)
         .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
@@ -1588,6 +1715,7 @@ fn vec_to_buf(data: Vec<f32>, rows: usize, cols: usize) -> TptrResult<GpuBuffer<
 }
 
 /// Elementwise addition of two `[1, dim]` buffers, host-side.
+#[allow(dead_code)]
 fn elementwise_add_2d(
     a: &GpuBuffer<f32>,
     b: &GpuBuffer<f32>,
@@ -1606,6 +1734,7 @@ fn elementwise_add_2d(
 
 /// SwiGLU activation: result[i] = silu(gate[i]) * up[i].
 /// Both `gate` and `up` are `[1, ffn_dim]` buffers.
+#[allow(dead_code)]
 fn swiglu_host(
     gate: &GpuBuffer<f32>,
     up: &GpuBuffer<f32>,
@@ -1622,6 +1751,67 @@ fn swiglu_host(
         *gi = silu * ui;
     }
     vec_to_buf(g, 1, ffn_dim)
+}
+
+/// Create a `GpuBuffer<f32>` of shape `[rows, cols]` from a `Vec<f32>`, drawing
+/// the buffer from `pool` (reused if an identically-shaped one is available).
+fn vec_to_buf_pool(
+    data: Vec<f32>,
+    rows: usize,
+    cols: usize,
+    pool: &mut ScratchPool,
+) -> TptrResult<GpuBuffer<f32>> {
+    let mut buf = pool.checkout_2d(rows, cols)?;
+    let n = (rows * cols).min(data.len());
+    let mut padded = vec![0.0f32; rows * cols];
+    padded[..n].copy_from_slice(&data[..n]);
+    buf.copy_from_host(&padded)
+        .map_err(|e| TptrError::new(ErrorCode::AllocationFailure, e.to_string()))?;
+    Ok(buf)
+}
+
+/// Elementwise addition of two `[1, dim]` buffers, written **in place** into
+/// `out` (which must already have shape `[1, dim]`). Avoids allocating a new
+/// buffer on the residual-add hot path.
+#[allow(dead_code)]
+fn elementwise_add_into(
+    a: &GpuBuffer<f32>,
+    b: &GpuBuffer<f32>,
+    dim: usize,
+    out: &mut GpuBuffer<f32>,
+) {
+    let mut va = vec![0.0f32; dim];
+    let mut vb = vec![0.0f32; dim];
+    let _ = a.copy_to_host(&mut va);
+    let bn = vb.len().min(b.num_elements());
+    let _ = b.copy_to_host(&mut vb[..bn]);
+    for (x, y) in va.iter_mut().zip(vb.iter()) {
+        *x += y;
+    }
+    let n = va.len().min(out.num_elements());
+    let _ = out.copy_from_host(&va[..n]);
+}
+
+/// SwiGLU activation computed **in place** into `out` (shape `[1, ffn_dim]`).
+#[allow(dead_code)]
+fn swiglu_host_into(
+    gate: &GpuBuffer<f32>,
+    up: &GpuBuffer<f32>,
+    ffn_dim: usize,
+    out: &mut GpuBuffer<f32>,
+) {
+    let mut g = vec![0.0f32; ffn_dim];
+    let mut u = vec![0.0f32; ffn_dim];
+    let gn = g.len().min(gate.num_elements());
+    let _ = gate.copy_to_host(&mut g[..gn]);
+    let un = u.len().min(up.num_elements());
+    let _ = up.copy_to_host(&mut u[..un]);
+    for (gi, ui) in g.iter_mut().zip(u.iter()) {
+        let silu = *gi / (1.0 + (-*gi).exp()); // silu(x) = x * sigmoid(x)
+        *gi = silu * ui;
+    }
+    let n = g.len().min(out.num_elements());
+    let _ = out.copy_from_host(&g[..n]);
 }
 
 /// Tied lm_head: compute logits as hidden @ embed_table^T (host-side).

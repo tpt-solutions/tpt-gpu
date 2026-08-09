@@ -118,6 +118,77 @@ impl AttentionKernel {
         Ok(output)
     }
 
+    /// Pool-friendly variant of [`AttentionKernel::execute`].
+    ///
+    /// When `out` is `Some(buf)`, `buf` (which must already have shape
+    /// `[q_len, d_v]`) is reused as the output and returned, avoiding a fresh
+    /// allocation. The host fallback fully overwrites the output, so reuse is
+    /// numerically safe.
+    pub fn execute_into(
+        &self,
+        q: &GpuBuffer<f32>,
+        k: &GpuBuffer<f32>,
+        v: &GpuBuffer<f32>,
+        scale: Option<f32>,
+        _mask: Option<&GpuBuffer<f32>>,
+        out: Option<GpuBuffer<f32>>,
+    ) -> TptpResult<GpuBuffer<f32>> {
+        if q.ndim() != 2 || k.ndim() != 2 || v.ndim() != 2 {
+            return Err(TptpError::shape_error("Attention requires 2D tensors"));
+        }
+        let q_len = q
+            .dim(0)
+            .ok_or_else(|| TptpError::shape_error("Q has no dim 0"))?;
+        let d_k = q
+            .dim(1)
+            .ok_or_else(|| TptpError::shape_error("Q has no dim 1"))?;
+        let kv_len = k
+            .dim(0)
+            .ok_or_else(|| TptpError::shape_error("K has no dim 0"))?;
+        let d_v = v
+            .dim(1)
+            .ok_or_else(|| TptpError::shape_error("V has no dim 1"))?;
+        if k.dim(1) != Some(d_k) {
+            return Err(TptpError::shape_error("K head_dim must match Q head_dim"));
+        }
+        if v.dim(0) != Some(kv_len) {
+            return Err(TptpError::shape_error("V kv_len must match K kv_len"));
+        }
+        let scale_val = scale.unwrap_or_else(|| 1.0 / (d_k as f32).sqrt());
+        let mut output = match out {
+            Some(buf) => {
+                if buf.dim(0) != Some(q_len) || buf.dim(1) != Some(d_v) {
+                    return Err(TptpError::shape_error(format!(
+                        "out shape [{},{}] does not match attention output [{},{}]",
+                        buf.dim(0).unwrap_or(0),
+                        buf.dim(1).unwrap_or(0),
+                        q_len,
+                        d_v
+                    )));
+                }
+                buf
+            }
+            None => GpuBuffer::new(Shape::dim2(q_len, d_v), DType::F32, BufferFlags::STORAGE)?,
+        };
+        let t0 = Instant::now();
+        if self.vendor.supports_attention() && q_len == kv_len {
+            self.vendor
+                .attention(q, k, v, &mut output, scale_val, q_len, d_k)?;
+        } else {
+            self.tptir_fallback_attention(q, k, v, &mut output, scale_val, q_len, kv_len, d_k)?;
+        }
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        log::debug!(
+            "Attention q_len={} kv_len={} d_k={} via {}: {:.3}ms",
+            q_len,
+            kv_len,
+            d_k,
+            self.vendor.name(),
+            elapsed_ms
+        );
+        Ok(output)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn tptir_fallback_attention(
         &self,

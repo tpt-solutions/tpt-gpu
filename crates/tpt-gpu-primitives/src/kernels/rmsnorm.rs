@@ -100,7 +100,8 @@ impl RmsNormKernel {
             .map(|d| input.dim(d).unwrap_or(1))
             .product();
         let t0 = Instant::now();
-        self.tptir_rmsnorm(input, gamma, batch, norm_size)?;
+        let mut output = GpuBuffer::new(input.shape().clone(), DType::F32, BufferFlags::STORAGE)?;
+        self.tptir_rmsnorm(input, gamma, &mut output, batch, norm_size)?;
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         log::debug!(
             "RMSNorm [{}x{}] via TPTIR: {:.3}ms",
@@ -108,13 +109,75 @@ impl RmsNormKernel {
             norm_size,
             elapsed_ms
         );
-        GpuBuffer::new(input.shape().clone(), DType::F32, BufferFlags::STORAGE)
+        Ok(output)
+    }
+
+    /// Pool-friendly variant of [`RmsNormKernel::execute`].
+    ///
+    /// When `out` is `Some(buf)`, `buf` (which must already have the same shape as
+    /// `input`) is reused as the output and returned, avoiding a fresh allocation.
+    pub fn execute_into(
+        &self,
+        input: &GpuBuffer<f32>,
+        gamma: &GpuBuffer<f32>,
+        out: Option<GpuBuffer<f32>>,
+    ) -> TptpResult<GpuBuffer<f32>> {
+        if input.ndim() < 1 {
+            return Err(TptpError::shape_error(
+                "RMSNorm: input must be at least 1-D",
+            ));
+        }
+        let norm_size = input
+            .dim(input.ndim() - 1)
+            .ok_or_else(|| TptpError::shape_error("RMSNorm: cannot determine norm_size"))?;
+        if gamma.num_elements() != norm_size {
+            return Err(TptpError::ShapeError {
+                message: format!(
+                    "gamma length ({}) must match norm_size ({})",
+                    gamma.num_elements(),
+                    norm_size
+                ),
+                expected: Some(norm_size.to_string()),
+                got: Some(gamma.num_elements().to_string()),
+            });
+        }
+        let batch: usize = (0..input.ndim() - 1)
+            .map(|d| input.dim(d).unwrap_or(1))
+            .product();
+        let mut output = match out {
+            Some(b) => {
+                if b.shape() != input.shape() {
+                    return Err(TptpError::ShapeError {
+                        message: format!(
+                            "out shape {} does not match input shape {}",
+                            b.shape(),
+                            input.shape()
+                        ),
+                        expected: Some(input.shape().to_string()),
+                        got: Some(b.shape().to_string()),
+                    });
+                }
+                b
+            }
+            None => GpuBuffer::new(input.shape().clone(), DType::F32, BufferFlags::STORAGE)?,
+        };
+        let t0 = Instant::now();
+        self.tptir_rmsnorm(input, gamma, &mut output, batch, norm_size)?;
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        log::debug!(
+            "RMSNorm [{}x{}] via TPTIR: {:.3}ms",
+            batch,
+            norm_size,
+            elapsed_ms
+        );
+        Ok(output)
     }
 
     fn tptir_rmsnorm(
         &self,
         _input: &GpuBuffer<f32>,
         _gamma: &GpuBuffer<f32>,
+        output: &mut GpuBuffer<f32>,
         _batch: usize,
         _norm_size: usize,
     ) -> TptpResult<()> {
@@ -125,6 +188,9 @@ impl RmsNormKernel {
             self.params.block_size,
             self.params.epsilon
         );
+        // Soft-fallback is not yet numerically implemented; zero the output so that
+        // a pooled/reused buffer is deterministic (matches a fresh allocation).
+        output.zero();
         Ok(())
     }
 }

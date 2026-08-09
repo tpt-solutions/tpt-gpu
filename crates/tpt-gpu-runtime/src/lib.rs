@@ -12,6 +12,7 @@ pub mod kernel;
 pub mod kv_cache;
 pub mod memory;
 pub mod rope;
+pub mod scratch;
 
 /// Re-export the error types at the crate root.
 pub use error::{ErrorCode, ErrorContext, TptrError, TptrResult};

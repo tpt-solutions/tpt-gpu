@@ -95,7 +95,8 @@ impl SoftmaxKernel {
             .map(|d| input.dim(d).unwrap_or(1))
             .product();
         let t0 = Instant::now();
-        self.tptir_softmax(input, batch, dim_size)?;
+        let mut output = GpuBuffer::new(input.shape().clone(), DType::F32, BufferFlags::STORAGE)?;
+        self.tptir_softmax(input, &mut output, batch, dim_size)?;
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         log::debug!(
             "Softmax [{}x{}] dim={} via TPTIR: {:.3}ms",
@@ -104,12 +105,73 @@ impl SoftmaxKernel {
             axis,
             elapsed_ms
         );
-        GpuBuffer::new(input.shape().clone(), DType::F32, BufferFlags::STORAGE)
+        Ok(output)
+    }
+
+    /// Pool-friendly variant of [`SoftmaxKernel::execute`].
+    ///
+    /// When `out` is `Some(buf)`, `buf` (which must already have the same shape as
+    /// `input`) is reused as the output and returned, avoiding a fresh allocation.
+    pub fn execute_into(
+        &self,
+        input: &GpuBuffer<f32>,
+        out: Option<GpuBuffer<f32>>,
+    ) -> TptpResult<GpuBuffer<f32>> {
+        if input.ndim() < 1 {
+            return Err(TptpError::shape_error(
+                "Softmax: input must be at least 1-D",
+            ));
+        }
+        let ndim = input.ndim();
+        let axis = if self.params.dim < 0 {
+            (ndim as i32 + self.params.dim) as usize
+        } else {
+            self.params.dim as usize
+        };
+        if axis >= ndim {
+            return Err(TptpError::shape_error("Softmax: dim out of range"));
+        }
+        let dim_size = input
+            .dim(axis)
+            .ok_or_else(|| TptpError::shape_error("Softmax: cannot determine dim_size"))?;
+        let batch: usize = (0..ndim)
+            .filter(|&d| d != axis)
+            .map(|d| input.dim(d).unwrap_or(1))
+            .product();
+        let mut output = match out {
+            Some(b) => {
+                if b.shape() != input.shape() {
+                    return Err(TptpError::ShapeError {
+                        message: format!(
+                            "out shape {} does not match input shape {}",
+                            b.shape(),
+                            input.shape()
+                        ),
+                        expected: Some(input.shape().to_string()),
+                        got: Some(b.shape().to_string()),
+                    });
+                }
+                b
+            }
+            None => GpuBuffer::new(input.shape().clone(), DType::F32, BufferFlags::STORAGE)?,
+        };
+        let t0 = Instant::now();
+        self.tptir_softmax(input, &mut output, batch, dim_size)?;
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        log::debug!(
+            "Softmax [{}x{}] dim={} via TPTIR: {:.3}ms",
+            batch,
+            dim_size,
+            axis,
+            elapsed_ms
+        );
+        Ok(output)
     }
 
     fn tptir_softmax(
         &self,
         _input: &GpuBuffer<f32>,
+        output: &mut GpuBuffer<f32>,
         _batch: usize,
         _dim_size: usize,
     ) -> TptpResult<()> {
@@ -119,6 +181,9 @@ impl SoftmaxKernel {
             _dim_size,
             self.params.block_size
         );
+        // Soft-fallback is not yet numerically implemented; zero the output so that
+        // a pooled/reused buffer is deterministic (matches a fresh allocation).
+        output.zero();
         Ok(())
     }
 }

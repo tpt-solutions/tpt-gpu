@@ -152,6 +152,69 @@ impl GemmKernel {
         }
     }
 
+    /// Pool-friendly variant of [`GemmKernel::execute`].
+    ///
+    /// When `out` is `Some(buf)`, `buf` is used as the output buffer (its shape
+    /// must be `[m, n]`) and is returned. When `out` is `None` a fresh buffer is
+    /// allocated. This lets callers recycle `GpuBuffer`s from a `ScratchPool`
+    /// instead of allocating a new one for every GEMM on the inference hot path.
+    pub fn execute_into(
+        &self,
+        a: &GpuBuffer<f32>,
+        b: &GpuBuffer<f32>,
+        out: Option<GpuBuffer<f32>>,
+        alpha: f32,
+        beta: f32,
+    ) -> TptpResult<GpuBuffer<f32>> {
+        if a.ndim() != 2 || b.ndim() != 2 {
+            return Err(TptpError::shape_error("GEMM requires 2D matrices"));
+        }
+        let m = a
+            .dim(0)
+            .ok_or_else(|| TptpError::shape_error("A has no dim 0"))?;
+        let k_a = a
+            .dim(1)
+            .ok_or_else(|| TptpError::shape_error("A has no dim 1"))?;
+        let k_b = b
+            .dim(0)
+            .ok_or_else(|| TptpError::shape_error("B has no dim 0"))?;
+        let n = b
+            .dim(1)
+            .ok_or_else(|| TptpError::shape_error("B has no dim 1"))?;
+        if k_a != k_b {
+            return Err(TptpError::ShapeError {
+                message: format!(
+                    "inner dimensions must match: A is {}x{}, B is {}x{}",
+                    m, k_a, k_b, n
+                ),
+                expected: Some(k_a.to_string()),
+                got: Some(k_b.to_string()),
+            });
+        }
+        let k = k_a;
+        let mut output = match out {
+            Some(buf) => {
+                if buf.dim(0) != Some(m) || buf.dim(1) != Some(n) {
+                    return Err(TptpError::shape_error(format!(
+                        "out shape [{},{}] does not match output [{},{}]",
+                        buf.dim(0).unwrap_or(0),
+                        buf.dim(1).unwrap_or(0),
+                        m,
+                        n
+                    )));
+                }
+                buf
+            }
+            None => GpuBuffer::new(Shape::dim2(m, n), DType::F32, BufferFlags::STORAGE)?,
+        };
+        if self.vendor.supports_gemm() {
+            self.vendor.gemm(a, b, &mut output, alpha, beta, m, n, k)?;
+        } else {
+            self.tptir_fallback_gemm(a, b, &mut output, alpha, beta, m, n, k)?;
+        }
+        Ok(output)
+    }
+
     /// Host-side scalar reference implementation, used when no vendor GPU
     /// backend is available (e.g. dev machines / CI without CUDA or ROCm).
     /// Computes `output = alpha * A@B + beta * output`.
