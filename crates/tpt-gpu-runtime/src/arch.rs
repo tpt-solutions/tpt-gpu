@@ -417,6 +417,7 @@ mod tests {
             per_layer_bits: Vec::new(),
             pruning_mask: None,
             rope_freq_base: None,
+            tokenizer: None,
         }
     }
 

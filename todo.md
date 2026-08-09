@@ -539,17 +539,18 @@
 **Context:** `tpt-serve` (Phase 14) currently uses a `WordTokenizer` placeholder — a session-local, reversible-within-a-session scheme. Generated token ids therefore render as `<id>` placeholders instead of real text, and prompts are mapped to arbitrary ids. To emit actual model text the runtime must parse and expose the model's GGUF tokenizer (vocab + BPE merges + special tokens) and the server must use it. Investigation notes: `parse_gguf_header` already recognizes `tokenizer.ggml.tokens` as a GGUF `Array` but only counts `vocab_size` and skips the contents; `GgufType::Array` (code 9) elements are read by `skip_value`, and STRING-array elements can be read with `read_gguf_string`. GGUF keeps the vocab in `tokenizer.ggml.tokens` (STRING array, index = token id), merges in `tokenizer.ggml.merges` (STRING array `"a b"`), and `bos/eos/unknown_token_id` + `add_bos_token`/`add_eos_token` as scalars.
 
 ### Tasks
-- [ ] Add `Tokenizer` struct (`vocab: Vec<String>`, `merges: Vec<(String,String)>`, `bos/eos/unk: u32`, `add_bos/add_eos: bool`, `model: String`) in a new `crates/tpt-gpu-runtime/src/tokenizer.rs`.
-- [ ] Extend `parse_gguf_header` to fully read tokenizer metadata: `tokenizer.ggml.model` (String), `tokenizer.ggml.tokens` (STRING array → vocab), `tokenizer.ggml.merges` (STRING array → merges), `tokenizer.ggml.bos_token_id`/`eos_token_id`/`unknown_token_id` (Uint32), `tokenizer.ggml.add_bos_token`/`add_eos_token` (Bool). Stop only counting `vocab_size` from the tokens array.
-- [ ] Store the parsed `Tokenizer` on `ModelInfo.tokenizer: Option<Tokenizer>` and expose it via `GpuInferenceEngine::tokenizer() -> Option<&Tokenizer>` (set in `load_with_vendor`).
-- [ ] Implement `Tokenizer::encode` (pretokenize + apply BPE merges in rank order, byte-fallback for unknown symbols) and `Tokenizer::decode` (concatenate token strings; decode `<0xXX>` byte-fallback tokens to bytes).
-- [ ] Re-export `Tokenizer` from the `tpt-gpu-runtime` crate root.
-- [ ] Wire `tpt-serve` to use `engine.tokenizer()` when present and fall back to `WordTokenizer` only when absent (e.g. TPTF models without a tokenizer); update the placeholder comments in `tokenizer.rs`/`server.rs`.
-- [ ] Add runtime unit tests for `Tokenizer` encode/decode round-trip using a synthetic GGUF vocab + merges.
-- [ ] Add/update the `tpt-serve` integration test to build a GGUF with a small vocab + merges and assert `/v1/completions` returns real (non-`<id>`) text.
+- [x] Add `Tokenizer` struct (`vocab: Vec<String>`, `merges: Vec<(String,String)>`, `bos/eos/unk: u32`, `add_bos/add_eos: bool`, `model: String`) in a new `crates/tpt-gpu-runtime/src/tokenizer.rs`.
+- [x] Extend `parse_gguf_header` to fully read tokenizer metadata: `tokenizer.ggml.model` (String), `tokenizer.ggml.tokens` (STRING array → vocab), `tokenizer.ggml.merges` (STRING array → merges), `tokenizer.ggml.bos_token_id`/`eos_token_id`/`unknown_token_id` (Uint32), `tokenizer.ggml.add_bos_token`/`add_eos_token` (Bool). Stop only counting `vocab_size` from the tokens array.
+- [x] Store the parsed `Tokenizer` on `ModelInfo.tokenizer: Option<Tokenizer>` and expose it via `GpuInferenceEngine::tokenizer() -> Option<&Tokenizer>` (set in `load_with_vendor`).
+- [x] Implement `Tokenizer::encode` (pretokenize + apply BPE merges in rank order, byte-fallback for unknown symbols) and `Tokenizer::decode` (concatenate token strings; decode `<0xXX>` byte-fallback tokens to bytes).
+- [x] Re-export `Tokenizer` from the `tpt-gpu-runtime` crate root.
+- [x] Wire `tpt-serve` to use `engine.tokenizer()` when present and fall back to `WordTokenizer` only when absent (e.g. TPTF models without a tokenizer); update the placeholder comments in `tokenizer.rs`/`server.rs`.
+- [x] Add runtime unit tests for `Tokenizer` encode/decode round-trip using a synthetic GGUF vocab + merges.
+- [x] Add/update the `tpt-serve` integration test to build a GGUF with a small vocab + merges and assert `/v1/completions` returns real (non-`<id>`) text.
 
 ### Verification (target)
-- `cargo test -p tpt-gpu-runtime` — includes new `tokenizer` tests
-- `cargo test -p tpt-gpu-serve` — integration test asserts real-text decode
+- `cargo test -p tpt-gpu-runtime` — 79 passed (incl. `parse_extracts_tokenizer_and_round_trips` + `tokenizer` module tests)
+- `cargo test -p tpt-gpu-serve` — `serve_completions_returns_openai_shape` asserts real-text decode (`world` x4, no `<id>` placeholders)
 - `cargo clippy -p tpt-gpu-runtime --lib --tests -- -D warnings` — clean
 - `cargo clippy -p tpt-gpu-serve --all-targets -- -D warnings` — clean
+- `cargo build --workspace` — clean

@@ -13,6 +13,7 @@ pub mod kv_cache;
 pub mod memory;
 pub mod rope;
 pub mod scratch;
+pub mod tokenizer;
 
 /// Re-export the error types at the crate root.
 pub use error::{ErrorCode, ErrorContext, TptrError, TptrResult};
@@ -31,6 +32,9 @@ pub use kernel::{Dim3, Kernel, KernelConfig, KernelHandle, KernelLaunchMode};
 
 /// Re-export inference types at the crate root.
 pub use inference::{parse_gguf_header, GpuInferenceEngine, LlmInference, ModelInfo};
+
+/// Re-export the tokenizer at the crate root.
+pub use tokenizer::Tokenizer;
 
 /// Re-export arch-template types at the crate root.
 pub use arch::{template_for_arch, ArchTemplate, ForwardOp};

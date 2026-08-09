@@ -23,6 +23,8 @@ use tpt_gpu_primitives::{
     SoftmaxKernel, VendorBackend,
 };
 
+use crate::tokenizer::Tokenizer;
+
 use crate::arch::{template_for_arch, ArchTemplate, ForwardOp};
 use crate::error::{ErrorCode, TptrError, TptrResult};
 use crate::kv_cache::KvCache;
@@ -63,6 +65,10 @@ pub struct ModelInfo {
     /// header. When `Some`, overrides the per-architecture default base so
     /// non-standard configs still get the correct rotation. `None` => default.
     pub rope_freq_base: Option<f32>,
+    /// Model tokenizer parsed from GGUF `tokenizer.ggml.*` metadata. `None` when
+    /// the model file carries no tokenizer (e.g. TPTF without a tokenizer section)
+    /// or when the parser is not yet wired to read one.
+    pub tokenizer: Option<Tokenizer>,
 }
 
 /// The on-disk format of a model file.
@@ -205,6 +211,19 @@ impl<'a> BufReader<'a> {
         String::from_utf8(bytes.to_vec()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 
+    /// Read a GGUF STRING-array value (u32 elem_type + u64 count + the count
+    /// strings) into a `Vec<String>`. Does not validate the elem type beyond
+    /// consuming it.
+    fn read_gguf_string_array(&mut self) -> io::Result<Vec<String>> {
+        let _elem_type = self.read_u32()?; // expected GgufType::String (8)
+        let count = self.read_u64()? as usize;
+        let mut out = Vec::with_capacity(count);
+        for _ in 0..count {
+            out.push(self.read_gguf_string()?);
+        }
+        Ok(out)
+    }
+
     /// Skip one GGUF value of the given type without parsing it into Rust.
     fn skip_value(&mut self, vtype: GgufType) -> io::Result<()> {
         match vtype {
@@ -303,6 +322,16 @@ pub fn parse_gguf_header(path: &Path) -> TptrResult<ModelInfo> {
     let mut vocab_size: u32 = 0;
     let mut rope_freq_base: Option<f32> = None;
 
+    // Tokenizer metadata (GGUF `tokenizer.ggml.*`).
+    let mut tok_model = String::new();
+    let mut tok_vocab: Vec<String> = Vec::new();
+    let mut tok_merges: Vec<(String, String)> = Vec::new();
+    let mut tok_bos: u32 = 0;
+    let mut tok_eos: u32 = 0;
+    let mut tok_unk: u32 = 0;
+    let mut tok_add_bos: bool = false;
+    let mut tok_add_eos: bool = false;
+
     for _ in 0..kv_count {
         let key = match r.read_gguf_string() {
             Ok(k) => k,
@@ -348,16 +377,41 @@ pub fn parse_gguf_header(path: &Path) -> TptrResult<ModelInfo> {
                 arr[..bytes.len().min(8)].copy_from_slice(&bytes[..bytes.len().min(8)]);
                 rope_freq_base = Some(f64::from_le_bytes(arr) as f32);
             }
+            "tokenizer.ggml.model" if vtype == GgufType::String => {
+                tok_model = r.read_gguf_string().unwrap_or_default();
+            }
             "tokenizer.ggml.tokens" if vtype == GgufType::Array => {
-                // Array: u32 elem_type + u64 count + elements
-                let _elem_type = r.read_u32().unwrap_or(0);
-                let count = r.read_u64().unwrap_or(0);
-                vocab_size = count as u32;
-                // Skip the array contents
-                let elem_t = GgufType::String; // tokens are strings
-                for _ in 0..count {
-                    let _ = r.skip_value(elem_t);
-                }
+                // STRING array: index = token id.
+                tok_vocab = r.read_gguf_string_array().unwrap_or_default();
+                vocab_size = tok_vocab.len() as u32;
+            }
+            "tokenizer.ggml.merges" if vtype == GgufType::Array => {
+                // STRING array of `"<left> <right>"` merge rules.
+                let raw = r.read_gguf_string_array().unwrap_or_default();
+                tok_merges = raw
+                    .iter()
+                    .map(|s| {
+                        let mut parts = s.splitn(3, ' ');
+                        let a = parts.next().unwrap_or("").to_string();
+                        let b = parts.next().unwrap_or("").to_string();
+                        (a, b)
+                    })
+                    .collect();
+            }
+            "tokenizer.ggml.bos_token_id" if vtype == GgufType::Uint32 => {
+                tok_bos = r.read_u32().unwrap_or(0);
+            }
+            "tokenizer.ggml.eos_token_id" if vtype == GgufType::Uint32 => {
+                tok_eos = r.read_u32().unwrap_or(0);
+            }
+            "tokenizer.ggml.unknown_token_id" if vtype == GgufType::Uint32 => {
+                tok_unk = r.read_u32().unwrap_or(0);
+            }
+            "tokenizer.ggml.add_bos_token" if vtype == GgufType::Bool => {
+                tok_add_bos = r.read_bool().unwrap_or(false);
+            }
+            "tokenizer.ggml.add_eos_token" if vtype == GgufType::Bool => {
+                tok_add_eos = r.read_bool().unwrap_or(false);
             }
             _ => {
                 if r.skip_value(vtype).is_err() {
@@ -384,6 +438,21 @@ pub fn parse_gguf_header(path: &Path) -> TptrResult<ModelInfo> {
         ffn_dim = hidden_dim * 8 / 3;
     } // typical Llama ratio
 
+    let tokenizer = if tok_vocab.is_empty() {
+        None
+    } else {
+        Some(Tokenizer::new(
+            tok_model,
+            tok_vocab,
+            tok_merges,
+            tok_bos,
+            tok_eos,
+            tok_unk,
+            tok_add_bos,
+            tok_add_eos,
+        ))
+    };
+
     Ok(ModelInfo {
         path: path.to_owned(),
         arch,
@@ -397,6 +466,7 @@ pub fn parse_gguf_header(path: &Path) -> TptrResult<ModelInfo> {
         per_layer_bits: Vec::new(),
         pruning_mask: None,
         rope_freq_base,
+        tokenizer,
     })
 }
 
@@ -532,6 +602,7 @@ pub fn parse_tptf_header(path: &Path) -> TptrResult<ModelInfo> {
         per_layer_bits,
         pruning_mask,
         rope_freq_base: None,
+        tokenizer: None,
     })
 }
 
@@ -915,6 +986,16 @@ pub struct GpuInferenceEngine {
     /// with [`ScratchPool::release`] so that repeated `forward_step` calls
     /// (one per generated token) do not reallocate host-side staging buffers.
     pool: ScratchPool,
+    /// Model tokenizer (parsed from GGUF `tokenizer.ggml.*`), if present.
+    /// `None` for models without a tokenizer (e.g. TPTF built without one).
+    tokenizer: Option<Tokenizer>,
+}
+
+impl GpuInferenceEngine {
+    /// Return the model's tokenizer, if the file carried one.
+    pub fn tokenizer(&self) -> Option<&Tokenizer> {
+        self.tokenizer.as_ref()
+    }
 }
 
 impl std::fmt::Debug for GpuInferenceEngine {
@@ -956,6 +1037,7 @@ impl GpuInferenceEngine {
         };
 
         let rope_config = rope_config_for_arch(&info.arch, &info);
+        let tokenizer = info.tokenizer.clone();
         let head_dim = (info.hidden_dim as usize / info.num_heads.max(1) as usize).max(1);
         let kv_cache = KvCache::new(
             info.num_layers,
@@ -979,6 +1061,7 @@ impl GpuInferenceEngine {
             rng_state: 0x853c49e6748fea9b,
             rope_config,
             pool: ScratchPool::new(),
+            tokenizer,
         })
     }
 }
@@ -1893,6 +1976,20 @@ mod tests {
                     buf.extend_from_slice(&4u32.to_le_bytes()); // UINT32
                     buf.extend_from_slice(&v.to_le_bytes());
                 }
+                GgufKvVal::StrArray(arr) => {
+                    buf.extend_from_slice(&9u32.to_le_bytes()); // ARRAY
+                    buf.extend_from_slice(&8u32.to_le_bytes()); // elem_type STRING
+                    buf.extend_from_slice(&(arr.len() as u64).to_le_bytes());
+                    for s in arr {
+                        let sb = s.as_bytes();
+                        buf.extend_from_slice(&(sb.len() as u64).to_le_bytes());
+                        buf.extend_from_slice(sb);
+                    }
+                }
+                GgufKvVal::Bool(b) => {
+                    buf.extend_from_slice(&7u32.to_le_bytes()); // BOOL
+                    buf.extend_from_slice(&[*b as u8]);
+                }
             }
         }
         fs::write(path, &buf).unwrap();
@@ -1901,6 +1998,8 @@ mod tests {
     enum GgufKvVal {
         Str(String),
         U32(u32),
+        StrArray(Vec<String>),
+        Bool(bool),
     }
 
     fn tmp(name: &str) -> PathBuf {
@@ -2004,6 +2103,62 @@ mod tests {
         assert_eq!(info.num_heads, 32);
         assert_eq!(info.num_kv_heads, 8);
         assert_eq!(info.num_layers, 32);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn parse_extracts_tokenizer_and_round_trips() {
+        let p = tmp("tokenizer.gguf");
+        write_gguf(
+            &p,
+            &[
+                ("general.architecture", GgufKvVal::Str("llama3".into())),
+                ("llm.context_length", GgufKvVal::U32(64)),
+                ("llm.embedding_length", GgufKvVal::U32(64)),
+                ("llm.attention.head_count", GgufKvVal::U32(4)),
+                ("llm.attention.head_count_kv", GgufKvVal::U32(2)),
+                ("llm.feed_forward_length", GgufKvVal::U32(128)),
+                ("llm.block_count", GgufKvVal::U32(2)),
+                (
+                    "tokenizer.ggml.model",
+                    GgufKvVal::Str("llama".into()),
+                ),
+                (
+                    "tokenizer.ggml.tokens",
+                    GgufKvVal::StrArray(vec![
+                        "h".into(),
+                        "e".into(),
+                        "l".into(),
+                        "o".into(),
+                        "ll".into(),
+                        " ".into(),
+                    ]),
+                ),
+                (
+                    "tokenizer.ggml.merges",
+                    GgufKvVal::StrArray(vec!["l l".into()]),
+                ),
+                ("tokenizer.ggml.bos_token_id", GgufKvVal::U32(1)),
+                ("tokenizer.ggml.eos_token_id", GgufKvVal::U32(2)),
+                ("tokenizer.ggml.unknown_token_id", GgufKvVal::U32(0)),
+                ("tokenizer.ggml.add_bos_token", GgufKvVal::Bool(false)),
+                ("tokenizer.ggml.add_eos_token", GgufKvVal::Bool(false)),
+            ],
+        );
+        let info = parse_gguf_header(&p).unwrap();
+        let tok = info.tokenizer.expect("tokenizer should be parsed");
+        assert_eq!(tok.model, "llama");
+        assert_eq!(tok.vocab_size(), 6);
+        assert_eq!(tok.bos, 1);
+        assert_eq!(tok.eos, 2);
+        assert!(!tok.add_bos);
+        assert!(!tok.add_eos);
+        // BPE merge "l"+"l" -> "ll" must be recorded.
+        assert_eq!(tok.merges, vec![("l".to_string(), "l".to_string())]);
+        // Encode/decode round-trip on real text.
+        let ids = tok.encode("hello");
+        assert_eq!(ids, vec![0, 1, 4, 3]); // h,e,ll,o
+        assert_eq!(tok.decode(&ids), "hello");
         let _ = fs::remove_file(&p);
     }
 
@@ -2350,6 +2505,7 @@ mod tests {
             per_layer_bits: vec![],
             pruning_mask: None,
             rope_freq_base: None,
+            tokenizer: None,
         };
 
         // Identity embed table: embedding(token t) = e_t (unit vector).
@@ -2405,6 +2561,7 @@ mod tests {
             rng_state: 0x853c49e6748fea9b,
             rope_config: rope_config_for_arch(&info.arch, &info),
             pool: ScratchPool::new(),
+            tokenizer: None,
         };
         (engine, info)
     }

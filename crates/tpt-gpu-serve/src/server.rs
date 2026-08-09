@@ -1,6 +1,6 @@
 //! OpenAI-compatible HTTP server for TPT GPU LLM inference.
 //!
-//! Implements a small, dependency-free HTTP/1.1 server (built on `std::net`)
+//! Implements a small, dependencies-free HTTP/1.1 server (built on `std::net`)
 //! exposing the subset of the OpenAI REST API needed to drive the runtime from
 //! standard OpenAI client libraries:
 //!
@@ -9,8 +9,9 @@
 //! - `POST /v1/chat/completions`
 //!
 //! Both streaming (`stream: true`, Server-Sent Events) and non-streaming
-//! responses are supported. Tokenization uses the placeholder [`WordTokenizer`]
-//! until a real model vocabulary is wired in (see `tokenizer.rs`).
+//! responses are supported. Tokenization uses the model's real GGUF tokenizer
+//! (parsed by `tpt_gpu_runtime::Tokenizer`) when present, falling back to the
+//! placeholder [`WordTokenizer`] for models without one (e.g. TPTF files).
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -18,9 +19,34 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
-use tpt_gpu_runtime::{GpuInferenceEngine, LlmInference};
+use tpt_gpu_runtime::{GpuInferenceEngine, LlmInference, Tokenizer};
 
 use crate::tokenizer::WordTokenizer;
+
+/// Common interface implemented by both the real [`Tokenizer`] and the
+/// placeholder [`WordTokenizer`] so `handle_completion` can treat them uniformly.
+trait TokenCodec {
+    fn encode(&mut self, text: &str) -> Vec<u32>;
+    fn decode(&self, ids: &[u32]) -> String;
+}
+
+impl TokenCodec for WordTokenizer {
+    fn encode(&mut self, text: &str) -> Vec<u32> {
+        WordTokenizer::encode(self, text)
+    }
+    fn decode(&self, ids: &[u32]) -> String {
+        WordTokenizer::decode(self, ids)
+    }
+}
+
+impl TokenCodec for Tokenizer {
+    fn encode(&mut self, text: &str) -> Vec<u32> {
+        Tokenizer::encode(self, text)
+    }
+    fn decode(&self, ids: &[u32]) -> String {
+        Tokenizer::decode(self, ids)
+    }
+}
 
 /// Bind the server and handle connections until the process exits.
 pub fn run(
@@ -124,8 +150,16 @@ fn handle_completion(
         .unwrap_or(model_name)
         .to_string();
 
-    let vocab = state.lock().unwrap().model_info().vocab_size;
-    let mut tok = WordTokenizer::new(vocab);
+    let (vocab, real_tokenizer) = {
+        let st = state.lock().unwrap();
+        (st.model_info().vocab_size, st.tokenizer().cloned())
+    };
+    // Use the model's real GGUF tokenizer when present; otherwise fall back to
+    // the placeholder WordTokenizer (e.g. for TPTF models without a tokenizer).
+    let mut codec: Box<dyn TokenCodec + Send + Sync> = match real_tokenizer {
+        Some(t) => Box::new(t),
+        None => Box::new(WordTokenizer::new(vocab)),
+    };
 
     // Resolve the prompt to token ids.
     let prompt_tokens: Vec<u32> = if let Some(arr) = req.get("prompt_tokens").and_then(|v| v.as_array())
@@ -161,7 +195,7 @@ fn handle_completion(
         if text.trim().is_empty() {
             vec![0]
         } else {
-            tok.encode(&text)
+            codec.encode(&text)
         }
     };
 
@@ -179,7 +213,7 @@ fn handle_completion(
     let infer_result = engine.infer(&prompt_tokens, max_tokens, |tok_id| {
         generated.push(tok_id);
         if stream_resp {
-            let piece = tok.decode(&[tok_id]);
+            let piece = codec.decode(&[tok_id]);
             let delta = if chat {
                 json!({ "role": "assistant", "content": piece })
             } else {
@@ -207,7 +241,7 @@ fn handle_completion(
         return Ok(());
     }
 
-    let text_out = tok.decode(&generated);
+    let text_out = codec.decode(&generated);
 
     if stream_resp {
         let final_chunk = json!({
