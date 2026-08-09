@@ -26,7 +26,7 @@ use tpt_gpu_primitives::{
 use crate::arch::{template_for_arch, ArchTemplate, ForwardOp};
 use crate::error::{ErrorCode, TptrError, TptrResult};
 use crate::kv_cache::KvCache;
-use crate::rope::RopeConfig;
+use crate::rope::{apply_rope, RopeConfig};
 use crate::scratch::ScratchPool;
 
 // ---------------------------------------------------------------------------
@@ -59,6 +59,10 @@ pub struct ModelInfo {
     /// Neuron indices zeroed by the surgical pruner, one `Vec<u32>` per layer.
     /// `None` means no pruning was applied.
     pub pruning_mask: Option<Vec<Vec<u32>>>,
+    /// RoPE base frequency from GGUF `llm.rope.freq_base`, if present in the model
+    /// header. When `Some`, overrides the per-architecture default base so
+    /// non-standard configs still get the correct rotation. `None` => default.
+    pub rope_freq_base: Option<f32>,
 }
 
 /// The on-disk format of a model file.
@@ -297,6 +301,7 @@ pub fn parse_gguf_header(path: &Path) -> TptrResult<ModelInfo> {
     let mut ffn_dim: u32 = 0;
     let mut num_layers: u32 = 0;
     let mut vocab_size: u32 = 0;
+    let mut rope_freq_base: Option<f32> = None;
 
     for _ in 0..kv_count {
         let key = match r.read_gguf_string() {
@@ -333,6 +338,15 @@ pub fn parse_gguf_header(path: &Path) -> TptrResult<ModelInfo> {
             }
             "llm.block_count" if vtype == GgufType::Uint32 => {
                 num_layers = r.read_u32().unwrap_or(0);
+            }
+            "llm.rope.freq_base" if vtype == GgufType::Float32 => {
+                rope_freq_base = Some(r.read_f32().unwrap_or(10_000.0));
+            }
+            "llm.rope.freq_base" if vtype == GgufType::Float64 => {
+                let bytes = r.read_bytes(8).unwrap_or(&[0u8; 8]);
+                let mut arr = [0u8; 8];
+                arr[..bytes.len().min(8)].copy_from_slice(&bytes[..bytes.len().min(8)]);
+                rope_freq_base = Some(f64::from_le_bytes(arr) as f32);
             }
             "tokenizer.ggml.tokens" if vtype == GgufType::Array => {
                 // Array: u32 elem_type + u64 count + elements
@@ -382,6 +396,7 @@ pub fn parse_gguf_header(path: &Path) -> TptrResult<ModelInfo> {
         num_layers,
         per_layer_bits: Vec::new(),
         pruning_mask: None,
+        rope_freq_base,
     })
 }
 
@@ -516,6 +531,7 @@ pub fn parse_tptf_header(path: &Path) -> TptrResult<ModelInfo> {
         num_layers,
         per_layer_bits,
         pruning_mask,
+        rope_freq_base: None,
     })
 }
 
@@ -819,44 +835,28 @@ impl ModelWeights {
 // ---------------------------------------------------------------------------
 
 /// Build the `RopeConfig` for a given model, deriving `head_dim` from
-/// `hidden_dim / num_heads` and `max_seq_len` from `context_len`.
+/// `hidden_dim / num_heads` and `max_seq_len` from `context_len`. The base
+/// frequency prefers the model's own `llm.rope.freq_base` when present, falling
+/// back to the standard per-architecture default otherwise.
 fn rope_config_for_arch(arch: &str, info: &ModelInfo) -> Option<RopeConfig> {
     let num_heads = info.num_heads.max(1) as usize;
     let head_dim = info.hidden_dim as usize / num_heads;
     let max_seq_len = info.context_len as usize;
-    match arch {
-        "llama3" => Some(RopeConfig {
-            head_dim,
-            base: 500_000.0,
-            max_seq_len,
-        }),
-        "llama" => Some(RopeConfig {
-            head_dim,
-            base: 10_000.0,
-            max_seq_len,
-        }),
-        "mistral" => Some(RopeConfig {
-            head_dim,
-            base: 10_000.0,
-            max_seq_len,
-        }),
-        "qwen2" | "qwen" => Some(RopeConfig {
-            head_dim,
-            base: 1_000_000.0,
-            max_seq_len,
-        }),
-        "phi3" => Some(RopeConfig {
-            head_dim,
-            base: 10_000.0,
-            max_seq_len,
-        }),
-        "gemma2" | "gemma" => Some(RopeConfig {
-            head_dim,
-            base: 10_000.0,
-            max_seq_len,
-        }),
-        _ => None,
-    }
+    let default_base: f32 = match arch {
+        "llama3" => 500_000.0,
+        "llama" => 10_000.0,
+        "mistral" => 10_000.0,
+        "qwen2" | "qwen" => 1_000_000.0,
+        "phi3" => 10_000.0,
+        "gemma2" | "gemma" => 10_000.0,
+        _ => return None,
+    };
+    let base = info.rope_freq_base.unwrap_or(default_base);
+    Some(RopeConfig {
+        head_dim,
+        base,
+        max_seq_len,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -905,11 +905,10 @@ pub struct GpuInferenceEngine {
     cancelled: Arc<Mutex<bool>>,
     /// xorshift64 PRNG state for temperature sampling (never zero).
     rng_state: u64,
-    /// RoPE configuration derived from the model architecture.
-    /// `None` only for architectures that do not use RoPE (none currently supported).
-    /// Staged for the KV-cache RoPE application gap (Phase 10 Priority-3); read is
-    /// intentionally deferred until that path is wired, so clippy does not flag it.
-    #[allow(dead_code)]
+    /// RoPE configuration derived from the model architecture (and optionally
+    /// the model's own `llm.rope.freq_base`). Applied to Q/K in `forward_step`
+    /// before each KV-cache append. `None` only for architectures that do not
+    /// use RoPE (none currently supported).
     rope_config: Option<RopeConfig>,
     /// Free-list pool of reusable `f32` scratch buffers for the inference hot
     /// path. Buffers are checked out via [`ScratchPool::checkout`] and returned
@@ -1125,13 +1124,26 @@ impl GpuInferenceEngine {
             proj_gemm!(normed, layer.v_proj, v, layer_bits, layer_idx);
             self.pool.release(normed);
 
-            // RoPE is enabled for this architecture (see `rope_config`), but the
-            // rotated K/V is not yet written into the KV cache — that is the
-            // Phase 10 Priority-3 gap. The decode position is the current
-            // KV-cache length (0-indexed: first token is position 0).
-            let _ = self.kv_cache.seq_len;
+            // Rotary Position Embedding (RoPE): apply to Q and K at the current
+            // decode position BEFORE caching K. Cached K must be position-encoded
+            // so every later decode step attends with the correct rotation.
+            // `pos` is 0-indexed: the first token occupies position 0.
+            let pos = self.kv_cache.seq_len;
+            let rope_cfg = self.rope_config.as_ref().ok_or_else(|| {
+                TptrError::new(
+                    ErrorCode::InternalError,
+                    format!("rope_config unset for arch {}", self.info.arch),
+                )
+            })?;
+            let mut q_vec = buf_to_vec(&q);
+            let mut k_vec = buf_to_vec(&k);
+            apply_rope(&mut q_vec, &mut k_vec, pos, rope_cfg);
+            q.copy_from_host(&q_vec)
+                .map_err(|e| TptrError::new(ErrorCode::LaunchFailure, e.to_string()))?;
+            k.copy_from_host(&k_vec)
+                .map_err(|e| TptrError::new(ErrorCode::LaunchFailure, e.to_string()))?;
 
-            // KV cache: append current step's K and V.
+            // KV cache: append current step's (already rotated) K and V.
             // After append, the token data is at position `kv_step - 1` but
             // seq_len only increments once the last layer has appended.
             // We use get_k_at / get_v_at with `kv_step` to read all positions
@@ -2262,5 +2274,251 @@ mod tests {
         let logits2 = vec![3.0f32, 1.0, 2.0, 5.0, 4.0];
         let idx2 = execute_sampling(&logits2, 2.0, 1);
         assert_eq!(idx2, 3, "top_k=1 should return argmax (3), got {}", idx2);
+    }
+
+    #[test]
+    fn forward_step_is_deterministic_and_recycles_pool() {
+        // A synthetic model with zeroed weights + greedy sampling (top_k=1) must
+        // produce a deterministic token, and the scratch pool must accumulate
+        // recycled buffers after a step (confirming the pool wiring works).
+        let p = tmp("fwd_det.gguf");
+        write_minimal_gguf(&p, "llama3");
+        let mut engine = GpuInferenceEngine::load(&p).unwrap();
+        // Run twice at the SAME decode position (cache reset between calls) so
+        // determinism is tested independent of RoPE position encoding.
+        let t1 = engine.forward_step(5).unwrap();
+        engine.kv_cache.reset();
+        let t2 = engine.forward_step(5).unwrap();
+        assert_eq!(t1, t2, "forward_step must be deterministic for the same token");
+        assert!(
+            !engine.pool.is_empty(),
+            "scratch pool should hold recycled buffers after a forward step"
+        );
+        let _ = fs::remove_file(&p);
+    }
+
+    // ----- RoPE wiring regression guard -----
+    //
+    // This test would have FAILED before the RoPE-in-forward_step fix: it builds
+    // a tiny model with known weights and asserts that the KV cache stores the
+    // *rotated* K (apply_rope applied at the correct decode position), not the
+    // raw projection output. Without RoPE the cached K is position-independent,
+    // so the pos-1 row would equal the pos-0 row.
+
+    fn identity_mat(rows: usize, cols: usize) -> Vec<f32> {
+        let mut m = vec![0.0f32; rows * cols];
+        for i in 0..rows.min(cols) {
+            m[i * cols + i] = 1.0;
+        }
+        m
+    }
+
+    /// Build a 2-D `[rows, cols]` `GpuBuffer` from a `Vec` (matches `alloc_f32`).
+    fn buf_2d(data: &[f32], rows: usize, cols: usize) -> GpuBuffer<f32> {
+        let mut b = alloc_f32(rows, cols).unwrap();
+        b.copy_from_host(data).unwrap();
+        b
+    }
+
+    /// Build a 1-D `[n]` `GpuBuffer` from a `Vec` (matches `alloc_f32_1d`).
+    fn buf_1d(data: &[f32]) -> GpuBuffer<f32> {
+        let mut b = alloc_f32_1d(data.len()).unwrap();
+        b.copy_from_host(data).unwrap();
+        b
+    }
+
+    /// Build a 1-layer engine with explicit, known weights so the K projection
+    /// output for token `t` is a predictable non-zero vector.
+    fn rope_test_engine() -> (GpuInferenceEngine, ModelInfo) {
+        let vocab = 4u32;
+        let hidden = 4usize;
+        let ffn = 4usize;
+        let num_heads = 2usize; // head_dim = hidden / num_heads = 2
+        let num_kv = 1usize; // kv_row = 2
+        let kv_row = num_kv * 2;
+
+        let info = ModelInfo {
+            path: PathBuf::new(),
+            arch: "llama3".into(),
+            context_len: 8,
+            vocab_size: vocab,
+            hidden_dim: hidden as u32,
+            num_heads: num_heads as u32,
+            num_kv_heads: num_kv as u32,
+            ffn_dim: ffn as u32,
+            num_layers: 1,
+            per_layer_bits: vec![],
+            pruning_mask: None,
+            rope_freq_base: None,
+        };
+
+        // Identity embed table: embedding(token t) = e_t (unit vector).
+        let mut embed = vec![0.0f32; vocab as usize * hidden];
+        for t in 0..vocab as usize {
+            embed[t * hidden + t] = 1.0;
+        }
+        let norm1 = vec![1.0f32; hidden];
+        let k_proj = identity_mat(hidden, kv_row);
+        let v_proj = identity_mat(hidden, kv_row);
+        let q_proj = identity_mat(hidden, hidden);
+        let zero_hh = vec![0.0f32; hidden * hidden];
+        let zero_hf = vec![0.0f32; hidden * ffn];
+        let zero_fh = vec![0.0f32; ffn * hidden];
+
+        let weights = ModelWeights {
+            embed_table: buf_2d(&embed, vocab as usize, hidden),
+            layers: vec![LayerWeights {
+                q_proj: buf_2d(&q_proj, hidden, hidden),
+                k_proj: buf_2d(&k_proj, hidden, kv_row),
+                v_proj: buf_2d(&v_proj, hidden, kv_row),
+                o_proj: buf_2d(&zero_hh, hidden, hidden),
+                gate_proj: buf_2d(&zero_hf, hidden, ffn),
+                up_proj: buf_2d(&zero_hf, hidden, ffn),
+                down_proj: buf_2d(&zero_fh, ffn, hidden),
+                norm1: buf_1d(&norm1),
+                norm2: buf_1d(&norm1),
+            }],
+            final_norm: buf_1d(&norm1),
+            // lm_head shape is [hidden, vocab] so logits = lm_head @ hidden.
+            lm_head: buf_2d(&embed, hidden, vocab as usize),
+            lm_head_tied: false,
+        };
+
+        let vendor = VendorBackend::detect();
+        let engine = GpuInferenceEngine {
+            info: info.clone(),
+            template: template_for_arch(&info.arch, &info).unwrap(),
+            weights,
+            embed_k: EmbeddingKernel::with_vendor(vendor.clone()),
+            rmsnorm_k: RmsNormKernel::with_vendor(vendor.clone()),
+            attn_k: AttentionKernel::with_vendor(vendor.clone()),
+            gemm_k: GemmKernel::with_vendor(vendor.clone()),
+            quant_gemm_k: QuantGemmKernel::with_vendor(vendor.clone()),
+            softmax_k: SoftmaxKernel::with_vendor(vendor.clone()),
+            kv_cache: KvCache::new(
+                info.num_layers,
+                info.context_len,
+                info.num_kv_heads,
+                (hidden / num_heads) as u32,
+            ),
+            cancelled: Arc::new(Mutex::new(false)),
+            rng_state: 0x853c49e6748fea9b,
+            rope_config: rope_config_for_arch(&info.arch, &info),
+            pool: ScratchPool::new(),
+        };
+        (engine, info)
+    }
+
+    /// Reference: raw K projection for token `t` (rmsnorm(e_t, gamma=1) → k_proj=I).
+    /// rms of a unit vector e_t over `hidden` dims is 1/sqrt(hidden), so the
+    /// rmsnorm output is `sqrt(hidden) * e_t`; k_proj=I keeps the first `kv_row`
+    /// components.
+    fn reference_raw_k(token: u32, hidden: usize, kv_row: usize) -> Vec<f32> {
+        let scale = (hidden as f32).sqrt();
+        let mut v = vec![0.0f32; kv_row];
+        let t = token as usize;
+        if t < kv_row {
+            v[t] = scale;
+        }
+        v
+    }
+
+    #[test]
+    fn rope_is_applied_to_kv_cache() {
+        let (mut engine, info) = rope_test_engine();
+        let hidden = info.hidden_dim as usize;
+        let kv_row = info.num_kv_heads as usize * (hidden / info.num_heads.max(1) as usize);
+        let rope_cfg = engine.rope_config.clone().unwrap();
+
+        // Decode token 0 at position 0.
+        let _ = engine.forward_step(0).unwrap();
+        let cached_pos0 = engine.kv_cache.get_k(0).to_vec();
+        let mut expected_pos0 = reference_raw_k(0, hidden, kv_row);
+        apply_rope(
+            &mut vec![0.0f32; kv_row],
+            &mut expected_pos0,
+            0,
+            &rope_cfg,
+        );
+        assert_eq!(
+            cached_pos0.len(),
+            kv_row,
+            "KV cache should hold exactly one token's K at position 0"
+        );
+        for (got, want) in cached_pos0.iter().zip(expected_pos0.iter()) {
+            assert!(
+                (got - want).abs() < 1e-4,
+                "cached K@pos0 mismatch: got {got}, expected {want}"
+            );
+        }
+
+        // Now seed position 0 with token 1, then decode token 0 at position 1.
+        // The KV cache must contain [K(tok1)@0, K(tok0)@1].
+        engine.kv_cache.reset();
+        let _ = engine.forward_step(1).unwrap();
+        let _ = engine.forward_step(0).unwrap();
+        let cached = engine.kv_cache.get_k(0).to_vec();
+        assert_eq!(cached.len(), 2 * kv_row, "expected two cached K rows");
+
+        let mut want_tok1 = reference_raw_k(1, hidden, kv_row);
+        apply_rope(&mut vec![0.0f32; kv_row], &mut want_tok1, 0, &rope_cfg);
+        for (got, want) in cached[..kv_row].iter().zip(want_tok1.iter()) {
+            assert!((got - want).abs() < 1e-4, "cached K@pos0 (tok1) mismatch");
+        }
+
+        let mut want_tok0_p1 = reference_raw_k(0, hidden, kv_row);
+        apply_rope(
+            &mut vec![0.0f32; kv_row],
+            &mut want_tok0_p1,
+            1,
+            &rope_cfg,
+        );
+        for (got, want) in cached[kv_row..].iter().zip(want_tok0_p1.iter()) {
+            assert!((got - want).abs() < 1e-4, "cached K@pos1 (tok0) mismatch");
+        }
+
+        // Critical regression guard: the K cached at position 1 must equal the
+        // *rotated* raw projection, and must NOT equal the unrotated raw K. If
+        // RoPE is ever removed from forward_step, this fails (cached K would be
+        // the raw, unrotated vector).
+        let raw_tok0 = reference_raw_k(0, hidden, kv_row);
+        for (got, raw) in cached[kv_row..].iter().zip(raw_tok0.iter()) {
+            assert!(
+                (got - raw).abs() > 1e-3,
+                "cached K@pos1 equals unrotated K — RoPE was not applied"
+            );
+        }
+    }
+
+    // ----- Numeric regression guard: deterministic golden generation -----
+    //
+    // Generates a fixed token sequence from the deterministic synthetic engine
+    // (arch template samples with top_k=1 → argmax, and every kernel on the
+    // path is numerically implemented). If any kernel silently regresses, the
+    // produced sequence drifts and this assertion fails. This is the runtime
+    // half of the CI numeric-regression gate.
+    #[test]
+    fn inference_generation_golden() {
+        let (mut engine, info) = rope_test_engine();
+        let vocab = info.vocab_size;
+        let max = 8;
+        let mut gen = Vec::new();
+        engine.kv_cache.reset();
+        let mut cur = 0u32;
+        for _ in 0..max {
+            let n = engine.forward_step(cur).unwrap();
+            gen.push(n);
+            cur = n;
+        }
+        assert_eq!(gen.len(), max, "should produce exactly max_new_tokens");
+        for &t in &gen {
+            assert!(t < vocab, "generated token {t} out of vocab range");
+        }
+        // Golden sequence (stable across runs; update only with intent).
+        assert_eq!(
+            gen,
+            vec![3, 3, 3, 3, 3, 3, 3, 3],
+            "numeric regression: generation output drifted from golden"
+        );
     }
 }

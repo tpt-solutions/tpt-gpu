@@ -1932,6 +1932,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tpt-gpu-serve"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tpt-gpu-runtime",
+]
+
+[[package]]
 name = "tpt-gpu-shared"
 version = "0.1.0"
 dependencies = [

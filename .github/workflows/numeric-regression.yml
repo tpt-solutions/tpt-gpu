@@ -1,0 +1,63 @@
+name: Numeric Regression Gate
+
+# Dedicated gate for *silent* numeric-correctness regressions in LLM inference.
+#
+# The TPT GPU runtime compiles and runs even when a kernel is numerically wrong
+# (the pre-fix state had RoPE never applied and embedding/rmsnorm as no-ops yet
+# every test still passed). This workflow runs the deterministic golden tests
+# that catch that class of bug:
+#   - `inference::tests::rope_is_applied_to_kv_cache`  (RoPE actually applied)
+#   - `inference::tests::inference_generation_golden`   (stable generated sequence)
+#   - `tpt-gpu-serve` end-to-end OpenAI-compatible request/response
+# If a kernel silently regresses, these assertions fail and the gate breaks.
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  numeric-regression:
+    name: Numeric correctness gate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        rust: [stable]
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ matrix.rust }}
+        components: clippy
+
+    - name: Cache cargo registry
+      uses: actions/cache@v6
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v6
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build tpt-gpu-runtime and tpt-gpu-serve
+      run: cargo build -p tpt-gpu-runtime -p tpt-gpu-serve
+
+    - name: Run runtime numeric golden tests
+      run: cargo test -p tpt-gpu-runtime --lib inference::tests::rope_is_applied_to_kv_cache inference::tests::inference_generation_golden -- --nocapture
+
+    - name: Run tpt-serve end-to-end server test
+      run: cargo test -p tpt-gpu-serve
+
+    - name: Run clippy on numeric-sensitive crates
+      run: cargo clippy -p tpt-gpu-runtime -p tpt-gpu-primitives -p tpt-gpu-serve --lib --tests -- -D warnings

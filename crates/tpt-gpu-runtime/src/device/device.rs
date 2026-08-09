@@ -6,7 +6,7 @@ use crate::kernel::launch::CompiledModule;
 use crate::kernel::{Dim3, Kernel, KernelConfig, KernelHandle};
 use crate::memory::{
     AllocatorStats, BackingBuffer, BuddyAllocator, GpuAllocator, MemAccess, MemType,
-    MemoryAllocation, MemoryRegion,
+    MemoryAllocation, MemoryRegion, RegionAllocatorStats,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -361,8 +361,17 @@ impl Device {
         self.arena.remove(allocation.device_ptr());
         self.allocator.free(allocation)
     }
-    pub fn allocator_stats(&self) -> AllocatorStats {
+    /// Aggregate allocator statistics, bucketed by [`MemoryRegion`].
+    ///
+    /// The `gpu.memory.*` telemetry exporter uses this to report VRAM (Global)
+    /// versus on-chip SRAM (Shared/Local/Constant) usage as independent gauges.
+    pub fn allocator_stats(&self) -> RegionAllocatorStats {
         self.allocator.stats()
+    }
+    /// Stats for a single [`MemoryRegion`], or a zeroed struct if no
+    /// allocation has touched that region yet.
+    pub fn region_stats(&self, region: MemoryRegion) -> AllocatorStats {
+        self.allocator.stats().region(region)
     }
     pub fn memcpy_htod(
         &self,

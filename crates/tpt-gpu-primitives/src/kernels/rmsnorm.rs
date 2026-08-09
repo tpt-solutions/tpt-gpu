@@ -175,22 +175,37 @@ impl RmsNormKernel {
 
     fn tptir_rmsnorm(
         &self,
-        _input: &GpuBuffer<f32>,
-        _gamma: &GpuBuffer<f32>,
+        input: &GpuBuffer<f32>,
+        gamma: &GpuBuffer<f32>,
         output: &mut GpuBuffer<f32>,
-        _batch: usize,
-        _norm_size: usize,
+        batch: usize,
+        norm_size: usize,
     ) -> TptpResult<()> {
         log::debug!(
             "TPTIR RMSNorm fallback: batch={}, norm_size={}, block_size={}, eps={}",
-            _batch,
-            _norm_size,
+            batch,
+            norm_size,
             self.params.block_size,
             self.params.epsilon
         );
-        // Soft-fallback is not yet numerically implemented; zero the output so that
-        // a pooled/reused buffer is deterministic (matches a fresh allocation).
-        output.zero();
+        // y = x / rms(x) * gamma,  rms(x) = sqrt(mean(x^2) + epsilon)
+        let total = batch * norm_size;
+        let mut inp = vec![0.0f32; total];
+        input.copy_to_host(&mut inp)?;
+        let mut g = vec![0.0f32; norm_size];
+        gamma.copy_to_host(&mut g)?;
+        let mut out = vec![0.0f32; total];
+        let eps = self.params.epsilon;
+        for b in 0..batch {
+            let start = b * norm_size;
+            let row = &inp[start..start + norm_size];
+            let mean_sq = row.iter().map(|x| x * x).sum::<f32>() / norm_size as f32;
+            let inv = 1.0 / (mean_sq + eps).sqrt();
+            for i in 0..norm_size {
+                out[start + i] = row[i] * inv * g[i];
+            }
+        }
+        output.copy_from_host(&out)?;
         Ok(())
     }
 }

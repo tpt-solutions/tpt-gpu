@@ -49,7 +49,7 @@ fi
 
 # ── 3. Quick sanity check ─────────────────────────────────────────────────────
 if [ -f "$BINARY" ]; then
-    info "Running: tpt --help"
+    info "Running: $BINARY --help"
     "$BINARY" --help 2>&1 | head -5 || true
 fi
 

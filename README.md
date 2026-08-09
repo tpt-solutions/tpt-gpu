@@ -35,7 +35,7 @@ cd tpt-gpu
 # Build the TPT Script compiler
 cargo build --release -p tpt-gpu-script-cli
 
-# The binary is at: target/release/tpt-gpu-script
+# Binaries produced: target/release/tpt  (and target/release/tpt-gpu-script)
 ```
 
 ### Your First TPT Script
@@ -51,7 +51,7 @@ fn relu(x: Tensor[f32, n]) -> Tensor[f32, n] {
 }
 ```
 
-Compile and check:
+Compile and check (the CLI installs as `tpt`; `tpt-gpu-script` is also produced by `cargo build`):
 
 ```bash
 # Type-check
@@ -215,7 +215,7 @@ cd crates/tpt-gpu-runtime && cargo publish
 
 ## Contributing
 
-This project takes contributions through [GitHub Issues](https://github.com/tpt-solutions/tpt-gpu/issues) only — pull requests are not accepted. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to report bugs, request features, or submit a community GPU tuning profile.
+We welcome contributions. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for how to report bugs, request features, submit pull requests, or contribute a community GPU tuning profile. For issues, use [GitHub Issues](https://github.com/tpt-solutions/tpt-gpu/issues).
 
 ---
 

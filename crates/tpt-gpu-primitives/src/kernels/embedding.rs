@@ -191,21 +191,39 @@ impl EmbeddingKernel {
     #[allow(clippy::too_many_arguments)]
     fn tptir_embedding(
         &self,
-        _weight: &GpuBuffer<f32>,
-        _indices: &GpuBuffer<i32>,
+        weight: &GpuBuffer<f32>,
+        indices: &GpuBuffer<i32>,
         output: &mut GpuBuffer<f32>,
-        _batch: usize,
-        _seq_len: usize,
-        _embed_dim: usize,
-        _vocab_size: usize,
+        batch: usize,
+        seq_len: usize,
+        embed_dim: usize,
+        vocab_size: usize,
     ) -> TptpResult<()> {
         log::debug!(
             "TPTIR Embedding fallback: batch={}, seq={}, embed_dim={}, vocab_size={}, block_size={}",
-            _batch, _seq_len, _embed_dim, _vocab_size, self.params.block_size
+            batch, seq_len, embed_dim, vocab_size, self.params.block_size
         );
-        // Soft-fallback is not yet numerically implemented; zero the output so that
-        // a pooled/reused buffer is deterministic (matches a fresh allocation).
-        output.zero();
+        // Gather: output[b, s, :] = weight[indices[b, s], :].
+        let mut w = vec![0.0f32; weight.num_elements()];
+        weight.copy_to_host(&mut w)?;
+        let mut idx = vec![0i32; indices.num_elements()];
+        indices.copy_to_host(&mut idx)?;
+        let mut out = vec![0.0f32; output.num_elements()];
+        for b in 0..batch {
+            for s in 0..seq_len {
+                let flat = b * seq_len + s;
+                let i = idx[flat] as usize;
+                let row = if i < vocab_size {
+                    i
+                } else {
+                    vocab_size.saturating_sub(1)
+                };
+                let wbase = row * embed_dim;
+                let obase = flat * embed_dim;
+                out[obase..obase + embed_dim].copy_from_slice(&w[wbase..wbase + embed_dim]);
+            }
+        }
+        output.copy_from_host(&out)?;
         Ok(())
     }
 }

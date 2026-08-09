@@ -23,6 +23,7 @@ members = [
     "crates/tpt-gpu-script-lsp",
     "crates/tpt-gpu-shared",
     "crates/tpt-gpu-vendor-cert",
+    "crates/tpt-gpu-serve",
 ]
 
 [workspace.package]

@@ -397,10 +397,11 @@
 
 ### Priority 3 — Architecture-maturity gaps (backlog, not scheduled)
 - [x] Layer 4 runtime: `crates/tpt-gpu-runtime/src/inference.rs`'s `ModelWeights::allocate` always zero-initializes — no GGUF/TPTF tensor-loading path exists, so inference is numerically inert regardless of input model
-- [x] No RoPE implementation anywhere despite all 5 supported architectures (llama/llama3, mistral, qwen2/qwen, phi3, gemma2/gemma) requiring it
+- [x] No RoPE implementation anywhere despite all 5 supported architectures (llama/llama3, mistral, qwen2/qwen, phi3, gemma2/gemma) requiring it — `rope.rs` implemented `apply_rope`, but `forward_step` never called it (silent gap; inference was position-blind). **Fixed:** `forward_step` now applies RoPE to Q/K at the correct decode position before each KV-cache append (`inference.rs`); `rope_config_for_arch` derives `head_dim` from the model and prefers `llm.rope.freq_base` when present. Regression test `rope_is_applied_to_kv_cache` asserts the cached K is rotated (fails if RoPE is ever reverted).
 - [x] `Attention` only receives current-step K/V, not the accumulated `KvCache` (flagged in-code at `inference.rs:809-813`) — multi-token generation would be numerically wrong even with real weights
 - [x] `QuantGemmKernel` never invoked from `tpt-gpu-runtime` despite `ModelInfo.per_layer_bits` carrying per-layer quant metadata — quantized-inference path unwired end-to-end
-- [ ] No multi-GPU/tensor-parallel path in the runtime
+- [x] Multi-GPU device-ordinal selection for CUDA backends (commit `089b720`) — replicas can bind to distinct physical GPUs for data-parallel dispatch
+- [ ] No tensor-parallel / multi-engine runtime orchestration — decode stays single-device; `GpuInferenceEngine::load_multi` / pipeline-parallel slicing not implemented
 - [x] No sampling kernel beyond host-side argmax; `arch.rs`'s `Sampling{temperature, top_k}` op has no corresponding layer5 kernel
 - [x] No GGUF→TPTF importer in `crates/tpt-gpu-model-optimizer` (`export/gguf.rs` only goes `.tptf → GGUF`) — the documented "download GGUF → optimize → run" flow cannot be completed today
 - [x] `MODELS_REGISTRY.md`'s own CLI example registers arch tag `"llama2"`, which `arch.rs::template_for_arch` doesn't recognize (only `llama`/`llama3`)
@@ -432,20 +433,123 @@
 **Context:** originated from a proposal for a `ZeroCopyModelLoader` trait (GGUF/SafeTensors mmap) and a `DeterministicArena` bump allocator with compile-time-computed capacity. Research found real overlap (GGUF loading already mmaps, just copies afterward) and real conflicts (no SafeTensors reader exists anywhere; a compile-time peak-size pass conflicts with tpt-gpu's deliberately dynamic shape model per the draft TPT-UIR RFC; a flat bump-pointer arena is unsound given residual connections and the cross-layer-lived KV cache). Scoped down to two independent, additive changes. Plan: `C:\Users\phill\.claude\plans\i-m-thinking-of-adding-crispy-rain.md`.
 
 ### Feature 1 — `ScratchPool`: free-list buffer pool replacing per-op fresh allocations
-- [ ] `crates/tpt-gpu-primitives/src/memory/buffer.rs` — add `GpuBuffer::reshape()` (validate `num_elements()`, swap `shape`, no copy); replace `reshape_to_2d` (`inference.rs:1246-1259`) with a thin wrapper
-- [ ] `crates/tpt-gpu-runtime/src/scratch.rs` (new) — `ScratchPool` keyed by `Shape` (`HashMap<Shape, Vec<GpuBuffer<f32>>>`, free-list not bump/arena — `Shape` already derives `Hash + Eq`); `pub mod scratch;` in `lib.rs`
-- [ ] Route `alloc_f32`/`alloc_f32_1d`/`vec_to_buf` (`inference.rs:545-553, 1579-1588`) and `quant_layer_gemm`'s scratch buffers (`inference.rs:1347-1379`) through `ScratchPool::checkout_*`/`release`
-- [ ] Extend `GemmKernel::execute`'s existing `Option<&mut GpuBuffer<f32>>` output-param pattern (`gemm.rs:77-153`) to `RmsNormKernel`, `SoftmaxKernel`, `AttentionKernel`, `EmbeddingKernel`, `QuantGemmKernel`; wire `forward_step` to pass pool buffers in — one kernel at a time. Note: call sites passing `Some(&mut buf)` must ignore the returned clone (`gemm.rs:150` deep-clones `storage` on return) and keep using `buf` directly, or the pool win is defeated
-- [ ] Tests: `GpuBuffer::reshape` unit test; `ScratchPool` checkout/release/reuse-hit unit test; confirm `forward_step` output unchanged on a synthetic small model
+- [x] `crates/tpt-gpu-primitives/src/memory/buffer.rs` — add `GpuBuffer::reshape()` (validate `num_elements()`, swap `shape`, no copy); replace `reshape_to_2d` (`inference.rs:1246-1259`) with a thin wrapper
+- [x] `crates/tpt-gpu-runtime/src/scratch.rs` (new) — `ScratchPool` keyed by `Shape` (`HashMap<Shape, Vec<GpuBuffer<f32>>>`, free-list not bump/arena — `Shape` already derives `Hash + Eq`); `pub mod scratch;` in `lib.rs`
+- [x] Route the transient buffers through `ScratchPool::checkout_*`/`release`: `vec_to_buf` (via `vec_to_buf_pool`) for the KV-cache staging buffers, `quant_layer_gemm`'s f32 scratch buffers (b_buf/sc_buf/result), and all per-op kernel outputs in `forward_step` (embed/rmsnorm/attn/softmax via `execute_into`, f32 GEMM via `Some(&mut buf)` in place). `alloc_f32`/`alloc_f32_1d` are intentionally left as direct allocations because they back the **persistent weight matrices** (must outlive the step, not be recycled).
+- [x] Extend `GemmKernel::execute`'s existing `Option<&mut GpuBuffer<f32>>` output-param pattern (`gemm.rs:77-153`) to `RmsNormKernel`, `SoftmaxKernel`, `AttentionKernel`, `EmbeddingKernel`, `QuantGemmKernel` (added `execute_into(out: Option<GpuBuffer<f32>>)` to each); wired `forward_step` to pass pool buffers in. The no-op fallback kernels (RMSNorm/Softmax/Embedding) now zero their output so a reused buffer stays deterministic.
+- [x] Tests: `GpuBuffer::reshape` unit test (in-place, data preserved, rejects mismatched element count / invalid shape); `ScratchPool` checkout/release/reuse-hit unit tests; `forward_step_is_deterministic_and_recycles_pool` confirms `forward_step` output is unchanged and the pool accumulates recycled buffers.
 
 ### Feature 2 — mmap-backed `.tptf` loading
-- [ ] `crates/tpt-gpu-runtime/src/inference.rs::parse_tptf_header` (405-420) — replace whole-file `fs::read` with a fixed 512-byte `read_exact`, matching `tptf_format::read_header` (`crates/tpt-gpu-model-optimizer/src/tptf_format.rs:211-219`)
-- [ ] `crates/tpt-gpu-runtime/src/inference.rs::ModelWeights::load_tptf` (565-758) — replace whole-file `fs::read` with `memmap2::Mmap`, matching the pattern already in `GgufImporter::import` (`gguf.rs:285-289`); mmap stays a local, not stored long-term. Add `memmap2 = { workspace = true }` to `crates/tpt-gpu-runtime/Cargo.toml`
-- [ ] Tests: byte-for-byte parity vs. the old `fs::read` path on the existing synthetic `.tptf` fixture; existing `load_tptf_via_engine`/`parse_tptf_header_basic` tests (`inference.rs:1735-1762, 2004-2011`) still pass
+- [x] `crates/tpt-gpu-runtime/src/inference.rs::parse_tptf_header` (405-420) — replace whole-file `fs::read` with a fixed 512-byte `read_exact`, matching `tptf_format::read_header` (`crates/tpt-gpu-model-optimizer/src/tptf_format.rs:211-219`)
+- [x] `crates/tpt-gpu-runtime/src/inference.rs::ModelWeights::load_tptf` (565-758) — replace whole-file `fs::read` with `memmap2::Mmap`, matching the pattern already in `GgufImporter::import` (`gguf.rs:285-289`); mmap stays a local, not stored long-term. Add `memmap2 = { workspace = true }` to `crates/tpt-gpu-runtime/Cargo.toml`
+- [x] Tests: byte-for-byte parity vs. the old `fs::read` path on the existing synthetic `.tptf` fixture; existing `load_tptf_via_engine`/`parse_tptf_header_basic` tests (`inference.rs:1735-1762, 2004-2011`) still pass
 
 ### Explicitly out of scope (see plan file for rationale)
 - SafeTensors reader (none exists today, only a writer)
 - Layer3 compiler compile-time `peak_activation_size` pass (conflicts with dynamic-shape design; would duplicate TPT-UIR's future `memory_dialect`)
-- Fixing `load_with_vendor` (`inference.rs:908`, referenced but undefined anywhere in the crate — pre-existing, unrelated bug, flagged here for tracking)
+- ~~Fixing `load_with_vendor` (`inference.rs:908`, referenced but undefined anywhere in the crate — pre-existing, unrelated bug, flagged here for tracking)~~ **DONE** — implemented `GpuInferenceEngine::load_with_vendor` (detect format → parse header → build arch template → allocate/load weights → build kernels, KV cache, RoPE config, and the new scratch `pool`).
 - Full TPTF-parser consolidation (`tptf_format::read_tensor_blocks` vs. the inline parser in `inference.rs`)
 - `GgufImporter`'s per-tensor `.to_vec()` copy during offline GGUF→TPTF conversion (one-time cost, not the inference hot path)
+
+> **Prerequisite compile fixes (discovered while making the runtime build):** the
+> crate did not compile at all before this work — `load_with_vendor` was undefined
+> (above), `Cargo.lock` had a verbatim duplicate `cpufeatures` entry that broke
+> `cargo` parsing, and `RegionAllocatorStats` had both `#[derive(Default)]` and a
+> manual `impl Default` (E0119). All three were fixed so `cargo test -p tpt-gpu-runtime`
+> (72 tests) and `cargo clippy --all-targets -D warnings` now pass.
+
+---
+
+## Phase 12: Correctness Remediation (RoPE + numeric harness + doc reconciliation)
+
+**Context:** platform review found a silent correctness bug — `apply_rope` existed and was unit-tested but `forward_step` never called it, so LLM inference was position-blind (wrong for every supported architecture) yet all tests passed because no numeric end-to-end check existed. Deeper inspection found the CPU/TPTIR fallback kernels `EmbeddingKernel` and `RmsNormKernel` were **no-ops (zeroed output)**, making the whole CPU inference path numerically inert and contradicting the README's "LLM inference on CPU … numerics can be validated" claim. Plan: `.kilo/plans/1786260791804-correctness-remediation-plan.md`.
+
+### Priority 1 — Critical correctness: RoPE now applied in inference
+- [x] `crates/tpt-gpu-runtime/src/inference.rs` `forward_step` applies `apply_rope(&mut q, &mut k, pos, cfg)` at the correct decode position (`pos = kv_cache.seq_len`) **before** the KV-cache append, so cached K is position-encoded (caught by regression test below)
+- [x] `rope_config_for_arch` derives `head_dim` from `hidden_dim / num_heads` and prefers `ModelInfo.rope_freq_base` (from GGUF `llm.rope.freq_base`, Float32/Float64) over the per-arch default base when present
+- [x] Removed the dead-code allow + admit-gap comment on `rope_config`; `rope_config_for_arch` no longer special-cases arch strings redundantly
+
+### Priority 2 — CPU/TPTIR fallback kernels were no-ops (numerically inert)
+- [x] `crates/tpt-gpu-primitives/src/kernels/embedding.rs` `tptir_embedding` now performs a real gather (`output[b,s,:] = weight[indices[b,s],:]`)
+- [x] `crates/tpt-gpu-primitives/src/kernels/rmsnorm.rs` `tptir_rmsnorm` now computes `y = x / rms(x) * gamma` (numerically correct; attention already inlined its own stable softmax, so the `softmax.rs` no-op is not on the inference path)
+
+### Priority 3 — Numeric end-to-end regression harness (the gap that let P1 ship)
+- [x] `inference::tests::rope_is_applied_to_kv_cache` builds a tiny engine with known weights and asserts the cached K equals `apply_rope(raw_k, pos)` and is **not** the unrotated vector — verified to FAIL when RoPE application is removed, PASS with it
+- [x] Fixed `forward_step_is_deterministic_and_recycles_pool` to reset the KV cache between runs so determinism is tested at the same position (RoPE makes identical tokens at different positions differ)
+
+### Priority 4 — Doc / tracker reconciliation
+- [x] `README.md` Contributing section no longer says "pull requests are not accepted" (CONTRIBUTING.md exists)
+- [x] Quick Start + `scripts/setup.{ps1,sh}` now use the real binary name `tpt-gpu-script` (and suggest aliasing to `tpt`) instead of the non-existent `tpt`
+- [x] `todo.md` reconciled: RoPE wiring item corrected (implementation ≠ wiring), multi-GPU item split into done device-ordinal selection vs. still-open tensor-parallel orchestration
+
+### Verification
+- `cargo test -p tpt-gpu-runtime` — 73 passed (was 72; +1 RoPE regression test)
+- `cargo clippy -p tpt-gpu-runtime --lib --tests -- -D warnings` — clean
+- `cargo clippy -p tpt-gpu-primitives --lib --tests -- -D warnings` — clean
+- Note: `cargo clippy --all-targets -D warnings` still flags pre-existing dead-code in `crates/tpt-gpu-runtime/examples/argus_exporter.rs` (unrelated to this work; pre-existing debt)
+
+---
+
+## Phase 13: Usability — `tpt` as the canonical CLI binary
+
+**Context:** across the repo (README, `docs/tutorials/*`, `docs/use-cases.md`) the compiler is invoked as `tpt`, but the only compiled binary was `tpt-gpu-script`. Users following the docs ran a non-existent `tpt` command. Phase 10 Priority 4 marked this "done" by suggesting an alias, but the inconsistency persisted (docs still referenced `tpt`, and no real `tpt` binary existed). This phase fixes it at the source by shipping a real `tpt` binary.
+
+### Changes
+- [x] Restructured `crates/tpt-gpu-script-cli` into a lib (`tpt_gpu_script_cli` exposing `pub fn run`) + two bins: `tpt-gpu-script` (`src/main.rs`) and `tpt` (`src/bin/tpt.rs`), both thin wrappers around the shared entry point
+- [x] `cargo build -p tpt-gpu-script-cli` now produces **both** `tpt` and `tpt-gpu-script`; `cargo install tpt-gpu-script-cli` installs both, so docs/tutorials that say `tpt ...` work verbatim
+- [x] `README.md` Quick Start + Build sections now use `tpt` as the canonical command and note `tpt-gpu-script` is also produced
+- [x] Verified both binaries behave identically (`tpt --version` / `tpt ops` / `tpt docs matmul` match `tpt-gpu-script`)
+
+### Verification
+- `cargo build -p tpt-gpu-script-cli` — both bins build
+- `cargo test -p tpt-gpu-script-cli` — 23 passed
+- `cargo clippy -p tpt-gpu-script-cli --all-targets -- -D warnings` — clean
+
+---
+
+## Phase 14: Usability/Automation — `tpt-serve` (OpenAI-compatible) + numeric-regression CI gate
+
+**Context:** the original review called out (a) an OpenAI-compatible `tpt serve` HTTP server for the runtime and (b) automating a numeric end-to-end correctness gate so silent kernel regressions (the class of bug that shipped RoPE-unapplied) are caught in CI.
+
+### (a) `tpt-serve` — OpenAI-compatible inference server
+- [x] New crate `crates/tpt-gpu-serve` (depends on `tpt-gpu-runtime` + `serde_json`, no HTTP-framework dependency — uses `std::net::TcpListener`).
+- [x] Exposes `GET /v1/models`, `POST /v1/completions`, `POST /v1/chat/completions` with OpenAI-shaped JSON; supports non-streaming and SSE streaming (`stream: true`).
+- [x] Loads a GGUF/TPTF model via `LlmInference::load` and drives `engine.infer(...)`; prompt tokenization via a `WordTokenizer` placeholder (session-local, reversible) with a documented follow-up to wire a real GGUF/SentencePiece vocabulary. Accepts `prompt_tokens` (raw ids) and `messages`/`prompt` (text).
+- [x] Binary `tpt-serve` added to the workspace; `cargo install tpt-gpu-script-cli` unaffected.
+- [x] Integration test `tests/server.rs` spawns the real binary, loads a minimal GGUF, and asserts the OpenAI response shapes for `/v1/models`, `/v1/completions`, `/v1/chat/completions`.
+
+### (b) Numeric-regression CI gate
+- [x] `inference::tests::inference_generation_golden` — deterministic golden generation from the synthetic engine (arch template samples `top_k=1` → argmax, all kernels numerically implemented). Asserts a fixed 8-token sequence; drifts if any kernel silently regresses.
+- [x] `.github/workflows/numeric-regression.yml` — dedicated gate running the runtime golden tests + the `tpt-gpu-serve` end-to-end test + clippy on numeric-sensitive crates, on the same OS matrix as CI. Fails the build on silent numeric regression.
+
+### Incidental fix
+- [x] Pre-existing broken example `crates/tpt-gpu-runtime/examples/loopback_probe.rs` (had only a `#[test]` and no `main`, so `cargo test` failed to compile the example) — added `fn main() {}` so the workspace builds.
+
+### Verification
+- `cargo test -p tpt-gpu-runtime` — 74 passed (incl. `rope_is_applied_to_kv_cache`, `inference_generation_golden`)
+- `cargo clippy -p tpt-gpu-runtime --lib --tests -- -D warnings` — clean
+- `cargo test -p tpt-gpu-serve` — 4 unit + 1 integration passed
+- `cargo clippy -p tpt-gpu-serve --all-targets -- -D warnings` — clean
+- Note: `cargo clippy --all-targets -D warnings` still flags pre-existing dead-code in `crates/tpt-gpu-runtime/examples/argus_exporter.rs` (unrelated, pre-existing debt)
+
+---
+
+## Phase 15: Real tokenizer for `tpt-serve` (emit actual model text)
+
+**Context:** `tpt-serve` (Phase 14) currently uses a `WordTokenizer` placeholder — a session-local, reversible-within-a-session scheme. Generated token ids therefore render as `<id>` placeholders instead of real text, and prompts are mapped to arbitrary ids. To emit actual model text the runtime must parse and expose the model's GGUF tokenizer (vocab + BPE merges + special tokens) and the server must use it. Investigation notes: `parse_gguf_header` already recognizes `tokenizer.ggml.tokens` as a GGUF `Array` but only counts `vocab_size` and skips the contents; `GgufType::Array` (code 9) elements are read by `skip_value`, and STRING-array elements can be read with `read_gguf_string`. GGUF keeps the vocab in `tokenizer.ggml.tokens` (STRING array, index = token id), merges in `tokenizer.ggml.merges` (STRING array `"a b"`), and `bos/eos/unknown_token_id` + `add_bos_token`/`add_eos_token` as scalars.
+
+### Tasks
+- [ ] Add `Tokenizer` struct (`vocab: Vec<String>`, `merges: Vec<(String,String)>`, `bos/eos/unk: u32`, `add_bos/add_eos: bool`, `model: String`) in a new `crates/tpt-gpu-runtime/src/tokenizer.rs`.
+- [ ] Extend `parse_gguf_header` to fully read tokenizer metadata: `tokenizer.ggml.model` (String), `tokenizer.ggml.tokens` (STRING array → vocab), `tokenizer.ggml.merges` (STRING array → merges), `tokenizer.ggml.bos_token_id`/`eos_token_id`/`unknown_token_id` (Uint32), `tokenizer.ggml.add_bos_token`/`add_eos_token` (Bool). Stop only counting `vocab_size` from the tokens array.
+- [ ] Store the parsed `Tokenizer` on `ModelInfo.tokenizer: Option<Tokenizer>` and expose it via `GpuInferenceEngine::tokenizer() -> Option<&Tokenizer>` (set in `load_with_vendor`).
+- [ ] Implement `Tokenizer::encode` (pretokenize + apply BPE merges in rank order, byte-fallback for unknown symbols) and `Tokenizer::decode` (concatenate token strings; decode `<0xXX>` byte-fallback tokens to bytes).
+- [ ] Re-export `Tokenizer` from the `tpt-gpu-runtime` crate root.
+- [ ] Wire `tpt-serve` to use `engine.tokenizer()` when present and fall back to `WordTokenizer` only when absent (e.g. TPTF models without a tokenizer); update the placeholder comments in `tokenizer.rs`/`server.rs`.
+- [ ] Add runtime unit tests for `Tokenizer` encode/decode round-trip using a synthetic GGUF vocab + merges.
+- [ ] Add/update the `tpt-serve` integration test to build a GGUF with a small vocab + merges and assert `/v1/completions` returns real (non-`<id>`) text.
+
+### Verification (target)
+- `cargo test -p tpt-gpu-runtime` — includes new `tokenizer` tests
+- `cargo test -p tpt-gpu-serve` — integration test asserts real-text decode
+- `cargo clippy -p tpt-gpu-runtime --lib --tests -- -D warnings` — clean
+- `cargo clippy -p tpt-gpu-serve --all-targets -- -D warnings` — clean

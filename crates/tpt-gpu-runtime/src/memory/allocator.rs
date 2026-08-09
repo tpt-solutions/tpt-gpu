@@ -4,6 +4,10 @@ use crate::memory::types::{Alignment, MemAccess, MemType, MemoryAllocation, Memo
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Per-region allocator accounting for a single `MemoryRegion`.
+///
+/// The telemetry bridge buckets these so VRAM/Global traffic can be observed
+/// independently of on-chip Shared/SRAM traffic (see `RegionAllocatorStats`).
 #[derive(Debug, Clone, Default)]
 pub struct AllocatorStats {
     pub total_allocations: u64,
@@ -13,6 +17,36 @@ pub struct AllocatorStats {
     pub current_usage: u64,
     pub peak_usage: u64,
     pub allocation_failures: u64,
+}
+
+/// Aggregate allocator statistics, bucketed by [`MemoryRegion`].
+///
+/// A single `Device` may serve allocations in several regions (Global/VRAM as
+/// well as Shared/SRAM), but the underlying `GpuAllocator` implementations
+/// track one logical pool. `RegionAllocatorStats` keeps the per-region slices
+/// separate so the telemetry exporter can report `gpu.memory.vram.*` and
+/// `gpu.memory.sram.*` gauges independently.
+#[derive(Debug, Clone, Default)]
+pub struct RegionAllocatorStats {
+    pub by_region: std::collections::HashMap<MemoryRegion, AllocatorStats>,
+}
+
+impl RegionAllocatorStats {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Stats for a single region, or a zeroed struct if nothing has been
+    /// allocated there yet.
+    pub fn region(&self, region: MemoryRegion) -> AllocatorStats {
+        self.by_region.get(&region).cloned().unwrap_or_default()
+    }
+
+    /// Mutable handle to the running counters for `region`, inserting a zeroed
+    /// entry on first use.
+    pub fn region_mut(&mut self, region: MemoryRegion) -> &mut AllocatorStats {
+        self.by_region.entry(region).or_default()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +69,8 @@ pub trait GpuAllocator: Send + Sync {
     /// re-matching the device pointer (used when the real device pointer has
     /// been substituted for the allocator's fake address).
     fn free_handle(&mut self, handle: u64) -> TptrResult<()>;
-    fn stats(&self) -> AllocatorStats;
+    /// Aggregate stats, bucketed by [`MemoryRegion`].
+    fn stats(&self) -> RegionAllocatorStats;
     fn reset(&mut self) -> TptrResult<()>;
 }
 
@@ -52,7 +87,7 @@ pub struct SlabAllocator {
     slab_size: u64,
     slabs: Vec<Slab>,
     next_handle: AtomicU64,
-    stats: AllocatorStats,
+    stats: RegionAllocatorStats,
 }
 
 impl SlabAllocator {
@@ -68,7 +103,7 @@ impl SlabAllocator {
                 block_size: bs,
             }],
             next_handle: AtomicU64::new(1),
-            stats: AllocatorStats::default(),
+            stats: RegionAllocatorStats::default(),
         }
     }
 }
@@ -88,10 +123,11 @@ impl GpuAllocator for SlabAllocator {
                 let dp = slab.free_list.pop().unwrap_or(0);
                 let h = self.next_handle.fetch_add(1, Ordering::SeqCst);
                 let asize = needed * bs;
-                self.stats.total_allocations += 1;
-                self.stats.bytes_allocated += asize;
-                self.stats.current_usage += asize;
-                self.stats.peak_usage = self.stats.peak_usage.max(self.stats.current_usage);
+                let s = self.stats.region_mut(region);
+                s.total_allocations += 1;
+                s.bytes_allocated += asize;
+                s.current_usage += asize;
+                s.peak_usage = s.peak_usage.max(s.current_usage);
                 return Ok(MemoryAllocation::new(
                     h,
                     asize,
@@ -103,7 +139,7 @@ impl GpuAllocator for SlabAllocator {
                 ));
             }
         }
-        self.stats.allocation_failures += 1;
+        self.stats.region_mut(region).allocation_failures += 1;
         Err(TptrError::new(
             ErrorCode::OutOfMemory,
             format!("SlabAllocator: no free block for size {}", size),
@@ -112,22 +148,23 @@ impl GpuAllocator for SlabAllocator {
     fn free(&mut self, allocation: &MemoryAllocation) -> TptrResult<()> {
         allocation.mark_freed();
         self.slabs[0].free_list.push(allocation.device_ptr());
-        self.stats.bytes_freed += allocation.size();
-        self.stats.current_usage = self.stats.current_usage.saturating_sub(allocation.size());
-        self.stats.total_frees += 1;
+        let s = self.stats.region_mut(allocation.region());
+        s.bytes_freed += allocation.size();
+        s.current_usage = s.current_usage.saturating_sub(allocation.size());
+        s.total_frees += 1;
         Ok(())
     }
     fn free_handle(&mut self, _handle: u64) -> TptrResult<()> {
         Ok(())
     }
-    fn stats(&self) -> AllocatorStats {
+    fn stats(&self) -> RegionAllocatorStats {
         self.stats.clone()
     }
     fn reset(&mut self) -> TptrResult<()> {
         let bs = self.slabs[0].block_size;
         let num = self.slab_size / bs;
         self.slabs[0].free_list = (0..num).map(|i| self.slabs[0].base_addr + i * bs).collect();
-        self.stats = AllocatorStats::default();
+        self.stats = RegionAllocatorStats::default();
         Ok(())
     }
 }
@@ -146,7 +183,7 @@ pub struct BuddyAllocator {
     free_lists: Vec<Vec<u64>>,
     allocations: HashMap<u64, BuddyBlock>,
     next_handle: AtomicU64,
-    stats: AllocatorStats,
+    stats: RegionAllocatorStats,
 }
 
 impl BuddyAllocator {
@@ -162,7 +199,7 @@ impl BuddyAllocator {
             free_lists: fl,
             allocations: HashMap::new(),
             next_handle: AtomicU64::new(1),
-            stats: AllocatorStats::default(),
+            stats: RegionAllocatorStats::default(),
         }
     }
     fn order_for(&self, size: u64) -> usize {
@@ -199,7 +236,7 @@ impl GpuAllocator for BuddyAllocator {
             }
         }
         if !found {
-            self.stats.allocation_failures += 1;
+            self.stats.region_mut(region).allocation_failures += 1;
             return Err(TptrError::new(
                 ErrorCode::OutOfMemory,
                 format!("BuddyAllocator: no free block for size {}", size),
@@ -212,10 +249,11 @@ impl GpuAllocator for BuddyAllocator {
         }
         let h = self.next_handle.fetch_add(1, Ordering::SeqCst);
         self.allocations.insert(addr, BuddyBlock { addr, order });
-        self.stats.total_allocations += 1;
-        self.stats.bytes_allocated += asize;
-        self.stats.current_usage += asize;
-        self.stats.peak_usage = self.stats.peak_usage.max(self.stats.current_usage);
+        let s = self.stats.region_mut(region);
+        s.total_allocations += 1;
+        s.bytes_allocated += asize;
+        s.current_usage += asize;
+        s.peak_usage = s.peak_usage.max(s.current_usage);
         Ok(MemoryAllocation::new(
             h,
             asize,
@@ -248,15 +286,16 @@ impl GpuAllocator for BuddyAllocator {
             }
         }
         self.free_lists[fo].push(fa);
-        self.stats.bytes_freed += allocation.size();
-        self.stats.current_usage = self.stats.current_usage.saturating_sub(allocation.size());
-        self.stats.total_frees += 1;
+        let s = self.stats.region_mut(allocation.region());
+        s.bytes_freed += allocation.size();
+        s.current_usage = s.current_usage.saturating_sub(allocation.size());
+        s.total_frees += 1;
         Ok(())
     }
     fn free_handle(&mut self, _handle: u64) -> TptrResult<()> {
         Ok(())
     }
-    fn stats(&self) -> AllocatorStats {
+    fn stats(&self) -> RegionAllocatorStats {
         self.stats.clone()
     }
     fn reset(&mut self) -> TptrResult<()> {
@@ -266,7 +305,7 @@ impl GpuAllocator for BuddyAllocator {
         }
         self.free_lists[mo].push(self.base_addr);
         self.allocations.clear();
-        self.stats = AllocatorStats::default();
+        self.stats = RegionAllocatorStats::default();
         Ok(())
     }
 }
@@ -278,7 +317,7 @@ pub struct FallbackAllocator {
     total_size: u64,
     next_free: u64,
     next_handle: AtomicU64,
-    stats: AllocatorStats,
+    stats: RegionAllocatorStats,
 }
 
 impl FallbackAllocator {
@@ -288,7 +327,7 @@ impl FallbackAllocator {
             total_size,
             next_free: base_addr,
             next_handle: AtomicU64::new(1),
-            stats: AllocatorStats::default(),
+            stats: RegionAllocatorStats::default(),
         }
     }
 }
@@ -307,16 +346,17 @@ impl GpuAllocator for FallbackAllocator {
             .checked_add(aligned)
             .ok_or_else(|| TptrError::new(ErrorCode::OutOfMemory, "overflow"))?;
         if end > self.base_addr + self.total_size {
-            self.stats.allocation_failures += 1;
+            self.stats.region_mut(region).allocation_failures += 1;
             return Err(TptrError::new(ErrorCode::OutOfMemory, "OOM"));
         }
         let addr = self.next_free;
         self.next_free = end;
         let h = self.next_handle.fetch_add(1, Ordering::SeqCst);
-        self.stats.total_allocations += 1;
-        self.stats.bytes_allocated += aligned;
-        self.stats.current_usage += aligned;
-        self.stats.peak_usage = self.stats.peak_usage.max(self.stats.current_usage);
+        let s = self.stats.region_mut(region);
+        s.total_allocations += 1;
+        s.bytes_allocated += aligned;
+        s.current_usage += aligned;
+        s.peak_usage = s.peak_usage.max(s.current_usage);
         Ok(MemoryAllocation::new(
             h,
             aligned,
@@ -329,20 +369,21 @@ impl GpuAllocator for FallbackAllocator {
     }
     fn free(&mut self, allocation: &MemoryAllocation) -> TptrResult<()> {
         allocation.mark_freed();
-        self.stats.bytes_freed += allocation.size();
-        self.stats.current_usage = self.stats.current_usage.saturating_sub(allocation.size());
-        self.stats.total_frees += 1;
+        let s = self.stats.region_mut(allocation.region());
+        s.bytes_freed += allocation.size();
+        s.current_usage = s.current_usage.saturating_sub(allocation.size());
+        s.total_frees += 1;
         Ok(())
     }
     fn free_handle(&mut self, _handle: u64) -> TptrResult<()> {
         Ok(())
     }
-    fn stats(&self) -> AllocatorStats {
+    fn stats(&self) -> RegionAllocatorStats {
         self.stats.clone()
     }
     fn reset(&mut self) -> TptrResult<()> {
         self.next_free = self.base_addr;
-        self.stats = AllocatorStats::default();
+        self.stats = RegionAllocatorStats::default();
         Ok(())
     }
 }

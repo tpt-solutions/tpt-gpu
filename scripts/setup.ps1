@@ -37,7 +37,7 @@ if (Test-Path $binary) {
 
 # ── 3. Quick sanity check ─────────────────────────────────────────────────────
 if (Test-Path $binary) {
-    Info "Running: tpt --help"
+    Info "Running: $binary --help"
     & $binary --help 2>&1 | Select-Object -First 5
 }
 
