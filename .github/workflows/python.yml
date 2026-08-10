@@ -21,7 +21,7 @@ jobs:
       - name: Install dev tools and package
         run: |
           pip install ruff mypy pytest
-          pip install -e "layer6_framework[dev]"
+          pip install -e "layer6_framework[dev,pytorch]"
 
       - name: Lint with ruff
         run: ruff check layer6_framework/

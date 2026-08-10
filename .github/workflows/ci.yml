@@ -95,7 +95,7 @@ jobs:
       with:
         python-version: "3.11"
     - name: Install tptr + dev dependencies
-      run: pip install -e "layer6_framework[dev]"
+      run: pip install -e "layer6_framework[dev,pytorch]"
     - name: Run pytest
       run: pytest layer6_framework/tests/ -v
 

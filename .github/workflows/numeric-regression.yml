@@ -54,7 +54,9 @@ jobs:
       run: cargo build -p tpt-gpu-runtime -p tpt-gpu-serve
 
     - name: Run runtime numeric golden tests
-      run: cargo test -p tpt-gpu-runtime --lib inference::tests::rope_is_applied_to_kv_cache inference::tests::inference_generation_golden -- --nocapture
+      run: |
+        cargo test -p tpt-gpu-runtime --lib inference::tests::rope_is_applied_to_kv_cache -- --nocapture
+        cargo test -p tpt-gpu-runtime --lib inference::tests::inference_generation_golden -- --nocapture
 
     - name: Run tpt-serve end-to-end server test
       run: cargo test -p tpt-gpu-serve
