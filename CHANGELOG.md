@@ -56,6 +56,9 @@ Targets the next crate release after `0.1.0` (expected `0.2.0`).
 - Docs paths reconciled to the `crates/` layout (CLAUDE.md, CI workflows, tutorials).
 
 ### Fixed
+- **CI was fully broken on every runner**: `tpt-gpu-uir-adapter` depended on the sibling `tpt-uir` workspace via `path = "../../../tpt-uir/..."`, which only resolves when both repos are checked out side by side. On CI that directory never exists, so *workspace manifest loading itself* failed (`failed to read .../tpt-uir/crates/tpt-uir-core/Cargo.toml`) and every cargo job died before running. The three `tpt-uir-*` deps are now git deps pinned to an exact rev, so a standalone clone of `tpt-gpu` builds.
+- Latent failures unmasked by the above (CI had never reached them): workspace-wide `cargo fmt` drift across 11 files, and `clippy -D warnings` dead-code/unused-import errors in the `argus_exporter` and `loopback_probe` runtime examples.
+- `test_ollama_list_models_fallback` made a live network call to `localhost:11434` instead of testing the fallback path, so it passed or failed depending on whether the developer had Ollama running. It now points at a closed port.
 - Critical correctness: GEMM/FusedGEMM now return the buffer actually written to; the HuggingFace download stream writes to disk and registers the manifest only after the file is confirmed.
 - `tpt-gpu-vendor-cert` now uses real CPU reference implementations and calls the vendor library against them (gated on `detect_backend()`).
 - Benchmark/certification docs reworded to state all numbers are analytical cost-model projections, not hardware measurements (community scoreboard points where real numbers will appear).

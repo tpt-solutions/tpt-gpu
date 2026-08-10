@@ -249,7 +249,12 @@ mod tests {
 
     #[test]
     fn test_ollama_list_models_fallback() {
-        let provider = OllamaProvider::new();
+        // Point at a closed port so `list_local_models` always fails and the
+        // hard-coded fallback list is what gets exercised. Using the default
+        // localhost URL here would silently hit a real Ollama server when one
+        // is running (returning its live model list instead of the fallback),
+        // making this test pass or fail depending on the developer's machine.
+        let provider = OllamaProvider::new().with_base_url("http://127.0.0.1:1");
         let models = provider.list_models();
         assert!(models.len() >= 5);
         assert!(models.iter().any(|m| m.contains("llama")));

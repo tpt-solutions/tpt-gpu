@@ -140,7 +140,14 @@ fn serve_completions_returns_openai_shape() {
     let addr = format!("127.0.0.1:{port}");
 
     let child = Command::new(env!("CARGO_BIN_EXE_tpt-serve"))
-        .args(["--model", &model.to_string_lossy(), "--host", "127.0.0.1", "--port", &port.to_string()])
+        .args([
+            "--model",
+            &model.to_string_lossy(),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &port.to_string(),
+        ])
         .stderr(std::process::Stdio::null())
         .spawn()
         .expect("failed to spawn tpt-serve");
@@ -150,7 +157,10 @@ fn serve_completions_returns_openai_shape() {
     let models = http_get(&addr, "/v1/models");
     let models_json: serde_json::Value = serde_json::from_str(&models).unwrap();
     assert_eq!(models_json["object"], "list");
-    assert_eq!(models_json["data"][0]["id"], model.to_string_lossy().to_string());
+    assert_eq!(
+        models_json["data"][0]["id"],
+        model.to_string_lossy().to_string()
+    );
 
     // /v1/completions with explicit token ids
     let body = r#"{"model":"x","prompt_tokens":[1,2,3],"max_tokens":4}"#;
@@ -179,7 +189,8 @@ fn serve_completions_returns_openai_shape() {
     );
 
     // /v1/chat/completions
-    let chat_body = r#"{"model":"x","messages":[{"role":"user","content":"hello"}],"max_tokens":3}"#;
+    let chat_body =
+        r#"{"model":"x","messages":[{"role":"user","content":"hello"}],"max_tokens":3}"#;
     let chat = http_post(&addr, "/v1/chat/completions", chat_body);
     let chat_json: serde_json::Value = serde_json::from_str(&chat).unwrap();
     assert_eq!(chat_json["object"], "chat.completion");

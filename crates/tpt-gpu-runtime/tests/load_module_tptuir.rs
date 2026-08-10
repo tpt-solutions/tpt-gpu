@@ -14,8 +14,7 @@ fn load_module_tptuir_loads_kernel() {
     )
     .unwrap();
 
-    let path = std::env::temp_dir()
-        .join(format!("rt_load_{}.tptuir", std::process::id()));
+    let path = std::env::temp_dir().join(format!("rt_load_{}.tptuir", std::process::id()));
     tpt_gpu_uir_adapter::write_tptuir(&region, &path).expect("write_tptuir failed");
 
     let device = Device::new_simulated(0, DeviceProperties::simulated("test", 1 << 30));

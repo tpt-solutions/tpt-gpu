@@ -55,6 +55,43 @@ cargo run -p tpt-gpu-doctor -- --pre-commit   # Rust + fmt + clippy only
   5 while the workspace uses `dashmap` 6 — known duplicate, unfixable from here.
   See `Cargo.toml` comment.
 
+## Cross-repo dependency on tpt-uir
+
+`crates/tpt-gpu-uir-adapter` depends on three crates from the **separate**
+`tpt-uir` repo (`tpt-uir-core`, `tpt-uir-dialects`, `tpt-uir-serde`). They are
+**git deps pinned to an exact rev**, not path deps:
+
+```toml
+tpt-uir-core = { git = "https://github.com/tpt-solutions/tpt-uir", rev = "<40-char sha>", features = ["serde"] }
+```
+
+Never change these back to `path = "../../../tpt-uir/..."`. That form only
+resolves when `tpt-uir` happens to sit next to `tpt-gpu` on disk, which is true
+locally and false on every CI runner. Because `tpt-gpu-runtime` and
+`tpt-gpu-kernelgen` both depend on the adapter, a missing sibling makes the
+*whole workspace manifest* unloadable — every cargo command in every workflow
+fails before it starts, with an error that names `out-gpu-dispatch` rather than
+the real culprit.
+
+**Bumping the pin** after landing a change in `tpt-uir`: push `tpt-uir` first,
+then update the `rev` in all three deps to the new sha and commit the resulting
+`Cargo.lock` change. The rev must be reachable on `origin` or CI cannot fetch it.
+
+**Developing against a local `tpt-uir` checkout** without touching the manifest —
+create `.cargo/config.toml` (gitignored):
+
+```toml
+paths = [
+    "../tpt-uir/crates/tpt-uir-core",
+    "../tpt-uir/crates/tpt-uir-dialects",
+    "../tpt-uir/crates/tpt-uir-serde",
+]
+```
+
+These crates are not on crates.io yet. Until they are, the adapter (and
+therefore `tpt-gpu-runtime`/`tpt-gpu-kernelgen`) cannot be published, since
+crates.io rejects git deps.
+
 ## Task tracking
 
 `todo.md` at repo root tracks all cross-layer work; mark items `[x]` when done.

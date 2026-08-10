@@ -2013,6 +2013,7 @@ dependencies = [
 [[package]]
 name = "tpt-uir-core"
 version = "0.1.0"
+source = "git+https://github.com/tpt-solutions/tpt-uir?rev=4c80f97a4e0b7ddb77f62680f5fb92cb03887ab5#4c80f97a4e0b7ddb77f62680f5fb92cb03887ab5"
 dependencies = [
  "serde",
 ]
@@ -2020,6 +2021,7 @@ dependencies = [
 [[package]]
 name = "tpt-uir-dialects"
 version = "0.1.0"
+source = "git+https://github.com/tpt-solutions/tpt-uir?rev=4c80f97a4e0b7ddb77f62680f5fb92cb03887ab5#4c80f97a4e0b7ddb77f62680f5fb92cb03887ab5"
 dependencies = [
  "tpt-uir-core",
 ]
@@ -2027,6 +2029,7 @@ dependencies = [
 [[package]]
 name = "tpt-uir-serde"
 version = "0.1.0"
+source = "git+https://github.com/tpt-solutions/tpt-uir?rev=4c80f97a4e0b7ddb77f62680f5fb92cb03887ab5#4c80f97a4e0b7ddb77f62680f5fb92cb03887ab5"
 dependencies = [
  "postcard",
  "serde",

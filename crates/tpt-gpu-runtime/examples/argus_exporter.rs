@@ -49,7 +49,12 @@ const MAGIC: &[u8; 4] = b"ARGU";
 ///
 /// The framing and payload layout must stay byte-for-byte identical to
 /// `BinaryMessage::encode` in `argus-core`; the `golden_bytes` test locks this in.
-fn encode_submit(metric: &str, timestamp_ns: i64, value: f64, labels: &[(String, String)]) -> Vec<u8> {
+fn encode_submit(
+    metric: &str,
+    timestamp_ns: i64,
+    value: f64,
+    labels: &[(String, String)],
+) -> Vec<u8> {
     let m = metric.as_bytes();
     // payload: metric_len(2) + metric + ts(8) + val(8) + labels_count(2) + labels
     let mut payload = Vec::new();
@@ -75,6 +80,10 @@ fn encode_submit(metric: &str, timestamp_ns: i64, value: f64, labels: &[(String,
 }
 
 /// Encode a `QueryLatest` frame so we can read a value back during e2e checks.
+///
+/// Only the `roundtrip` test reads values back; the exporter binary is
+/// write-only, so this is test-gated to keep the example warning-clean.
+#[cfg(test)]
 fn encode_query(metric: &str) -> Vec<u8> {
     let m = metric.as_bytes();
     let mut payload = Vec::new();
@@ -99,7 +108,10 @@ fn read_ack(stream: &mut TcpStream) -> std::io::Result<bool> {
     let mut hdr = [0u8; 9];
     stream.read_exact(&mut hdr)?;
     if &hdr[0..4] != MAGIC {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "bad magic"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "bad magic",
+        ));
     }
     let plen = u32::from_be_bytes([hdr[5], hdr[6], hdr[7], hdr[8]]) as usize;
     let mut frame = vec![0u8; plen + 4];
@@ -111,6 +123,9 @@ fn read_ack(stream: &mut TcpStream) -> std::io::Result<bool> {
 }
 
 /// Read a `LatestResponse` (or `Ack(false)` if no data) after a `QueryLatest`.
+///
+/// Test-gated for the same reason as [`encode_query`].
+#[cfg(test)]
 fn read_latest(stream: &mut TcpStream) -> std::io::Result<Option<(i64, f64)>> {
     let mut hdr = [0u8; 9];
     stream.read_exact(&mut hdr)?;
@@ -155,9 +170,15 @@ pub fn build_region_gauges(
     let delta_alloc = curr.bytes_allocated.saturating_sub(prev.bytes_allocated);
     let bandwidth = delta_alloc as f64 / secs;
     vec![
-        ("gpu.memory.current_bytes".to_string(), curr.current_usage as f64),
+        (
+            "gpu.memory.current_bytes".to_string(),
+            curr.current_usage as f64,
+        ),
         ("gpu.memory.peak_bytes".to_string(), curr.peak_usage as f64),
-        ("gpu.memory.alloc_failures".to_string(), curr.allocation_failures as f64),
+        (
+            "gpu.memory.alloc_failures".to_string(),
+            curr.allocation_failures as f64,
+        ),
         ("gpu.memory.bandwidth_bytes_per_sec".to_string(), bandwidth),
     ]
 }
@@ -221,7 +242,10 @@ pub struct Exporter {
 impl Exporter {
     /// Run one poll cycle: return the samples built from the current stats
     /// vs `prev`, and the new stats to use as `prev` next time.
-    pub fn sample_once(&self, prev: &RegionAllocatorStats) -> (Vec<ExporterSample>, RegionAllocatorStats) {
+    pub fn sample_once(
+        &self,
+        prev: &RegionAllocatorStats,
+    ) -> (Vec<ExporterSample>, RegionAllocatorStats) {
         let stats = self.device.allocator_stats();
         let samples = build_samples(&stats, prev, self.poll_interval);
         (samples, stats)
@@ -229,7 +253,11 @@ impl Exporter {
 
     /// Emit the given samples to `server`, returning the number of gauges
     /// accepted vs rejected by admission control.
-    pub fn emit(&self, samples: &[ExporterSample], timestamp_ns: i64) -> std::io::Result<(usize, usize)> {
+    pub fn emit(
+        &self,
+        samples: &[ExporterSample],
+        timestamp_ns: i64,
+    ) -> std::io::Result<(usize, usize)> {
         let mut stream = TcpStream::connect(&self.server_addr)?;
         stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
         stream.set_write_timeout(Some(Duration::from_secs(5))).ok();
@@ -237,7 +265,14 @@ impl Exporter {
         let mut rejected = 0;
         for s in samples {
             for (name, value) in &s.gauges {
-                match submit_gauge(&mut stream, self.device_id, s.region, name, *value, timestamp_ns) {
+                match submit_gauge(
+                    &mut stream,
+                    self.device_id,
+                    s.region,
+                    name,
+                    *value,
+                    timestamp_ns,
+                ) {
                     Ok(true) => accepted += 1,
                     Ok(false) => rejected += 1,
                     Err(_) => break,
@@ -289,7 +324,10 @@ impl Exporter {
             tpt_gpu_runtime::memory::MemType::Device,
             tpt_gpu_runtime::memory::MemAccess::ReadWrite,
         );
-        eprintln!("[rt] seed_allocations({bytes}) -> {:?}", res.as_ref().map(|a| a.size()));
+        eprintln!(
+            "[rt] seed_allocations({bytes}) -> {:?}",
+            res.as_ref().map(|a| a.size())
+        );
     }
 }
 
@@ -302,11 +340,19 @@ fn default_device(device_id: u64) -> Device {
 
 fn parse_args() -> (String, u64, Duration, Option<usize>) {
     let args: Vec<String> = std::env::args().collect();
-    let addr = args.get(1).cloned().unwrap_or_else(|| "127.0.0.1:9000".to_string());
+    let addr = args
+        .get(1)
+        .cloned()
+        .unwrap_or_else(|| "127.0.0.1:9000".to_string());
     let device_id: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
     let interval_ms: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(1000);
     let iterations: Option<usize> = args.get(4).and_then(|s| s.parse().ok());
-    (addr, device_id, Duration::from_millis(interval_ms), iterations)
+    (
+        addr,
+        device_id,
+        Duration::from_millis(interval_ms),
+        iterations,
+    )
 }
 
 fn main() -> std::io::Result<()> {
@@ -338,30 +384,32 @@ mod tests {
             "gpu.memory.current_bytes",
             1_700_000_000_000_000_000,
             4096.0,
-            &[("device_id".to_string(), "0".to_string()), ("region".to_string(), "vram".to_string())],
+            &[
+                ("device_id".to_string(), "0".to_string()),
+                ("region".to_string(), "vram".to_string()),
+            ],
         );
         let expected: &[u8] = &[
             b'A', b'R', b'G', b'U', // magic
             0x01, // type
             0x00, 0x00, 0x00, 0x48, // payload len = 72
             // metric: "gpu.memory.current_bytes" (23 bytes)
-            b'g', b'p', b'u', b'.', b'm', b'e', b'm', b'o', b'r', b'y', b'.', b'c', b'u', b'r', b'r', b'e', b'n', b't', b'_', b'b', b'y', b't', b'e', b's',
+            b'g', b'p', b'u', b'.', b'm', b'e', b'm', b'o', b'r', b'y', b'.', b'c', b'u', b'r',
+            b'r', b'e', b'n', b't', b'_', b'b', b'y', b't', b'e', b's',
             // ts(8) = 1_700_000_000_000_000_000
-            0x17, 0x8A, 0x64, 0x9A, 0x2F, 0x37, 0xE0, 0x00,
-            // val(8) = 4096.0
-            0x40, 0xB0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            // labels_count = 2
-            0x00, 0x02,
-            // k="device_id"(9) v="0"(1)
-            0x00, 0x09, b'd', b'e', b'v', b'i', b'c', b'e', b'_', b'i', b'd',
-            0x00, 0x01, b'0',
+            0x17, 0x8A, 0x64, 0x9A, 0x2F, 0x37, 0xE0, 0x00, // val(8) = 4096.0
+            0x40, 0xB0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // labels_count = 2
+            0x00, 0x02, // k="device_id"(9) v="0"(1)
+            0x00, 0x09, b'd', b'e', b'v', b'i', b'c', b'e', b'_', b'i', b'd', 0x00, 0x01, b'0',
             // k="region"(6) v="vram"(4)
-            0x00, 0x06, b'r', b'e', b'g', b'i', b'o', b'n',
-            0x00, 0x04, b'v', b'r', b'a', b'm',
+            0x00, 0x06, b'r', b'e', b'g', b'i', b'o', b'n', 0x00, 0x04, b'v', b'r', b'a', b'm',
             // crc32 placeholder
             0x00, 0x00, 0x00, 0x00,
         ];
-        assert_eq!(frame, expected, "wire bytes diverged from argus-core framing");
+        assert_eq!(
+            frame, expected,
+            "wire bytes diverged from argus-core framing"
+        );
     }
 
     #[test]
@@ -404,8 +452,9 @@ mod tests {
         let server = std::thread::spawn(move || {
             // Shared store so the metric submitted on the export connection is
             // visible to the QueryLatest on the query connection.
-            let store: std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<String, (i64, f64)>>> =
-                std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
+            let store: std::sync::Arc<
+                std::sync::Mutex<std::collections::BTreeMap<String, (i64, f64)>>,
+            > = std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
             // Serve the client's export connection, then its query connection.
             for _ in 0..2 {
                 if let Ok((stream, _)) = listener.accept() {
@@ -445,7 +494,9 @@ mod tests {
         // Query one of the emitted metrics back on a fresh connection.
         eprintln!("[rt] connecting for query");
         let mut stream = TcpStream::connect(&addr).expect("connect for query");
-        stream.write_all(&encode_query("gpu.memory.current_bytes")).unwrap();
+        stream
+            .write_all(&encode_query("gpu.memory.current_bytes"))
+            .unwrap();
         eprintln!("[rt] query sent, reading latest");
         let latest = read_latest(&mut stream).expect("read latest");
         eprintln!("[rt] got latest: {latest:?}");
@@ -479,10 +530,14 @@ mod tests {
         let server = std::thread::spawn(move || {
             if let Ok((mut s, _)) = listener.accept() {
                 let mut hdr = [0u8; 9];
-                if s.read_exact(&mut hdr).is_err() { return; }
+                if s.read_exact(&mut hdr).is_err() {
+                    return;
+                }
                 let plen = u32::from_be_bytes([hdr[5], hdr[6], hdr[7], hdr[8]]) as usize;
                 let mut buf = vec![0u8; plen + 4];
-                if s.read_exact(&mut buf).is_err() { return; }
+                if s.read_exact(&mut buf).is_err() {
+                    return;
+                }
                 let ack = [b'A', b'R', b'G', b'U', 0x04, 0, 0, 0, 1, 1, 0, 0, 0, 0];
                 let _ = s.write_all(&ack);
                 let _ = s.flush();

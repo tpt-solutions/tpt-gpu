@@ -1,10 +1,13 @@
 //! Trivial cargo-test loopback check.
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::thread;
 
 #[test]
 fn trivial_loopback() {
+    // Imported inside the test: the example's `main` is empty, so top-level
+    // imports would be dead code in the non-test build (`clippy -D warnings`).
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = l.local_addr().unwrap();
     let srv = thread::spawn(move || {

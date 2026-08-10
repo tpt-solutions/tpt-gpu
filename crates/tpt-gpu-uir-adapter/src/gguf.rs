@@ -328,41 +328,72 @@ pub fn gguf_to_tptir(spec: &LlamaModelSpec) -> TptirRegion {
 
     let x = TptirValue::new(
         0,
-        TptirType::memref(vec![ctx, h], TptirType::primitive("f32"), AddressSpace::Global),
+        TptirType::memref(
+            vec![ctx, h],
+            TptirType::primitive("f32"),
+            AddressSpace::Global,
+        ),
     );
     let wq = TptirValue::new(
         1,
-        TptirType::memref(vec![h, h], TptirType::primitive("f32"), AddressSpace::Global),
+        TptirType::memref(
+            vec![h, h],
+            TptirType::primitive("f32"),
+            AddressSpace::Global,
+        ),
     );
     let wk = TptirValue::new(
         2,
-        TptirType::memref(vec![h, h], TptirType::primitive("f32"), AddressSpace::Global),
+        TptirType::memref(
+            vec![h, h],
+            TptirType::primitive("f32"),
+            AddressSpace::Global,
+        ),
     );
     let wv = TptirValue::new(
         3,
-        TptirType::memref(vec![h, h], TptirType::primitive("f32"), AddressSpace::Global),
+        TptirType::memref(
+            vec![h, h],
+            TptirType::primitive("f32"),
+            AddressSpace::Global,
+        ),
     );
     let layer = TptirValue::new(4, TptirType::primitive("i32"));
     block.arguments = vec![x.clone(), wq.clone(), wk.clone(), wv.clone(), layer.clone()];
 
-    let q_buf = TptirType::memref(vec![ctx, h], TptirType::primitive("f32"), AddressSpace::Global);
+    let q_buf = TptirType::memref(
+        vec![ctx, h],
+        TptirType::primitive("f32"),
+        AddressSpace::Global,
+    );
 
     let q = op(OpKind::Gemm, &[x.clone(), wq], 10, &q_buf);
     let k = op(OpKind::Gemm, &[x.clone(), wk], 11, &q_buf);
     let v = op(OpKind::Gemm, &[x, wv], 12, &q_buf);
     let scores = op(
         OpKind::Mulf,
-        &[TptirValue::new(10, q_buf.clone()), TptirValue::new(11, q_buf.clone())],
+        &[
+            TptirValue::new(10, q_buf.clone()),
+            TptirValue::new(11, q_buf.clone()),
+        ],
         13,
         &q_buf,
     );
     let attn = op(
         OpKind::Addf,
-        &[TptirValue::new(13, q_buf.clone()), TptirValue::new(13, q_buf.clone())],
+        &[
+            TptirValue::new(13, q_buf.clone()),
+            TptirValue::new(13, q_buf.clone()),
+        ],
         14,
         &q_buf,
     );
-    let loaded = op(OpKind::Load, &[TptirValue::new(14, q_buf.clone())], 15, &q_buf);
+    let loaded = op(
+        OpKind::Load,
+        &[TptirValue::new(14, q_buf.clone())],
+        15,
+        &q_buf,
+    );
     let mut stored = TptirOp::new(OpKind::Store);
     stored.operands = vec![
         TptirValue::new(15, q_buf.clone()),

@@ -31,8 +31,8 @@
 use std::collections::BTreeMap;
 
 use tpt_gpu_compiler::ir::{
-    AddressSpace, OpKind, Operation as TptirOp, Region as TptirRegion, Type as TptirType,
-    TypeKind, Value as TptirValue,
+    AddressSpace, OpKind, Operation as TptirOp, Region as TptirRegion, Type as TptirType, TypeKind,
+    Value as TptirValue,
 };
 use tpt_uir_core::attr::{Attribute, AttributeValue};
 use tpt_uir_core::op_name::{OpName, CORE_ADD, CORE_LOAD, CORE_MUL, CORE_STORE};
@@ -122,15 +122,8 @@ pub fn from_tptir(region: &TptirRegion) -> Result<UirRegion, AdapterError> {
                 });
             }
 
-            let uir_op = GpuOp::build(
-                next_op_id,
-                op_name,
-                operands,
-                results,
-                attributes,
-                vec![],
-            )
-            .map_err(AdapterError::GpuBuild)?;
+            let uir_op = GpuOp::build(next_op_id, op_name, operands, results, attributes, vec![])
+                .map_err(AdapterError::GpuBuild)?;
             operations.push(uir_op);
             next_op_id += 1;
         }
@@ -529,9 +522,18 @@ mod tests {
         let mut region = TptirRegion::new();
         let mut block = Block::new("entry");
 
-        let q = TptirValue::new(0, TptirType::memref(vec![-1], TptirType::primitive("f32"), AddressSpace::Global));
-        let k = TptirValue::new(1, TptirType::memref(vec![-1], TptirType::primitive("f32"), AddressSpace::Global));
-        let v = TptirValue::new(2, TptirType::memref(vec![-1], TptirType::primitive("f32"), AddressSpace::Global));
+        let q = TptirValue::new(
+            0,
+            TptirType::memref(vec![-1], TptirType::primitive("f32"), AddressSpace::Global),
+        );
+        let k = TptirValue::new(
+            1,
+            TptirType::memref(vec![-1], TptirType::primitive("f32"), AddressSpace::Global),
+        );
+        let v = TptirValue::new(
+            2,
+            TptirType::memref(vec![-1], TptirType::primitive("f32"), AddressSpace::Global),
+        );
         let seq = TptirValue::new(3, TptirType::primitive("i32"));
         block.arguments = vec![q.clone(), k.clone(), v.clone(), seq.clone()];
 
@@ -547,7 +549,10 @@ mod tests {
         block.operations.push(qk);
 
         let mut attn = TptirOp::new(OpKind::Addf);
-        attn.operands = vec![TptirValue::new(11, TptirType::primitive("f32")), TptirValue::new(10, TptirType::primitive("f32"))];
+        attn.operands = vec![
+            TptirValue::new(11, TptirType::primitive("f32")),
+            TptirValue::new(10, TptirType::primitive("f32")),
+        ];
         attn.result_id = Some(12);
         attn.result_type = Some(TptirType::primitive("f32"));
         block.operations.push(attn);
@@ -592,12 +597,21 @@ mod tests {
 
         let mut entry = Block::new("entry");
         entry.arguments = vec![
-            TptirValue::new(0, TptirType::memref(vec![-1], TptirType::primitive("f32"), AddressSpace::Global)),
-            TptirValue::new(1, TptirType::memref(vec![-1], TptirType::primitive("f32"), AddressSpace::Global)),
+            TptirValue::new(
+                0,
+                TptirType::memref(vec![-1], TptirType::primitive("f32"), AddressSpace::Global),
+            ),
+            TptirValue::new(
+                1,
+                TptirType::memref(vec![-1], TptirType::primitive("f32"), AddressSpace::Global),
+            ),
             TptirValue::new(2, TptirType::primitive("i32")),
         ];
         let mut e_mul = TptirOp::new(OpKind::Mulf);
-        e_mul.operands = vec![TptirValue::new(0, TptirType::primitive("f32")), TptirValue::new(1, TptirType::primitive("f32"))];
+        e_mul.operands = vec![
+            TptirValue::new(0, TptirType::primitive("f32")),
+            TptirValue::new(1, TptirType::primitive("f32")),
+        ];
         e_mul.result_id = Some(10);
         e_mul.result_type = Some(TptirType::primitive("f32"));
         entry.operations.push(e_mul);
@@ -607,12 +621,18 @@ mod tests {
         let mut scale = Block::new("scale");
         scale.arguments = vec![TptirValue::new(10, TptirType::primitive("f32"))];
         let mut s_mul = TptirOp::new(OpKind::Mulf);
-        s_mul.operands = vec![TptirValue::new(10, TptirType::primitive("f32")), TptirValue::new(10, TptirType::primitive("f32"))];
+        s_mul.operands = vec![
+            TptirValue::new(10, TptirType::primitive("f32")),
+            TptirValue::new(10, TptirType::primitive("f32")),
+        ];
         s_mul.result_id = Some(11);
         s_mul.result_type = Some(TptirType::primitive("f32"));
         scale.operations.push(s_mul);
         let mut s_store = TptirOp::new(OpKind::Store);
-        s_store.operands = vec![TptirValue::new(11, TptirType::primitive("f32")), TptirValue::new(10, TptirType::primitive("f32"))];
+        s_store.operands = vec![
+            TptirValue::new(11, TptirType::primitive("f32")),
+            TptirValue::new(10, TptirType::primitive("f32")),
+        ];
         scale.operations.push(s_store);
         scale.operations.push(TptirOp::new(OpKind::Branch));
         region.blocks.push(scale);
@@ -620,7 +640,10 @@ mod tests {
         let mut exit = Block::new("exit");
         exit.arguments = vec![TptirValue::new(11, TptirType::primitive("f32"))];
         let mut x_add = TptirOp::new(OpKind::Addf);
-        x_add.operands = vec![TptirValue::new(11, TptirType::primitive("f32")), TptirValue::new(11, TptirType::primitive("f32"))];
+        x_add.operands = vec![
+            TptirValue::new(11, TptirType::primitive("f32")),
+            TptirValue::new(11, TptirType::primitive("f32")),
+        ];
         x_add.result_id = Some(12);
         x_add.result_type = Some(TptirType::primitive("f32"));
         exit.operations.push(x_add);
@@ -644,7 +667,8 @@ mod tests {
     #[test]
     fn test_roundtrip_gpu_vector_add() {
         let region =
-            tpt_gpu_compiler::ir::build_kernel_region("vector_add", ElemType::F16, &[2048]).unwrap();
+            tpt_gpu_compiler::ir::build_kernel_region("vector_add", ElemType::F16, &[2048])
+                .unwrap();
         assert_lossless(&region);
     }
 
@@ -706,10 +730,8 @@ mod tests {
     fn test_write_and_read_tptuir_file() {
         let region =
             tpt_gpu_compiler::ir::build_kernel_region("matmul", ElemType::F32, &[1024]).unwrap();
-        let path = std::env::temp_dir().join(format!(
-            "tptuir_adapter_{}.tptuir",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("tptuir_adapter_{}.tptuir", std::process::id()));
         write_tptuir(&region, &path).expect("write_tptuir failed");
         let back = read_tptuir(&path).expect("read_tptuir failed");
         // Single-block kernel: byte-identical TPTIR text after a file round-trip.

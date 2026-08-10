@@ -252,6 +252,7 @@ mod tests {
         // There is no <0x78> token in the sample vocab, so it maps to unk (0).
         let ids = t.encode("x");
         assert_eq!(ids, vec![0]); // 'x' -> unk (0); 'h' id is 0
+
         // Use a vocab with the byte token to verify real byte fallback.
         let vocab = vec!["a".into(), "b".into(), "<0x78>".into()];
         let t2 = Tokenizer::new("gpt2", vocab, vec![], 0, 0, 0, false, false);

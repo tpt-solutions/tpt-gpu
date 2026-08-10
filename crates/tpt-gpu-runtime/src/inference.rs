@@ -2119,10 +2119,7 @@ mod tests {
                 ("llm.attention.head_count_kv", GgufKvVal::U32(2)),
                 ("llm.feed_forward_length", GgufKvVal::U32(128)),
                 ("llm.block_count", GgufKvVal::U32(2)),
-                (
-                    "tokenizer.ggml.model",
-                    GgufKvVal::Str("llama".into()),
-                ),
+                ("tokenizer.ggml.model", GgufKvVal::Str("llama".into())),
                 (
                     "tokenizer.ggml.tokens",
                     GgufKvVal::StrArray(vec![
@@ -2444,7 +2441,10 @@ mod tests {
         let t1 = engine.forward_step(5).unwrap();
         engine.kv_cache.reset();
         let t2 = engine.forward_step(5).unwrap();
-        assert_eq!(t1, t2, "forward_step must be deterministic for the same token");
+        assert_eq!(
+            t1, t2,
+            "forward_step must be deterministic for the same token"
+        );
         assert!(
             !engine.pool.is_empty(),
             "scratch pool should hold recycled buffers after a forward step"
@@ -2591,12 +2591,7 @@ mod tests {
         let _ = engine.forward_step(0).unwrap();
         let cached_pos0 = engine.kv_cache.get_k(0).to_vec();
         let mut expected_pos0 = reference_raw_k(0, hidden, kv_row);
-        apply_rope(
-            &mut vec![0.0f32; kv_row],
-            &mut expected_pos0,
-            0,
-            &rope_cfg,
-        );
+        apply_rope(&mut vec![0.0f32; kv_row], &mut expected_pos0, 0, &rope_cfg);
         assert_eq!(
             cached_pos0.len(),
             kv_row,
@@ -2624,12 +2619,7 @@ mod tests {
         }
 
         let mut want_tok0_p1 = reference_raw_k(0, hidden, kv_row);
-        apply_rope(
-            &mut vec![0.0f32; kv_row],
-            &mut want_tok0_p1,
-            1,
-            &rope_cfg,
-        );
+        apply_rope(&mut vec![0.0f32; kv_row], &mut want_tok0_p1, 1, &rope_cfg);
         for (got, want) in cached[kv_row..].iter().zip(want_tok0_p1.iter()) {
             assert!((got - want).abs() < 1e-4, "cached K@pos1 (tok0) mismatch");
         }

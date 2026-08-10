@@ -15,10 +15,7 @@ fn kernelgen_bin() -> PathBuf {
         return PathBuf::from(p);
     }
     let exe = std::env::current_exe().expect("current_exe");
-    let profile_dir = exe
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("profile dir");
+    let profile_dir = exe.parent().and_then(|p| p.parent()).expect("profile dir");
     let name = if cfg!(windows) {
         "tpt-gpu-kernelgen.exe"
     } else {
@@ -29,8 +26,7 @@ fn kernelgen_bin() -> PathBuf {
 
 #[test]
 fn emit_tptuir_via_cli_roundtrips() {
-    let out = std::env::temp_dir()
-        .join(format!("kg_emit_{}.tptuir", std::process::id()));
+    let out = std::env::temp_dir().join(format!("kg_emit_{}.tptuir", std::process::id()));
 
     let status = Command::new(kernelgen_bin())
         .args([

@@ -7,9 +7,15 @@ description = "TPTIR -> TPT-UIR ingestion adapter for tpt-gpu (Phase 3 of tpt-ui
 
 [dependencies]
 tpt-gpu-compiler = { path = "../tpt-gpu-compiler" }
-# Cross-repo path deps into the sibling `tpt-uir` workspace. These can be
-# switched to git deps once `tpt-uir` is published.
-tpt-uir-core = { path = "../../../tpt-uir/crates/tpt-uir-core", features = ["serde"] }
-tpt-uir-dialects = { path = "../../../tpt-uir/crates/tpt-uir-dialects" }
-tpt-uir-serde = { path = "../../../tpt-uir/crates/tpt-uir-serde", features = ["std"] }
+# Cross-repo deps on the sibling `tpt-uir` workspace, pinned to an exact rev so
+# builds are reproducible and Cargo.lock stays stable. Do NOT switch these back
+# to `path = "../../../tpt-uir/..."`: that only resolves when tpt-uir happens to
+# be checked out next to tpt-gpu, which is never true on CI runners and breaks
+# the whole workspace (see CHANGELOG). To develop against a local tpt-uir
+# checkout, use a gitignored `.cargo/config.toml` path override instead — see
+# AGENTS.md, "Cross-repo dependency on tpt-uir".
+# These become plain version deps once tpt-uir is published to crates.io.
+tpt-uir-core = { git = "https://github.com/tpt-solutions/tpt-uir", rev = "4c80f97a4e0b7ddb77f62680f5fb92cb03887ab5", features = ["serde"] }
+tpt-uir-dialects = { git = "https://github.com/tpt-solutions/tpt-uir", rev = "4c80f97a4e0b7ddb77f62680f5fb92cb03887ab5" }
+tpt-uir-serde = { git = "https://github.com/tpt-solutions/tpt-uir", rev = "4c80f97a4e0b7ddb77f62680f5fb92cb03887ab5", features = ["std"] }
 thiserror.workspace = true

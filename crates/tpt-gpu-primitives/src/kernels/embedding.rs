@@ -107,7 +107,15 @@ impl EmbeddingKernel {
 
         let t0 = Instant::now();
         let mut output = GpuBuffer::new(Shape::new(&out_dims), DType::F32, BufferFlags::STORAGE)?;
-        self.tptir_embedding(weight, indices, &mut output, batch, seq_len, embed_dim, vocab_size)?;
+        self.tptir_embedding(
+            weight,
+            indices,
+            &mut output,
+            batch,
+            seq_len,
+            embed_dim,
+            vocab_size,
+        )?;
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         log::debug!(
             "Embedding [{}x{} → {}] via TPTIR: {:.3}ms",
@@ -176,7 +184,15 @@ impl EmbeddingKernel {
             None => GpuBuffer::new(Shape::new(&out_dims), DType::F32, BufferFlags::STORAGE)?,
         };
         let t0 = Instant::now();
-        self.tptir_embedding(weight, indices, &mut output, batch, seq_len, embed_dim, vocab_size)?;
+        self.tptir_embedding(
+            weight,
+            indices,
+            &mut output,
+            batch,
+            seq_len,
+            embed_dim,
+            vocab_size,
+        )?;
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         log::debug!(
             "Embedding [{}x{} → {}] via TPTIR: {:.3}ms",

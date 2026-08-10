@@ -119,7 +119,9 @@ fn handle_connection(
 
     match (method, path) {
         ("GET", "/v1/models") => respond_models(&mut stream, model_name),
-        ("POST", "/v1/completions") => handle_completion(&mut stream, state, model_name, &body, false),
+        ("POST", "/v1/completions") => {
+            handle_completion(&mut stream, state, model_name, &body, false)
+        }
         ("POST", "/v1/chat/completions") => {
             handle_completion(&mut stream, state, model_name, &body, true)
         }
@@ -140,10 +142,7 @@ fn handle_completion(
         .and_then(|v| v.as_u64())
         .unwrap_or(32)
         .min(2048) as u32;
-    let stream_resp = req
-        .get("stream")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let stream_resp = req.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
     let model = req
         .get("model")
         .and_then(|v| v.as_str())
@@ -162,7 +161,8 @@ fn handle_completion(
     };
 
     // Resolve the prompt to token ids.
-    let prompt_tokens: Vec<u32> = if let Some(arr) = req.get("prompt_tokens").and_then(|v| v.as_array())
+    let prompt_tokens: Vec<u32> = if let Some(arr) =
+        req.get("prompt_tokens").and_then(|v| v.as_array())
     {
         arr.iter()
             .filter_map(|x| x.as_u64().map(|n| n as u32))
@@ -328,7 +328,12 @@ fn status_text(status: u16) -> &'static str {
     }
 }
 
-fn write_json(stream: &mut TcpStream, body: &Value, status: u16, _sse: bool) -> std::io::Result<()> {
+fn write_json(
+    stream: &mut TcpStream,
+    body: &Value,
+    status: u16,
+    _sse: bool,
+) -> std::io::Result<()> {
     let payload = serde_json::to_vec(body)?;
     let header = format!(
         "HTTP/1.1 {status} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",

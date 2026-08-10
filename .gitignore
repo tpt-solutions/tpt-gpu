@@ -32,3 +32,9 @@ package-lock.json
 
 # Local AI-tool config (not project source)
 .kilo/
+
+# Local-only cargo overrides (e.g. redirecting the pinned `tpt-uir` git deps at
+# a sibling checkout — see AGENTS.md). Must never be committed: the paths only
+# exist on one machine and would break CI exactly like the old path deps did.
+.cargo/config.toml
+.cargo/config

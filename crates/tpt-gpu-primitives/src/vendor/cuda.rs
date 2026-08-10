@@ -128,8 +128,7 @@ impl CudaBackend {
 
     #[cfg(feature = "cuda")]
     fn device_count_inner() -> TptpResult<usize> {
-        let lib_cuda =
-            Library::open("nvcuda.dll").or_else(|_| Library::open("libcuda.so"))?;
+        let lib_cuda = Library::open("nvcuda.dll").or_else(|_| Library::open("libcuda.so"))?;
         let cu_init: unsafe extern "C" fn(u32) -> CUresult =
             unsafe { *lib_cuda.get(sym!("cuInit"))? };
         let cu_device_get_count: unsafe extern "C" fn(*mut i32) -> CUresult =
