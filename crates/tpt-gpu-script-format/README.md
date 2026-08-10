@@ -10,7 +10,7 @@ TPT Script formatter and linter — canonical pretty-printer and style enforcer 
 
 ```toml
 [dependencies]
-tpt-gpu-script-format = "1.0"
+tpt-gpu-script-format = "0.1"
 ```
 
 ## License

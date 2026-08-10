@@ -18,7 +18,7 @@ TPT Primitives — TPTIR kernel wrappers and vendor library integration for the 
 
 ```toml
 [dependencies]
-tpt-gpu-primitives = "1.0"
+tpt-gpu-primitives = "0.1"
 ```
 
 ## License

@@ -10,7 +10,7 @@ Language Server Protocol implementation for TPT Script — powers IDE features (
 
 ```toml
 [dependencies]
-tpt-gpu-script-lsp = "1.0"
+tpt-gpu-script-lsp = "0.1"
 ```
 
 Or install the binary:

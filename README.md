@@ -9,7 +9,13 @@
 
 ---
 
-## What's New in v1.0
+## What's New
+
+> The **TPT Script language** reached its `v1.0.0` (2026-06-28) and `v1.1.0`
+> (2026-06-29) milestones. The Rust crates are published to
+> [crates.io](https://crates.io) at `0.1.0` — `0.1.x` is pre-1.0, so the public
+> API is not yet guaranteed stable and may change in a `0.2.0` release. See the
+> [CHANGELOG](CHANGELOG.md) for version details.
 
 - **Complete Standard Library** — 200+ orthogonal operations covering tensors, neural networks, optimization, and distributed computing
 - **Production-Ready Compiler** — Lexer, parser, type checker with tensor shape inference, and dual codegen (Rust + TPTIR)
@@ -148,33 +154,63 @@ Run `cargo test -p tpt-gpu-primitives --features sim` to see the fallback path v
 
 ## Architecture
 
-TPT GPU is organized into 7 independent layers with well-defined FFI/API boundaries:
+TPT GPU is a Cargo workspace. All Rust crates live under `crates/` (one package per
+directory, e.g. `crates/tpt-gpu-runtime`), and the root `Cargo.toml` defines the
+workspace members. A few non-Rust layers remain as top-level directories holding
+specs, RTL, drivers, and Python framework backends:
 
 ```
+crates/                 All Rust crates (single Cargo workspace)
+  tpt-gpu-script-*      TPT Script compiler: core, cli (tpt), lsp, format
+  tpt-gpu-compiler      Rust port of the TPTIR compiler stack
+  tpt-gpu-ir-spec       TPTIR dialect spec + text serialization
+  tpt-gpu-primitives    GPU primitive kernels (GEMM/Attention/Conv) + vendor backends
+  tpt-gpu-runtime       Allocator, scheduler, kernel launch, LLM inference
+  tpt-gpu-serve         OpenAI-compatible HTTP inference server (tpt-serve)
+  tpt-gpu-uir-adapter   TPTIR <-> TPT-UIR ingestion adapter
+  tpt-gpu-model-*       Model registry + hardware-aware model optimizer
+  tpt-gpu-kernelgen     AI-assisted kernel generation
+  tpt-gpu-kernel-optimizer  Kernel auto-tuning
+  tpt-gpu-bench         User-runnable GPU benchmark harness (TPT-GenBench)
+  tpt-gpu-vendor-cert   Third-party vendor backend certification
+  tpt-gpu-driver-daemon GPU userspace daemon (tptd)
+  tpt-gpu-doctor        Environment health check
+  tpt-gpu-shared        Multi-provider AI abstraction (Claude/OpenRouter/Ollama)
+  out-gpu-*             Internal/non-published crates (C ABI, PyO3, dispatch, playground)
+
 layer1_isa/      SystemVerilog ISA — 32-bit fixed-length, 9-stage SIMT pipeline
-layer2_tptd/     Kernel drivers — Linux DRM, Windows WDM, macOS DriverKit
-layer3_tptc/     TPTIR compiler — MLIR-compatible dialect (C++ + Rust)
-layer4_tptr/     GPU runtime — allocator, scheduler, kernel launch, LLM inference (Rust)
-layer5_tptp/     GPU primitives — GEMM, Attention, Conv2D (TPTIR + Rust)
+layer2_tptd/     Kernel drivers — Linux DRM, Windows WDM, macOS DriverKit (simulation-only today)
+layer3_tptc/     TPTIR compiler — MLIR-compatible dialect (C++ headers)
 layer6_framework/ Framework backends — PyTorch dispatch, JAX integration (Python)
-layer7_tptb/     TPT Script compiler — lexer → parser → type checker → codegen (Rust)
+layer7_tptb/     TPT Script examples and language spec
 ```
 
-**Development flow:** TPT Script (L7) → TPTIR (L3) → TPT ISA (L1) via Runtime (L4)
+**Development flow:** TPT Script (`crates/tpt-gpu-script-*`) → TPTIR (`crates/tpt-gpu-compiler` / `tpt-gpu-ir-spec`) → GPU kernels (`crates/tpt-gpu-primitives`) via the Runtime (`crates/tpt-gpu-runtime`).
 
 ---
 
 ## Tools
 
-| Tool | Description | Command |
-|------|-------------|---------|
-| `tpt-gpu-script` | CLI compiler | `tpt-gpu-script check`, `tpt-gpu-script compile`, `tpt-gpu-script run` |
-| `tpt-gpu-script-lsp` | Language Server | IDE integration |
-| `tpt-gpu-script-format` | Formatter/Linter (library crate, no CLI binary) | `format()`/`lint()` from Rust |
-| `tpt-gpu-models` | Shared GGUF model registry | `tpt-gpu-models add/list/fetch` |
-| `tpt-gpu-kernelgen` | AI-assisted kernel gen | Spec → TPTIR → validate → benchmark |
-| `tpt-gpu-kernel-optimizer` | Auto-tuning | Grid → hill-climb → AI-guided search |
-| `tpt-gpu-doctor` | Environment health check | `tpt-gpu-doctor` (see below) |
+| Crate | Binary | Description |
+|-------|--------|-------------|
+| `tpt-gpu-script-cli` | `tpt` (also `tpt-gpu-script`) | TPT Script compiler CLI — `tpt check`, `tpt compile`, `tpt fmt`, `tpt run` |
+| `tpt-gpu-script-lsp` | `tpt-gpu-script-lsp` | Language Server — IDE completions, hover, diagnostics, formatting |
+| `tpt-gpu-script-format` | _(library)_ | TPT Script formatter/linter — `format()`/`lint()` from Rust |
+| `tpt-gpu-compiler` | _(library)_ | Rust port of the TPTIR compiler stack |
+| `tpt-gpu-ir-spec` | _(library)_ | TPTIR dialect spec + stable text serialization |
+| `tpt-gpu-primitives` | _(library)_ | GPU primitive kernels + CUDA/ROCm/Metal/TPTIR backends |
+| `tpt-gpu-runtime` | _(library)_ | Allocator, scheduler, kernel launch, LLM inference engine |
+| `tpt-gpu-serve` | `tpt-serve` | OpenAI-compatible HTTP inference server |
+| `tpt-gpu-uir-adapter` | _(library)_ | TPTIR ↔ TPT-UIR ingestion adapter |
+| `tpt-gpu-model-registry` | `tpt-models` | Shared GGUF model registry — `tpt-models list/add/fetch` |
+| `tpt-gpu-model-optimizer` | `tpt-gpu-model-optimizer` | Quantization, pruning, TPTF export |
+| `tpt-gpu-kernelgen` | `tpt-gpu-kernelgen` | AI-assisted kernel generation |
+| `tpt-gpu-kernel-optimizer` | `tpt-gpu-kernel-optimizer` | Kernel auto-tuning |
+| `tpt-gpu-bench` | `tpt-gpu-bench` | User-runnable GPU benchmark harness (TPT-GenBench) |
+| `tpt-gpu-vendor-cert` | `tpt-gpu-vendor-cert` | Third-party vendor backend certification |
+| `tpt-gpu-driver-daemon` | `tptd` | GPU userspace daemon for context/VRAM management |
+| `tpt-gpu-doctor` | `tpt-gpu-doctor` | Environment health check (see below) |
+| `tpt-gpu-shared` | _(library)_ | Multi-provider AI abstraction (Claude/OpenRouter/Ollama) |
 
 ---
 
@@ -194,7 +230,9 @@ It reports **PASS** / **FAIL** / **WARN** / **SKIP** for each check and exits no
 
 ## Crates.io Publishing
 
-TPT GPU components are published to crates.io for easy integration:
+TPT GPU components are published to crates.io for easy integration. The current
+published version is **`0.1.0`** (pre-1.0; API may change — see the
+[CHANGELOG](CHANGELOG.md) versioning note):
 
 ```toml
 [dependencies]

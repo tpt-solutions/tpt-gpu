@@ -313,7 +313,7 @@ tpt bench --contribute
 
 ## Contributing
 
-Bug reports and feature requests (new GPU tuning profiles, calibration generator extensions, export formats) are welcome via GitHub Issues. Pull requests are not accepted at this time.
+Bug reports and feature requests (new GPU tuning profiles, calibration generator extensions, export formats) are welcome via GitHub Issues. We also accept pull requests — see [CONTRIBUTING.md](../../../CONTRIBUTING.md) for how to contribute.
 
 ## License
 
