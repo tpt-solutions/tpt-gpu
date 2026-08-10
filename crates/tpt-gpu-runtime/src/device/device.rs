@@ -489,6 +489,19 @@ impl Device {
         };
         Ok(Kernel::new(name).with_module(module))
     }
+    /// Load a compiled kernel from a TPT-UIR `.tptuir` file. The file is
+    /// deserialized to TPT-UIR and lowered back to TPTIR text, then handed to
+    /// [`Device::load_module`]. Requires the `tpt-gpu-uir-adapter` crate.
+    pub fn load_module_tptuir(&self, path: &std::path::Path) -> TptrResult<Kernel> {
+        let tptir = tpt_gpu_uir_adapter::read_tptuir(path).map_err(|e| {
+            TptrError::new(
+                ErrorCode::InvalidKernel,
+                format!("TPT-UIR load failed: {}", e),
+            )
+        })?;
+        let text = tpt_gpu_compiler::ir::emit_tptir(&tptir, "kernel", &[]);
+        self.load_module(&text)
+    }
     pub fn launch_kernel(
         &self,
         kernel: &Kernel,

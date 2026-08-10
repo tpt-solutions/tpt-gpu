@@ -554,3 +554,33 @@
 - `cargo clippy -p tpt-gpu-runtime --lib --tests -- -D warnings` — clean
 - `cargo clippy -p tpt-gpu-serve --all-targets -- -D warnings` — clean
 - `cargo build --workspace` — clean
+
+---
+
+## Phase 16: TPT-UIR Ingestion Adapter (Phase 3 of `tpt-uir`)
+
+**Context:** the `tpt-uir` repo defines a unified Core + Dialects IR (`tpt-uir-core`, `tpt-uir-dialects`, `tpt-uir-serde`) plus a GPU dialect whose invariant is "tensor shapes must be `Dimension::Bounded` or `None` — never `Fixed`/`Symbolic`". The `tpt-uir/todo.md` Phase 3 tasks (marked `⛔ OUT OF REPO`) require `tpt-gpu` to consume that IR. This phase implements the `tpt-gpu` side: a TPTIR → TPT-UIR converter plus the reverse, so a legacy TPTIR kernel region can be lifted into TPT-UIR and lowered back losslessly. RFC: `TPT UIR.txt`. Cross-repo deps are path deps into the sibling `tpt-uir` workspace and can be switched to git/crates.io deps once `tpt-uir` is published.
+
+### Adapter crate (`crates/tpt-gpu-uir-adapter`)
+- [x] New crate added to the workspace (`Cargo.toml` members) depending on `tpt-gpu-compiler` + `tpt-uir-core` (serde feature) + `tpt-uir-dialects` + `tpt-uir-serde`
+- [x] `from_tptir(region) -> Result<UirRegion, AdapterError>`: maps TPTIR `Block`/`Operation`/`Region` → TPT-UIR `Block`/`Operation`/`Region`; arithmetic ops tagged `core.*`, GPU-specific ops tagged `tpt_gpu.*`; all tensor shapes emitted as `Dimension::Bounded` (`-1` → `dyn`, fixed `d` → `fixed_d`) or `None`
+- [x] Address space preserved losslessly via a leading `Dimension::Bounded { symbol: "addr_<space>" }` on MemRef/Tensor types
+- [x] Original `OpKind`, result id, and result type preserved as TPT-UIR attributes (`tptir.op`, `tptir.result_id`, `tptir.result_type`) so the reverse pass reconstructs the exact operation
+- [x] Operations constructed through `tpt_uir_dialects::gpu::GpuOp::build` and the result guaranteed to pass `GpuDialect::validate` (GPU invariant enforced at construction)
+- [x] `to_tptir(region) -> TptirRegion`: reverse converter reconstructing TPTIR ops, SSA value ids, and types (block labels regenerated — `entry` for the first block)
+- [x] `gguf` module (`crates/tpt-gpu-uir-adapter/src/gguf.rs`): minimal GGUF v2/v3 header reader (`parse_gguf_bytes`), fixture generator (`write_minimal_gguf_bytes` / `write_minimal_gguf`), `LlamaModelSpec` (arch dims), and `gguf_to_tptir(spec)` which lowers a parsed Llama-3 model into a representative TPTIR decoder block whose `memref` shapes carry the real `context_len`/`hidden_dim` (Q/K/V projections + fused attention + store)
+- [x] Adapter wired into `tpt-gpu-kernelgen` and `tpt-gpu-runtime` for `.tptuir` emission/consumption:
+  - `write_tptuir(region, path)` / `read_tptuir(path)` helpers in the adapter (file I/O via `tpt-uir-serde` `std` feature)
+  - `tpt-gpu-kernelgen` `generate` gains `--output-tptuir <file>` (emits the kernel as `.tptuir`); `tests/emit_tptuir.rs` spawns the binary and round-trips it back through the adapter
+  - `tpt-gpu-runtime` `Device::load_module_tptuir(path)` reads a `.tptuir`, lowers to TPTIR, and loads via `Device::load_module`; `tests/load_module_tptuir.rs` exercises it on a simulated device
+- [x] Representative Llama-3 block coverage: replaced the bare `build_kernel_region` proxy with hand-authored realistic fixtures (`make_rich_attention_kernel` single-block with `constant`/`load`/`store`/`gemm`/`custom`, and `make_llama_decoder_block` multi-block `entry`/`scale`/`exit` with `br` terminators + per-block args) — see Round-Trip Validation below. the genuine GGUF→TPTIR path is now implemented — see the `gguf` module and `test_roundtrip_gpu_llama3_gguf` below
+
+### Round-Trip Validation
+- [x] `test_roundtrip_gpu()` (in `crates/tpt-gpu-uir-adapter/src/lib.rs`): TPTIR → TPT-UIR → back is lossless — asserts SSA-valid + GPU-invariant UIR and (for single-block) byte-identical `emit_tptir` text
+  - [x] Realistic Llama-3-block fixtures added, including a genuine GGUF→TPTIR path (`gguf` module: `parse_gguf_bytes` + `gguf_to_tptir`) and hand-authored TPTIR fixtures:
+  - `make_rich_attention_kernel()` — single block exercising `constant`/`mulf`/`addf`/`load`/`gemm`/`custom`/`store`/`return` over dynamic `memref<*xf32>` + `i32` (full `emit_tptir` text equality asserted)
+  - `make_llama_decoder_block()` — multi-block (`entry`/`scale`/`exit`) with `br` terminators, per-block arguments, loads/stores, and mixed `memref`/`i32` types (structural/label-insensitive equivalence asserted, since TPT-UIR `Block` does not model labels)
+  - `test_roundtrip_gpu_rich_attention_kernel` + `test_roundtrip_gpu_multiblock_decoder` cover both
+  - `test_roundtrip_gpu_llama3_gguf` — materializes a real GGUF fixture (Llama-3, 4096/8192/32-head), parses it, lowers via `gguf_to_tptir`, and asserts the full TPTIR → TPT-UIR → TPTIR round-trip is lossless
+- [x] `test_uir_serialization_roundtrip()`: TPT-UIR region survives `tpt-uir-serde` postcard serialize → deserialize (`Eq`)
+- [x] `cargo test -p tpt-gpu-uir-adapter` — 8 passed (incl. `test_write_and_read_tptuir_file`); `cargo clippy -p tpt-gpu-uir-adapter --all-targets -- -D warnings` — clean. `cargo test -p tpt-gpu-kernelgen` (incl. `tests/emit_tptuir.rs`) and `cargo test -p tpt-gpu-runtime --test load_module_tptuir` — both green; clippy on those targets clean.

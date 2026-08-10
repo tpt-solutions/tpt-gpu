@@ -1,0 +1,15 @@
+[package]
+name = "tpt-gpu-uir-adapter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "TPTIR -> TPT-UIR ingestion adapter for tpt-gpu (Phase 3 of tpt-uir)"
+
+[dependencies]
+tpt-gpu-compiler = { path = "../tpt-gpu-compiler" }
+# Cross-repo path deps into the sibling `tpt-uir` workspace. These can be
+# switched to git deps once `tpt-uir` is published.
+tpt-uir-core = { path = "../../../tpt-uir/crates/tpt-uir-core", features = ["serde"] }
+tpt-uir-dialects = { path = "../../../tpt-uir/crates/tpt-uir-dialects" }
+tpt-uir-serde = { path = "../../../tpt-uir/crates/tpt-uir-serde", features = ["std"] }
+thiserror.workspace = true

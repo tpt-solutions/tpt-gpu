@@ -24,6 +24,7 @@ members = [
     "crates/tpt-gpu-shared",
     "crates/tpt-gpu-vendor-cert",
     "crates/tpt-gpu-serve",
+    "crates/tpt-gpu-uir-adapter",
 ]
 
 [workspace.package]

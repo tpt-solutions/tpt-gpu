@@ -1,7 +1,7 @@
 //! TPT GPU kernel generator CLI.
 //!
 //! Usage:
-//!   tpt generate <kernel> [--elem <type>] [--shape <shape>]
+//!   tpt generate <kernel> [--elem <type>] [--shape <shape>] [--output-tptuir <file>]
 //!   tpt ai-generate <kernel> [--elem <type>] [--shape <shape>] [--no-bench]
 //!   tpt validate <file.tptir>
 //!   tpt bench [--quick] [--output-json <file>]
@@ -32,6 +32,9 @@ enum Commands {
         elem: String,
         #[arg(long, default_value = "1024")]
         shape: String,
+        /// Also emit the kernel as a TPT-UIR `.tptuir` file (TPT-UIR ingestion adapter)
+        #[arg(long)]
+        output_tptuir: Option<PathBuf>,
     },
     /// AI-assisted pipeline: spec -> TPTIR -> validate -> correctness test -> benchmark
     ///
@@ -72,6 +75,7 @@ fn main() -> anyhow::Result<()> {
             kernel,
             elem,
             shape,
+            output_tptuir,
         } => {
             println!(
                 "Generating kernel: {} (elem={}, shape={})",
@@ -88,6 +92,11 @@ fn main() -> anyhow::Result<()> {
                 &[("tptir.kernel".to_string(), "".to_string())],
             );
             println!("{}", tptir);
+            if let Some(tptuir_path) = output_tptuir {
+                tpt_gpu_uir_adapter::write_tptuir(&region, &tptuir_path)
+                    .map_err(|e| anyhow::anyhow!("failed to emit .tptuir: {e}"))?;
+                println!("Wrote TPT-UIR to {}", tptuir_path.display());
+            }
         }
 
         Commands::AiGenerate {
